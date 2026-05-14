@@ -1,0 +1,24 @@
+{
+  "id": "redis",
+  "name": "Redis",
+  "version": "0.1.0",
+  "description": "Redis key-value database driver",
+  "icon": "redis",
+  "color": "#DC382D",
+  "default_port": 6379,
+  "executable": "./redis-plugin",
+  "capabilities": {
+    "schemas": false,
+    "views": false,
+    "routines": false,
+    "file_based": false,
+    "connection_string": false,
+    "identifier_quote": "\"",
+    "alter_primary_key": false,
+    "database_label": "Database Index",
+    "database_is_number": true,
+    "result_view_mode": "key-value"
+  },
+  "settings": [],
+  "builtin": true
+}

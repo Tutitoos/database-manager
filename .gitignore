@@ -1,0 +1,10 @@
+node_modules
+.next
+out
+dist
+target
+src-tauri/target
+*.log
+.DS_Store
+plugins/*/*-plugin
+plugins/*/*.exe

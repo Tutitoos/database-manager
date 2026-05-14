@@ -1,0 +1,42 @@
+mod commands;
+mod db;
+mod plugins;
+
+use std::sync::Arc;
+
+use db::Database;
+use plugins::PluginManager;
+use tauri::Manager;
+
+pub struct AppState {
+    pub db: Database,
+    pub plugins: Arc<PluginManager>,
+}
+
+pub fn run() {
+    tauri::Builder::default()
+        .setup(|app| {
+            let db = Database::new(app.handle()).map_err(|error| error.to_string())?;
+            let plugins = Arc::new(PluginManager::new(app.handle().clone(), db.clone()));
+            plugins
+                .rescan_blocking()
+                .map_err(|error| error.to_string())?;
+            app.manage(AppState { db, plugins });
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::list_connections,
+            commands::create_connection,
+            commands::update_connection,
+            commands::delete_connection,
+            commands::list_plugins,
+            commands::enable_plugin,
+            commands::disable_plugin,
+            commands::rescan_plugins,
+            commands::test_connection,
+            commands::list_databases,
+            commands::list_collections
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

@@ -1,0 +1,23 @@
+{
+  "id": "mongodb",
+  "name": "MongoDB",
+  "version": "0.1.0",
+  "description": "MongoDB document database driver",
+  "icon": "mongodb",
+  "color": "#13AA52",
+  "default_port": 27017,
+  "executable": "./mongodb-plugin",
+  "capabilities": {
+    "schemas": false,
+    "views": false,
+    "routines": false,
+    "file_based": false,
+    "connection_string": true,
+    "identifier_quote": "`",
+    "alter_primary_key": false,
+    "database_label": "Database",
+    "result_view_mode": "json"
+  },
+  "settings": [],
+  "builtin": true
+}
