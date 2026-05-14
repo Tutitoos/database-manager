@@ -35,7 +35,12 @@ pub fn run() {
             commands::rescan_plugins,
             commands::test_connection,
             commands::list_databases,
-            commands::list_collections
+            commands::list_collections,
+            commands::get_table_data,
+            commands::get_documents,
+            commands::get_key_value,
+            commands::list_redis_keys,
+            commands::get_db_metrics
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

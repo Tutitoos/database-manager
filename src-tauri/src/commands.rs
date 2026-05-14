@@ -1,7 +1,8 @@
+use serde_json::Value;
 use tauri::State;
 
 use crate::db::{ConnectionInput, ConnectionRecord};
-use crate::plugins::PluginInfo;
+use crate::plugins::{DocumentResult, KeyValue, PluginInfo, RedisKey, TableResult};
 use crate::AppState;
 
 #[tauri::command]
@@ -74,4 +75,60 @@ pub async fn list_collections(
     database: String,
 ) -> Result<Vec<String>, String> {
     state.plugins.list_collections(&input, &database).await
+}
+
+#[tauri::command]
+pub async fn get_table_data(
+    state: State<'_, AppState>,
+    input: ConnectionInput,
+    database: String,
+    table: String,
+    limit: i64,
+    offset: i64,
+    filter: String,
+    cursor: String,
+) -> Result<TableResult, String> {
+    state.plugins.get_table_data(&input, &database, &table, limit, offset, &filter, &cursor).await
+}
+
+#[tauri::command]
+pub async fn get_documents(
+    state: State<'_, AppState>,
+    input: ConnectionInput,
+    database: String,
+    collection: String,
+    limit: i64,
+    offset: i64,
+    filter: String,
+    cursor: String,
+) -> Result<DocumentResult, String> {
+    state.plugins.get_documents(&input, &database, &collection, limit, offset, &filter, &cursor).await
+}
+
+#[tauri::command]
+pub async fn get_key_value(
+    state: State<'_, AppState>,
+    input: ConnectionInput,
+    database: String,
+    key: String,
+) -> Result<KeyValue, String> {
+    state.plugins.get_key_value(&input, &database, &key).await
+}
+
+#[tauri::command]
+pub async fn list_redis_keys(
+    state: State<'_, AppState>,
+    input: ConnectionInput,
+    database: String,
+) -> Result<Vec<RedisKey>, String> {
+    state.plugins.list_redis_keys(&input, &database).await
+}
+
+#[tauri::command]
+pub async fn get_db_metrics(
+    state: State<'_, AppState>,
+    input: ConnectionInput,
+    database: String,
+) -> Result<Value, String> {
+    state.plugins.get_db_metrics(&input, &database).await
 }

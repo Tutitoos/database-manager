@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+@theme {
+  --font-size-2xs: 0.625rem;
+  --font-size-2xs--line-height: 1rem;
+}
+
 :root {
   color-scheme: dark;
   --background: #050505;
@@ -46,6 +51,12 @@ select {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #3f3f46;
+}
+
+@keyframes slide {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(200%); }
+  100% { transform: translateX(200%); }
 }
 
 .modal-scroll {

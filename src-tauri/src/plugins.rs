@@ -14,6 +14,44 @@ use tokio::time::{timeout, Duration};
 
 use crate::db::{ConnectionInput, Database, PluginDbRecord};
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TableResult {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<Value>>,
+    pub total: i64,
+    #[serde(default)]
+    pub is_estimated: bool,
+    #[serde(default)]
+    pub next_cursor: Option<String>,
+    #[serde(default)]
+    pub pk_column: Option<String>,
+    #[serde(default)]
+    pub query_ms: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DocumentResult {
+    pub documents: Vec<Value>,
+    pub total: i64,
+    #[serde(default)]
+    pub query_ms: i64,
+    #[serde(default)]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct KeyValue {
+    pub key_type: String,
+    pub value: Value,
+    pub ttl: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RedisKey {
+    pub key: String,
+    pub key_type: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginManifest {
     pub id: String,
@@ -387,6 +425,74 @@ impl PluginManager {
             .map_err(|error| format!("invalid collections response: {error}"))
     }
 
+    pub async fn get_table_data(&self, input: &ConnectionInput, database: &str, table: &str, limit: i64, offset: i64, filter: &str, cursor: &str) -> Result<TableResult, String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        let result = process.call("get_table_data", json!({
+            "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+            "database": database, "table": table, "limit": limit, "offset": offset, "where": filter, "cursor": cursor
+        })).await?;
+        serde_json::from_value(result).map_err(|e| format!("invalid table data response: {e}"))
+    }
+
+    pub async fn get_documents(&self, input: &ConnectionInput, database: &str, collection: &str, limit: i64, offset: i64, filter: &str, cursor: &str) -> Result<DocumentResult, String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        let result = process.call("get_documents", json!({
+            "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+            "database": database, "collection": collection, "limit": limit, "offset": offset, "filter": filter, "cursor": cursor
+        })).await?;
+        serde_json::from_value(result).map_err(|e| format!("invalid documents response: {e}"))
+    }
+
+    pub async fn get_key_value(&self, input: &ConnectionInput, database: &str, key: &str) -> Result<KeyValue, String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        let result = process.call("get_key_value", json!({
+            "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+            "database": database, "key": key
+        })).await?;
+        serde_json::from_value(result).map_err(|e| format!("invalid key value response: {e}"))
+    }
+
+    pub async fn list_redis_keys(&self, input: &ConnectionInput, database: &str) -> Result<Vec<RedisKey>, String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        let result = process.call("get_keys_with_types", json!({
+            "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode }
+        })).await?;
+        serde_json::from_value(result).map_err(|e| format!("invalid redis keys response: {e}"))
+    }
+
+    pub async fn get_db_metrics(&self, input: &ConnectionInput, database: &str) -> Result<Value, String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        process.call("get_metrics", json!({
+            "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+            "database": database
+        })).await
+    }
+
     fn seed_development_plugins(&self) -> Result<(), String> {
         let app_plugins = Database::app_plugins_dir(&self.app)?;
         let current_dir = std::env::current_dir().map_err(|error| error.to_string())?;
@@ -461,7 +567,7 @@ impl PluginProcess {
             stdin.flush().await.map_err(|error| error.to_string())?;
         }
         let mut line = String::new();
-        timeout(Duration::from_secs(10), async {
+        timeout(Duration::from_secs(60), async {
             let mut stdout = self.stdout.lock().await;
             stdout.read_line(&mut line).await
         })

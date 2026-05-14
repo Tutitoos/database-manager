@@ -3,10 +3,10 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-export default function Root() {
+export default function SettingsIndex() {
   const router = useRouter();
   useEffect(() => {
-    router.replace("/connections");
+    router.replace("/settings/general");
   }, [router]);
   return null;
 }

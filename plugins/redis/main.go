@@ -37,6 +37,12 @@ type Envelope struct {
 	Params ConnectionParams `json:"params"`
 }
 
+type DataEnvelope struct {
+	Params   ConnectionParams `json:"params"`
+	Database string           `json:"database"`
+	Key      string           `json:"key"`
+}
+
 type ConnectionParams struct {
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
@@ -78,7 +84,47 @@ func dispatch(req Request) Response {
 			return fail(req.ID, err)
 		}
 		return ok(req.ID, dbs)
-	case "get_collections", "get_schemas":
+	case "get_key_value":
+		var env DataEnvelope
+		if err := json.Unmarshal(req.Params, &env); err != nil {
+			return fail(req.ID, err)
+		}
+		result, err := getKeyValue(env.Params, env.Database, env.Key)
+		if err != nil {
+			return fail(req.ID, err)
+		}
+		return ok(req.ID, result)
+	case "get_collections":
+		var env Envelope
+		if err := json.Unmarshal(req.Params, &env); err != nil {
+			return fail(req.ID, err)
+		}
+		keys, err := getKeys(env.Params)
+		if err != nil {
+			return fail(req.ID, err)
+		}
+		return ok(req.ID, keys)
+	case "get_keys_with_types":
+		var env Envelope
+		if err := json.Unmarshal(req.Params, &env); err != nil {
+			return fail(req.ID, err)
+		}
+		result, err := getKeysWithTypes(env.Params)
+		if err != nil {
+			return fail(req.ID, err)
+		}
+		return ok(req.ID, result)
+	case "get_metrics":
+		var env Envelope
+		if err := json.Unmarshal(req.Params, &env); err != nil {
+			return fail(req.ID, err)
+		}
+		result, err := getMetrics(env.Params)
+		if err != nil {
+			return fail(req.ID, err)
+		}
+		return ok(req.ID, result)
+	case "get_schemas":
 		return ok(req.ID, []string{})
 	case "get_tables", "get_columns":
 		return ok(req.ID, []any{})
@@ -146,6 +192,249 @@ func test(params ConnectionParams) error {
 	client.Options().DB = db
 	defer client.Close()
 	return client.Ping(ctx).Err()
+}
+
+func getKeyValue(params ConnectionParams, database, key string) (map[string]any, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	db := 0
+	if database != "" {
+		if n, err := strconv.Atoi(database); err == nil {
+			db = n
+		}
+	}
+	if params.Port == 0 {
+		params.Port = 6379
+	}
+	client := redis.NewClient(&redis.Options{
+		Addr:     params.Host + ":" + strconv.Itoa(params.Port),
+		Username: params.Username,
+		Password: params.Password,
+		DB:       db,
+	})
+	defer client.Close()
+
+	keyType, err := client.Type(ctx, key).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	ttlDur, _ := client.TTL(ctx, key).Result()
+	ttl := int64(ttlDur.Seconds())
+
+	var value any
+	switch keyType {
+	case "string":
+		value, err = client.Get(ctx, key).Result()
+	case "list":
+		value, err = client.LRange(ctx, key, 0, -1).Result()
+	case "hash":
+		value, err = client.HGetAll(ctx, key).Result()
+	case "set":
+		value, err = client.SMembers(ctx, key).Result()
+	case "zset":
+		vals, e := client.ZRangeWithScores(ctx, key, 0, -1).Result()
+		if e != nil {
+			err = e
+		} else {
+			pairs := make([]map[string]any, len(vals))
+			for i, z := range vals {
+				pairs[i] = map[string]any{"member": z.Member, "score": z.Score}
+			}
+			value = pairs
+		}
+	default:
+		value = nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"key_type": keyType, "value": value, "ttl": ttl}, nil
+}
+
+type KeyInfo struct {
+	Key     string `json:"key"`
+	KeyType string `json:"key_type"`
+}
+
+func getKeysWithTypes(params ConnectionParams) ([]KeyInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	db := 0
+	if params.Database != "" {
+		if n, err := strconv.Atoi(params.Database); err == nil {
+			db = n
+		}
+	}
+	if params.Port == 0 {
+		params.Port = 6379
+	}
+	client := redis.NewClient(&redis.Options{
+		Addr:     params.Host + ":" + strconv.Itoa(params.Port),
+		Username: params.Username,
+		Password: params.Password,
+		DB:       db,
+	})
+	defer client.Close()
+
+	var keys []string
+	var cursor uint64
+	for {
+		batch, next, err := client.Scan(ctx, cursor, "*", 200).Result()
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, batch...)
+		cursor = next
+		if cursor == 0 || len(keys) >= 1000 {
+			break
+		}
+	}
+	sort.Strings(keys)
+
+	if len(keys) == 0 {
+		return []KeyInfo{}, nil
+	}
+
+	pipe := client.Pipeline()
+	typeCmds := make([]*redis.StatusCmd, len(keys))
+	for i, k := range keys {
+		typeCmds[i] = pipe.Type(ctx, k)
+	}
+	if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
+		return nil, err
+	}
+
+	result := make([]KeyInfo, len(keys))
+	for i, k := range keys {
+		t, _ := typeCmds[i].Result()
+		result[i] = KeyInfo{Key: k, KeyType: t}
+	}
+	return result, nil
+}
+
+func getKeys(params ConnectionParams) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	db := 0
+	if params.Database != "" {
+		if n, err := strconv.Atoi(params.Database); err == nil {
+			db = n
+		}
+	}
+	if params.Port == 0 {
+		params.Port = 6379
+	}
+	client := redis.NewClient(&redis.Options{
+		Addr:     params.Host + ":" + strconv.Itoa(params.Port),
+		Username: params.Username,
+		Password: params.Password,
+		DB:       db,
+	})
+	defer client.Close()
+
+	var keys []string
+	var cursor uint64
+	for {
+		batch, next, err := client.Scan(ctx, cursor, "*", 200).Result()
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, batch...)
+		cursor = next
+		if cursor == 0 || len(keys) >= 1000 {
+			break
+		}
+	}
+	sort.Strings(keys)
+	return keys, nil
+}
+
+func getMetrics(params ConnectionParams) (map[string]any, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client := newClient(params)
+	defer client.Close()
+
+	info, err := client.Info(ctx, "all").Result()
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse INFO flat key:value lines
+	raw := map[string]string{}
+	for _, line := range strings.Split(info, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if k, v, ok := strings.Cut(line, ":"); ok {
+			raw[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+	}
+
+	parseInt := func(k string) int64 {
+		if v, err := strconv.ParseInt(raw[k], 10, 64); err == nil {
+			return v
+		}
+		return 0
+	}
+	parseFloat := func(k string) float64 {
+		if v, err := strconv.ParseFloat(raw[k], 64); err == nil {
+			return v
+		}
+		return 0
+	}
+
+	result := map[string]any{
+		// Server
+		"redis_version":    raw["redis_version"],
+		"uptime_seconds":   parseInt("uptime_in_seconds"),
+		"uptime_days":      parseInt("uptime_in_days"),
+		// Clients
+		"connected_clients": parseInt("connected_clients"),
+		"blocked_clients":   parseInt("blocked_clients"),
+		// Memory
+		"used_memory_bytes":     parseInt("used_memory"),
+		"used_memory_human":     raw["used_memory_human"],
+		"used_memory_rss_bytes": parseInt("used_memory_rss"),
+		"used_memory_peak_human": raw["used_memory_peak_human"],
+		"maxmemory_bytes":       parseInt("maxmemory"),
+		"maxmemory_human":       raw["maxmemory_human"],
+		"mem_fragmentation_ratio": parseFloat("mem_fragmentation_ratio"),
+		// Stats — cumulative counters, frontend diffs for rates
+		"total_commands_processed":  parseInt("total_commands_processed"),
+		"total_connections_received": parseInt("total_connections_received"),
+		"keyspace_hits":             parseInt("keyspace_hits"),
+		"keyspace_misses":           parseInt("keyspace_misses"),
+		"ops_per_sec":               parseInt("instantaneous_ops_per_sec"),
+		"input_kbps":                parseFloat("instantaneous_input_kbps"),
+		"output_kbps":               parseFloat("instantaneous_output_kbps"),
+		// Replication
+		"role":            raw["role"],
+		"connected_slaves": parseInt("connected_slaves"),
+	}
+
+	// Keyspace: db0:keys=X,expires=Y → total keys
+	var totalKeys int64
+	for k, v := range raw {
+		if strings.HasPrefix(k, "db") {
+			for _, part := range strings.Split(v, ",") {
+				if kk, kv, ok := strings.Cut(part, "="); ok && kk == "keys" {
+					if n, err := strconv.ParseInt(kv, 10, 64); err == nil {
+						totalKeys += n
+					}
+				}
+			}
+		}
+	}
+	result["total_keys"] = totalKeys
+
+	return result, nil
 }
 
 func failOrOK(id any, err error) Response {
