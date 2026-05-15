@@ -719,7 +719,15 @@ impl PluginProcess {
 }
 
 async fn start_runtime_plugin(runtime: &mut RuntimePlugin, app: AppHandle) -> Result<(), String> {
-    let executable = runtime.path.join(&runtime.manifest.executable);
+    let executable = {
+        let base = runtime.path.join(&runtime.manifest.executable);
+        #[cfg(windows)]
+        let base = if !base.exists() {
+            let with_exe = base.with_extension("exe");
+            if with_exe.exists() { with_exe } else { base }
+        } else { base };
+        base
+    };
     if !executable.exists() {
         return Err(format!(
             "plugin executable not found: {}. Run `pnpm plugins:build` and then refresh plugins.",

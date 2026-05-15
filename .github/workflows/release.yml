@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: universal-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            rust_targets: x86_64-pc-windows-msvc
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            rust_targets: x86_64-unknown-linux-gnu
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: |
+            plugins/redis/go.sum
+            plugins/postgresql/go.sum
+            plugins/mongodb/go.sum
+
+      - name: Install Linux system deps
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Build plugins (macOS universal)
+        if: matrix.os == 'macos-latest'
+        run: |
+          for plugin in postgresql mongodb redis; do
+            cd plugins/$plugin
+            GOARCH=amd64 GOOS=darwin go build -o ${plugin}-plugin-amd64 .
+            GOARCH=arm64 GOOS=darwin go build -o ${plugin}-plugin-arm64 .
+            lipo -create -output ${plugin}-plugin ${plugin}-plugin-amd64 ${plugin}-plugin-arm64
+            rm ${plugin}-plugin-amd64 ${plugin}-plugin-arm64
+            cd ../..
+          done
+
+      - name: Build plugins (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          for plugin in postgresql mongodb redis; do
+            cd plugins/$plugin
+            go build -o ${plugin}-plugin.exe .
+            cd ../..
+          done
+
+      - name: Build plugins (Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: sh scripts/build-plugins.sh
+
+      - name: Install frontend deps
+        run: pnpm install
+
+      - name: Generate icons
+        run: pnpm tauri icon src-tauri/icons/icon.png
+
+      - name: Build and publish
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Database Manager ${{ github.ref_name }}'
+          releaseDraft: true
+          prerelease: false
+          args: --target ${{ matrix.target }}
