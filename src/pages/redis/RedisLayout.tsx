@@ -9,6 +9,7 @@ import { getProviderUi, ProviderIcon } from "@/lib/providers";
 import { mutedText, panel, sectionBorder } from "@/lib/styles";
 import type { Connection, RedisKey } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useSessionsStore, type RedisSession } from "@/store/sessions";
 
 const KEY_TYPE_COLORS: Record<string, string> = {
   string: "bg-violet-500/20 text-violet-300",
@@ -271,14 +272,22 @@ export default function RedisLayout() {
   const activeKey = searchParams.get("key") ?? "";
   const view = searchParams.get("view");
 
+  const { sessions, updateSession } = useSessionsStore();
+  const stored = sessions[connectionId] as RedisSession | undefined;
+
   const [connection, setConnection] = useState<Connection | null>(null);
   const [databases, setDatabases] = useState<string[]>([]);
   const [keys, setKeys] = useState<RedisKey[]>([]);
-  const [keySearch, setKeySearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [viewMode, setViewMode] = useState<"list" | "tree">("tree");
+  const [keySearch, setKeySearch] = useState(() => stored?.keySearch ?? "");
+  const [typeFilter, setTypeFilter] = useState(() => stored?.typeFilter ?? "all");
+  const [viewMode, setViewMode] = useState<"list" | "tree">(() => stored?.viewMode ?? "tree");
   const [loadingDbs, setLoadingDbs] = useState(false);
   const [loadingKeys, setLoadingKeys] = useState(false);
+
+  useEffect(() => {
+    if (!connectionId) return;
+    updateSession(connectionId, { keySearch, typeFilter, viewMode });
+  }, [keySearch, typeFilter, viewMode]);
 
   useEffect(() => {
     invoke<Connection[]>("list_connections").then((all) => {

@@ -2,7 +2,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
   CheckCircle2,
-  CirclePower,
   Copy,
   Database,
   Eye,
@@ -11,6 +10,8 @@ import {
   KeyRound,
   List,
   Loader2,
+  ExternalLink,
+  LogOut,
   LogIn,
   Network,
   Pencil,
@@ -21,10 +22,12 @@ import {
   Shield,
   Trash2,
   X,
-  XCircle
+  XCircle,
+  Zap
 } from "lucide-react";
-import { Link } from "react-router";
+import { useNavigate } from "react-router";
 import { useEffect, useMemo, useState } from "react";
+import { useSessionsStore } from "@/store/sessions";
 import { IconButton } from "@/components/icon-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -236,6 +239,25 @@ function ConnectionsView(props: {
   onTest: (connection: Connection) => void;
 }) {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const navigate = useNavigate();
+  const { sessions, addSession, removeSession } = useSessionsStore();
+  const [testResults, setTestResults] = useState<Record<number, { ms: number | null; loading: boolean; ok: boolean }>>({});
+
+  function connectTo(connection: Connection) {
+    addSession(connection);
+    navigate(`/connections/${getProviderViewType(connection.plugin_id)}?id=${connection.id}`);
+  }
+
+  async function testInline(connection: Connection) {
+    setTestResults((prev) => ({ ...prev, [connection.id]: { ms: null, loading: true, ok: false } }));
+    const start = Date.now();
+    try {
+      await invoke("test_connection", { input: connection });
+      setTestResults((prev) => ({ ...prev, [connection.id]: { ms: Date.now() - start, loading: false, ok: true } }));
+    } catch {
+      setTestResults((prev) => ({ ...prev, [connection.id]: { ms: null, loading: false, ok: false } }));
+    }
+  }
 
   return (
     <div className={cn("flex min-w-0 flex-1 flex-col", panel)}>
@@ -292,25 +314,62 @@ function ConnectionsView(props: {
                     </p>
                   </div>
                 </div>
-                <Link to={`/connections/${getProviderViewType(connection.plugin_id)}?id=${connection.id}`} className="mt-5 block">
-                  <Button variant="primary" size="sm" className="w-full shadow-lg shadow-blue-900/20 transition-all hover:shadow-blue-900/40">
-                    <LogIn className="h-4 w-4" />
-                    Conectar
-                  </Button>
-                </Link>
-                <div className="mt-2 flex justify-end gap-1 text-zinc-500">
-                  <Button variant="ghost" size="icon" title="Probar" onClick={() => props.onTest(connection)}>
-                    <CirclePower className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" title="Editar" onClick={() => props.onEdit(connection)}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" title="Duplicar" onClick={() => props.onDuplicate(connection)}>
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" title="Eliminar" onClick={() => props.onDelete(connection.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                {(() => {
+                  const providerColor = getProviderUi(connection.plugin_id, plugin?.manifest).color;
+                  const isOpen = Boolean(sessions[connection.id]);
+                  if (!isOpen) {
+                    return (
+                      <button
+                        onClick={() => connectTo(connection)}
+                        className="mt-5 flex w-full items-center justify-center rounded-md px-3 py-1.5 text-xs font-semibold transition-all"
+                        style={{ color: "#fff", backgroundColor: providerColor, border: `1px solid ${providerColor}`, boxShadow: `0 4px 14px ${providerColor}40` }}
+                      >
+                        Conectar
+                      </button>
+                    );
+                  }
+                  return (
+                    <div className="mt-5 flex gap-2">
+                      <button
+                        onClick={() => connectTo(connection)}
+                        className="flex flex-1 items-center justify-center rounded-md px-3 py-1.5 text-xs font-semibold transition-all"
+                        style={{ color: "#fff", backgroundColor: providerColor, border: `1px solid ${providerColor}`, boxShadow: `0 4px 14px ${providerColor}40` }}
+                      >
+                        Abrir
+                      </button>
+                      <button
+                        onClick={() => removeSession(connection.id)}
+                        className="flex flex-1 items-center justify-center rounded-md px-3 py-1.5 text-xs font-semibold transition-all bg-white text-zinc-900 hover:bg-zinc-100"
+                      >
+                        Cerrar
+                      </button>
+                    </div>
+                  );
+                })()}
+                <div className="mt-2 flex items-center justify-between gap-1">
+                  <div className="flex items-center gap-1.5">
+                    {(() => {
+                      const tr = testResults[connection.id];
+                      if (!tr) return null;
+                      if (tr.loading) return <span className="text-[10px] text-zinc-500">Probando...</span>;
+                      if (tr.ok) return <span className="text-[10px] font-mono text-emerald-400">{tr.ms}ms</span>;
+                      return <span className="text-[10px] text-red-400">Sin conexión</span>;
+                    })()}
+                  </div>
+                  <div className="flex gap-1 text-zinc-500">
+                    <Button variant="ghost" size="icon" title="Probar conexión" onClick={() => testInline(connection)} disabled={testResults[connection.id]?.loading}>
+                      {testResults[connection.id]?.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                    </Button>
+                    <Button variant="ghost" size="icon" title="Editar" onClick={() => props.onEdit(connection)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" title="Duplicar" onClick={() => props.onDuplicate(connection)}>
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" title="Eliminar" onClick={() => props.onDelete(connection.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </article>
             );
@@ -339,14 +398,19 @@ function ConnectionsView(props: {
                 <span className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">{connection.name}</span>
                 <span className="shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset" style={{ color: getProviderUi(connection.plugin_id, plugin?.manifest).color, backgroundColor: `${getProviderUi(connection.plugin_id, plugin?.manifest).color}15`, borderColor: `${getProviderUi(connection.plugin_id, plugin?.manifest).color}30` }}>{plugin?.name ?? connection.plugin_id}</span>
                 <span className={cn("shrink-0 text-xs font-mono w-32 truncate text-right", softText)}>{connection.host}:{connection.port ?? "-"}</span>
-                <div className="flex shrink-0 gap-1 text-zinc-500">
-                  <Link to={`/connections/${getProviderViewType(connection.plugin_id)}?id=${connection.id}`}>
-                    <Button variant="ghost" size="icon" title="Conectar" className="text-blue-400 hover:text-blue-300">
-                      <LogIn className="h-4 w-4" />
-                    </Button>
-                  </Link>
-                  <Button variant="ghost" size="icon" title="Probar" onClick={() => props.onTest(connection)}>
-                    <CirclePower className="h-4 w-4" />
+                <div className="flex shrink-0 items-center gap-1 text-zinc-500">
+                  {(() => {
+                    const tr = testResults[connection.id];
+                    if (!tr) return null;
+                    if (tr.loading) return <span className="text-[10px] text-zinc-500">...</span>;
+                    if (tr.ok) return <span className="text-[10px] font-mono text-emerald-400">{tr.ms}ms</span>;
+                    return <span className="text-[10px] text-red-400">Error</span>;
+                  })()}
+                  <Button variant="ghost" size="icon" title={sessions[connection.id] ? "Abrir" : "Conectar"} className="text-blue-400 hover:text-blue-300" onClick={() => connectTo(connection)}>
+                    {sessions[connection.id] ? <ExternalLink className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
+                  </Button>
+                  <Button variant="ghost" size="icon" title="Probar conexión" onClick={() => testInline(connection)} disabled={testResults[connection.id]?.loading}>
+                    {testResults[connection.id]?.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
                   </Button>
                   <Button variant="ghost" size="icon" title="Editar" onClick={() => props.onEdit(connection)}>
                     <Pencil className="h-4 w-4" />
@@ -654,7 +718,9 @@ function ConnectionDialog(props: {
       <div className="mx-auto flex min-h-full max-w-[940px] items-center justify-center">
         <div className={cn("w-full overflow-hidden rounded-lg shadow-[0_24px_80px_rgba(0,0,0,.72)]", surface)}>
           <header className={cn("flex h-12 items-center border-b px-5", panel, sectionBorder)}>
-            <span className="mr-3 h-2.5 w-2.5 rounded-full" style={{ backgroundColor: provider.color }} />
+            <span className="mr-3 h-4 w-4 shrink-0 overflow-hidden rounded-md border border-white/10 shadow-inner">
+              <ProviderIcon providerId={props.form.plugin_id} className="block h-full w-full object-cover" />
+            </span>
             <Input
               className="h-8 flex-1 border-0 bg-transparent px-0 text-sm font-medium text-zinc-100 placeholder:text-zinc-500 focus:border-0 focus:ring-0"
               placeholder="Ingresa el nombre de tu conexión"
@@ -671,7 +737,7 @@ function ConnectionDialog(props: {
           <div className="grid h-[min(560px,calc(100vh-96px))] min-h-0 grid-cols-[180px_1fr]">
             <aside className={cn("border-r", panel, sectionBorder)}>
               <div className={cn("border-b px-4 py-3 text-[10px] font-medium uppercase tracking-[.08em]", sectionBorder, mutedText)}>
-                Tipo de base de datos
+                Provider
               </div>
               <div className="p-2.5">
                 {props.plugins.map((plugin) => {
@@ -698,17 +764,6 @@ function ConnectionDialog(props: {
                     </button>
                   );
                 })}
-                <div className="my-4 flex items-center gap-3 text-[10px] font-medium uppercase tracking-[.08em] text-zinc-500">
-                  <span className="h-px flex-1 bg-zinc-800" />
-                  Plugins
-                  <span className="h-px flex-1 bg-zinc-800" />
-                </div>
-                <div className="grid gap-2 text-xs text-zinc-500">
-                  <div className="flex items-center gap-2">
-                    <Plug className="h-3.5 w-3.5" />
-                    {props.plugins.length} instalados
-                  </div>
-                </div>
               </div>
             </aside>
 
@@ -801,21 +856,24 @@ function ConnectionDialog(props: {
                 )}
                 <div className="flex w-full items-center gap-3">
                   <Button onClick={handleTest} disabled={props.busy} className="h-9 border-zinc-700/70 bg-[#0a0a0a] text-zinc-300">
-                    {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plug className="h-4 w-4" />}
-                    Probar Conexión
-                  </Button>
-                  <Button onClick={handleValidate} disabled={props.busy} className="h-9 border-zinc-700/70 bg-[#0a0a0a] text-zinc-300">
-                    Validar
+                    {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                    Probar
                   </Button>
                   <div className="flex-1" />
                   <div className="flex gap-2">
                     <Button onClick={() => props.onOpenChange(false)} className="h-9 border-zinc-700/70 bg-[#0a0a0a] text-zinc-300">
                       Cancelar
                     </Button>
-                    <Button variant="primary" onClick={handleSave} disabled={props.busy} className="h-9">
+                    <button
+                      type="button"
+                      onClick={handleSave}
+                      disabled={props.busy}
+                      className="inline-flex h-9 items-center gap-2 rounded-md px-4 text-sm font-semibold text-white transition-all disabled:opacity-50"
+                      style={{ backgroundColor: provider.color, boxShadow: `0 4px 14px ${provider.color}40` }}
+                    >
                       {props.busy && <Loader2 className="h-4 w-4 animate-spin" />}
                       Guardar
-                    </Button>
+                    </button>
                   </div>
                 </div>
               </footer>
@@ -1153,7 +1211,7 @@ function FormSection({ title, description, children }: { title: string; descript
   return (
     <section className="grid gap-3">
       <div>
-        <h3 className="text-[11px] font-semibold uppercase tracking-[.12em] text-zinc-200">{title}</h3>
+        <h3 className="text-[10px] font-semibold uppercase tracking-[.08em] text-zinc-400">{title}</h3>
         {description && <p className={cn("mt-1 max-w-2xl text-xs leading-5", softText)}>{description}</p>}
       </div>
       <div className="grid gap-3">{children}</div>

@@ -7,6 +7,7 @@ import { getProviderUi, parseSettings, ProviderIcon } from "@/lib/providers";
 import { mutedText, panel, sectionBorder } from "@/lib/styles";
 import type { Connection } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useSessionsStore, type SqlSession } from "@/store/sessions";
 
 export default function SqlLayout() {
   const [searchParams] = useSearchParams();
@@ -16,12 +17,20 @@ export default function SqlLayout() {
   const activeTable = searchParams.get("table") ?? "";
   const view = searchParams.get("view");
 
+  const { sessions, updateSession } = useSessionsStore();
+  const stored = sessions[connectionId] as SqlSession | undefined;
+
   const [connection, setConnection] = useState<Connection | null>(null);
   const [databases, setDatabases] = useState<string[]>([]);
-  const [expandedDbs, setExpandedDbs] = useState<Set<string>>(new Set());
-  const [tablesPerDb, setTablesPerDb] = useState<Record<string, string[]>>({});
+  const [expandedDbs, setExpandedDbs] = useState<Set<string>>(() => new Set(stored?.expandedDbs ?? []));
+  const [tablesPerDb, setTablesPerDb] = useState<Record<string, string[]>>(() => stored?.tablesPerDb ?? {});
   const [loadingDbs, setLoadingDbs] = useState(false);
   const [loadingTables, setLoadingTables] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!connectionId) return;
+    updateSession(connectionId, { expandedDbs: [...expandedDbs], tablesPerDb });
+  }, [expandedDbs, tablesPerDb]);
 
   useEffect(() => {
     invoke<Connection[]>("list_connections").then((all) => {

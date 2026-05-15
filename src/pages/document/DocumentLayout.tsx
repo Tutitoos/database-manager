@@ -7,6 +7,7 @@ import { getProviderUi, parseSettings, ProviderIcon } from "@/lib/providers";
 import { mutedText, panel, sectionBorder } from "@/lib/styles";
 import type { Connection } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useSessionsStore, type DocumentSession } from "@/store/sessions";
 
 export default function DocumentLayout() {
   const [searchParams] = useSearchParams();
@@ -16,12 +17,20 @@ export default function DocumentLayout() {
   const activeCollection = searchParams.get("collection") ?? "";
   const view = searchParams.get("view");
 
+  const { sessions, updateSession } = useSessionsStore();
+  const stored = sessions[connectionId] as DocumentSession | undefined;
+
   const [connection, setConnection] = useState<Connection | null>(null);
   const [databases, setDatabases] = useState<string[]>([]);
-  const [expandedDbs, setExpandedDbs] = useState<Set<string>>(new Set());
-  const [collectionsPerDb, setCollectionsPerDb] = useState<Record<string, string[]>>({});
+  const [expandedDbs, setExpandedDbs] = useState<Set<string>>(() => new Set(stored?.expandedDbs ?? []));
+  const [collectionsPerDb, setCollectionsPerDb] = useState<Record<string, string[]>>(() => stored?.collectionsPerDb ?? {});
   const [loadingDbs, setLoadingDbs] = useState(false);
   const [loadingCollections, setLoadingCollections] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!connectionId) return;
+    updateSession(connectionId, { expandedDbs: [...expandedDbs], collectionsPerDb });
+  }, [expandedDbs, collectionsPerDb]);
 
   useEffect(() => {
     invoke<Connection[]>("list_connections").then((all) => {

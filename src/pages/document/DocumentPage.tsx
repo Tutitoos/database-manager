@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Check, ChevronLeft, ChevronRight, FileText, Loader2, Pencil, RefreshCw, Trash2, X } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
+import { useSessionsStore, type DocumentSession } from "@/store/sessions";
 import { mutedText, sectionBorder, surface } from "@/lib/styles";
 import type { Connection, DocumentResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -291,10 +292,17 @@ function DocumentPage() {
   const activeCursor = cursorStack[stackIdx];
   const pageNum = stackIdx + 1;
 
-  const [filterInput, setFilterInput] = useState("");
-  const [appliedFilter, setAppliedFilter] = useState("");
+  const { sessions, updateSession } = useSessionsStore();
+  const storedFilter = (sessions[connectionId] as DocumentSession | undefined)?.appliedFilter ?? "";
+
+  const [filterInput, setFilterInput] = useState(storedFilter);
+  const [appliedFilter, setAppliedFilter] = useState(storedFilter);
   const [filterError, setFilterError] = useState<string | null>(null);
   const [filterFocused, setFilterFocused] = useState(false);
+
+  useEffect(() => {
+    if (connectionId) updateSession(connectionId, { appliedFilter });
+  }, [appliedFilter]);
 
   const fieldSuggestions = useMemo(
     () => extractFieldSuggestions(result?.documents ?? []),

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ChevronLeft, ChevronRight, Loader2, RefreshCw, Table, X, Zap } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
+import { useSessionsStore, type SqlSession } from "@/store/sessions";
 import { mutedText, panel, sectionBorder, surface } from "@/lib/styles";
 import type { Connection, TableResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -93,9 +94,16 @@ function SqlPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [filterInput, setFilterInput] = useState("");
-  const [appliedFilter, setAppliedFilter] = useState("");
+  const { sessions, updateSession } = useSessionsStore();
+  const storedFilter = (sessions[connectionId] as SqlSession | undefined)?.appliedFilter ?? "";
+
+  const [filterInput, setFilterInput] = useState(storedFilter);
+  const [appliedFilter, setAppliedFilter] = useState(storedFilter);
   const [filterFocused, setFilterFocused] = useState(false);
+
+  useEffect(() => {
+    if (connectionId) updateSession(connectionId, { appliedFilter });
+  }, [appliedFilter]);
 
   // Cursor pagination — stack of cursors, undefined = first page
   const [cursorStack, setCursorStack] = useState<(string | undefined)[]>([undefined]);
