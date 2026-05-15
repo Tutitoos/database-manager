@@ -3,8 +3,11 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -46,7 +49,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: "1.22"
           cache-dependency-path: |
             plugins/redis/go.sum
             plugins/postgresql/go.sum
@@ -100,7 +103,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'Database Manager ${{ github.ref_name }}'
+          releaseName: "Database Manager ${{ github.ref_name }}"
           releaseDraft: true
           prerelease: false
           args: --target ${{ matrix.target }}
