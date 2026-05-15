@@ -132,3 +132,38 @@ pub async fn get_db_metrics(
 ) -> Result<Value, String> {
     state.plugins.get_db_metrics(&input, &database).await
 }
+
+#[tauri::command]
+pub async fn explain_query(
+    state: State<'_, AppState>,
+    input: ConnectionInput,
+    database: String,
+    table: String,
+    filter: String,
+    cursor: String,
+    pk_column: String,
+) -> Result<Value, String> {
+    state.plugins.explain_query(&input, &database, &table, &filter, &cursor, &pk_column).await
+}
+
+#[tauri::command]
+pub async fn get_table_indexes(
+    state: State<'_, AppState>,
+    input: ConnectionInput,
+    database: String,
+    table: String,
+) -> Result<Value, String> {
+    state.plugins.get_table_indexes(&input, &database, &table).await
+}
+
+#[tauri::command]
+pub async fn get_distinct_values(
+    state: State<'_, AppState>,
+    input: ConnectionInput,
+    database: String,
+    table: String,
+    column: String,
+    search: String,
+) -> Result<Value, String> {
+    state.plugins.get_distinct_values(&input, &database, &table, &column, &search).await
+}

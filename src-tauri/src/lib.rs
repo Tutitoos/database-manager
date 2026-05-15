@@ -40,7 +40,10 @@ pub fn run() {
             commands::get_documents,
             commands::get_key_value,
             commands::list_redis_keys,
-            commands::get_db_metrics
+            commands::get_db_metrics,
+            commands::explain_query,
+            commands::get_table_indexes,
+            commands::get_distinct_values
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

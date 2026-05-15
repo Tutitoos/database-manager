@@ -493,6 +493,45 @@ impl PluginManager {
         })).await
     }
 
+    pub async fn explain_query(&self, input: &ConnectionInput, database: &str, table: &str, filter: &str, cursor: &str, pk_column: &str) -> Result<Value, String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        process.call("explain_query", json!({
+            "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+            "database": database, "table": table, "where": filter, "cursor": cursor, "pk_column": pk_column
+        })).await
+    }
+
+    pub async fn get_table_indexes(&self, input: &ConnectionInput, database: &str, table: &str) -> Result<Value, String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        process.call("get_table_indexes", json!({
+            "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+            "database": database, "table": table
+        })).await
+    }
+
+    pub async fn get_distinct_values(&self, input: &ConnectionInput, database: &str, table: &str, column: &str, search: &str) -> Result<Value, String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        process.call("get_distinct_values", json!({
+            "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+            "database": database, "table": table, "column": column, "search": search
+        })).await
+    }
+
     fn seed_development_plugins(&self) -> Result<(), String> {
         let app_plugins = Database::app_plugins_dir(&self.app)?;
         let current_dir = std::env::current_dir().map_err(|error| error.to_string())?;

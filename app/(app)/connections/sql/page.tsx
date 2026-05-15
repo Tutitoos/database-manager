@@ -1,7 +1,7 @@
 "use client";
 
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronLeft, ChevronRight, Loader2, RefreshCw, Table, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, RefreshCw, Table, X, Zap } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { mutedText, panel, sectionBorder, surface } from "@/lib/styles";
@@ -10,6 +10,14 @@ import { cn } from "@/lib/utils";
 import { AutocompleteInput, getWordAtPos, type GetSuggestions, type SuggestionItem, type SuggestionResult } from "@/components/autocomplete-input";
 
 const PAGE_SIZE = 100;
+
+type ExplainResult = {
+  planning_ms: number;
+  execution_ms: number;
+  seq_scans: { relation: string; filter?: string }[];
+  plan: unknown[];
+};
+type IndexInfo = { name: string; definition: string; primary: boolean; unique: boolean };
 
 const SQL_VALUE_RE = /(\w+)\s*(?:=|!=|<>|>=|<=|>|<|(?:NOT\s+)?LIKE|(?:NOT\s+)?ILIKE)\s*((?:'[^']*|[\w.]*)?)$/i;
 
@@ -36,7 +44,8 @@ function extractColumnValues(result: { columns: string[]; rows: (string | number
 
 function buildSqlGetSuggestions(
   columnItems: SuggestionItem[],
-  columnValues: Map<string, SuggestionItem[]>
+  columnValues: Map<string, SuggestionItem[]>,
+  dynamicValues: Map<string, SuggestionItem[]>,
 ): GetSuggestions {
   return (value: string, cursorPos: number): SuggestionResult => {
     const before = value.slice(0, cursorPos);
@@ -48,7 +57,8 @@ function buildSqlGetSuggestions(
       const afterCursor = value.slice(cursorPos);
       const endMatch = afterCursor.match(/^[\w'.]+/);
       const replaceEnd = cursorPos + (endMatch ? endMatch[0].length : 0);
-      const known = columnValues.get(col) ?? columnValues.get(col.toLowerCase()) ?? [];
+      const known = dynamicValues.get(col) ?? dynamicValues.get(col.toLowerCase())
+        ?? columnValues.get(col) ?? columnValues.get(col.toLowerCase()) ?? [];
       const items = partial.length === 0
         ? known
         : known.filter((v) => v.label.toLowerCase().startsWith(partial.toLowerCase()) && v.label.toLowerCase() !== partial.toLowerCase());
@@ -75,6 +85,12 @@ function SqlPage() {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [result, setResult] = useState<TableResult | null>(null);
   const [prevQueryMs, setPrevQueryMs] = useState<number | null>(null);
+  const [explainOpen, setExplainOpen] = useState(false);
+  const [explainData, setExplainData] = useState<ExplainResult | null>(null);
+  const [explainLoading, setExplainLoading] = useState(false);
+  const [indexes, setIndexes] = useState<IndexInfo[]>([]);
+  const [dynamicValues, setDynamicValues] = useState<Map<string, SuggestionItem[]>>(new Map());
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -101,9 +117,27 @@ function SqlPage() {
     [result]
   );
 
+  const colMeta = useMemo(() => {
+    const map = new Map<string, { primary: boolean; unique: boolean; indexed: boolean }>();
+    for (const idx of indexes) {
+      const m = /\(([^)]+)\)/.exec(idx.definition);
+      if (!m) continue;
+      const cols = m[1].split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
+      for (const col of cols) {
+        const prev = map.get(col) ?? { primary: false, unique: false, indexed: false };
+        map.set(col, {
+          primary: prev.primary || idx.primary,
+          unique: prev.unique || idx.unique,
+          indexed: true,
+        });
+      }
+    }
+    return map;
+  }, [indexes]);
+
   const getSuggestions = useMemo(
-    () => buildSqlGetSuggestions(columnSuggestions, columnValues),
-    [columnSuggestions, columnValues]
+    () => buildSqlGetSuggestions(columnSuggestions, columnValues, dynamicValues),
+    [columnSuggestions, columnValues, dynamicValues]
   );
 
   useEffect(() => {
@@ -120,7 +154,39 @@ function SqlPage() {
     setError(null);
     setFilterInput("");
     setAppliedFilter("");
+    setDynamicValues(new Map());
+    setExplainOpen(false);
+    setExplainData(null);
+    setIndexes([]);
   }, [db, table]);
+
+  useEffect(() => {
+    if (!connection || !table) return;
+    const match = SQL_VALUE_RE.exec(filterInput);
+    if (!match) return;
+    const col = match[1];
+    let partial = match[2] ?? "";
+    if (partial.startsWith("'")) partial = partial.slice(1);
+    if (partial.length < 1) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const vals = await invoke<string[]>("get_distinct_values", {
+          input: connection, database: db, table, column: col, search: partial,
+        });
+        const items: SuggestionItem[] = vals.map((v) => ({ label: `'${v}'`, hint: "db" }));
+        setDynamicValues((prev) => new Map(prev).set(col, items));
+      } catch { /* silently ignore */ }
+    }, 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [filterInput, connection, db, table]);
+
+  useEffect(() => {
+    if (!connection || !db || !table) return;
+    invoke<IndexInfo[]>("get_table_indexes", { input: connection, database: db, table })
+      .then(setIndexes)
+      .catch(() => setIndexes([]));
+  }, [connection, db, table]);
 
   useEffect(() => {
     if (!connection || !db || !table) return;
@@ -189,6 +255,29 @@ function SqlPage() {
   function retry() {
     setError(null);
     setFetchKey((k) => k + 1);
+  }
+
+  async function runExplain() {
+    if (!connection || !table) return;
+    setExplainLoading(true);
+    setExplainOpen(true);
+    setExplainData(null);
+    try {
+      const [explain, idxs] = await Promise.all([
+        invoke<ExplainResult>("explain_query", {
+          input: connection, database: db, table,
+          filter: appliedFilter, cursor: activeCursor ?? "",
+          pkColumn: result?.pk_column ?? "",
+        }),
+        invoke<IndexInfo[]>("get_table_indexes", { input: connection, database: db, table }),
+      ]);
+      setExplainData(explain);
+      setIndexes(idxs);
+    } catch {
+      setExplainData(null);
+    } finally {
+      setExplainLoading(false);
+    }
   }
 
   function insertColumn(col: string) {
@@ -312,6 +401,22 @@ function SqlPage() {
         )}
         <div className="ml-auto flex items-center gap-1.5">
           {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-500" />}
+          {result && (
+            <button
+              onClick={runExplain}
+              disabled={explainLoading}
+              title="Explain query"
+              className={cn(
+                "flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-medium transition-colors disabled:opacity-40",
+                explainOpen
+                  ? "border-violet-500/40 bg-violet-500/10 text-violet-400"
+                  : "border-zinc-700/60 bg-zinc-800/60 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+              )}
+            >
+              {explainLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
+              Explain
+            </button>
+          )}
           <button
             onClick={retry}
             disabled={loading}
@@ -322,6 +427,73 @@ function SqlPage() {
           </button>
         </div>
       </div>
+
+      {/* ── Explain panel ── */}
+      {explainOpen && (
+        <div className={cn("shrink-0 border-b", sectionBorder)}>
+          <div className="flex items-center justify-between border-b border-zinc-800/50 px-4 py-2">
+            <div className="flex items-center gap-3 text-[10px]">
+              <span className="font-semibold uppercase tracking-wider text-zinc-500">Explain</span>
+              {explainData && (
+                <>
+                  <span className="text-zinc-400">Planning <span className="text-white">{explainData.planning_ms.toFixed(2)}ms</span></span>
+                  <span className="text-zinc-400">Execution <span className={cn("font-medium", explainData.execution_ms > 5000 ? "text-red-400" : explainData.execution_ms > 1000 ? "text-amber-400" : "text-emerald-400")}>{explainData.execution_ms >= 1000 ? `${(explainData.execution_ms / 1000).toFixed(2)}s` : `${explainData.execution_ms.toFixed(2)}ms`}</span></span>
+                </>
+              )}
+              {explainLoading && <Loader2 className="h-3 w-3 animate-spin text-zinc-500" />}
+            </div>
+            <button onClick={() => setExplainOpen(false)} className="text-zinc-600 transition-colors hover:text-zinc-300">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {explainData && (
+            <div className="flex gap-0 divide-x divide-zinc-800/50 overflow-x-auto">
+              {/* Seq scan warnings */}
+              {(explainData.seq_scans ?? []).length > 0 && (
+                <div className="min-w-48 p-3">
+                  <p className="mb-1.5 text-[9px] font-semibold uppercase tracking-wider text-amber-500">⚠ Seq Scan</p>
+                  {(explainData.seq_scans ?? []).map((s, i) => (
+                    <div key={i} className="mb-1 text-[10px]">
+                      <span className="font-mono text-amber-300">{s.relation}</span>
+                      {s.filter && <span className="ml-1 text-zinc-500 truncate block max-w-48">{s.filter}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {(explainData.seq_scans ?? []).length === 0 && (
+                <div className="min-w-36 p-3">
+                  <p className="text-[9px] font-semibold uppercase tracking-wider text-emerald-500">✓ Index scan</p>
+                  <p className="mt-1 text-[10px] text-zinc-500">No seq scans</p>
+                </div>
+              )}
+
+              {/* Indexes */}
+              <div className="min-w-0 flex-1 p-3">
+                <p className="mb-1.5 text-[9px] font-semibold uppercase tracking-wider text-zinc-500">Índices ({indexes.length})</p>
+                {indexes.length === 0 && <p className="text-[10px] text-zinc-600">Ninguno</p>}
+                <div className="flex flex-wrap gap-1.5">
+                  {indexes.map((idx) => (
+                    <span key={idx.name} className="flex items-center gap-1 rounded border border-zinc-800 bg-zinc-900/60 px-2 py-0.5 font-mono text-[9px] text-zinc-400">
+                      {idx.primary && <span className="rounded bg-blue-500/20 px-1 text-[8px] text-blue-400">PK</span>}
+                      {idx.unique && !idx.primary && <span className="rounded bg-purple-500/20 px-1 text-[8px] text-purple-400">UQ</span>}
+                      {idx.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Full plan */}
+              <div className="p-3">
+                <details>
+                  <summary className="cursor-pointer text-[9px] font-semibold uppercase tracking-wider text-zinc-600 hover:text-zinc-400">Plan completo</summary>
+                  <pre className="mt-2 max-h-48 max-w-sm overflow-auto rounded border border-zinc-800 bg-zinc-950 p-2 text-[9px] text-zinc-400">{JSON.stringify(explainData.plan, null, 2)}</pre>
+                </details>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-auto">
         {error && (
@@ -339,18 +511,32 @@ function SqlPage() {
           <table className="w-full border-collapse text-xs">
             <thead className="sticky top-0 z-10">
               <tr>
-                {result.columns.map((col) => (
-                  <th
-                    key={col}
-                    className={cn(
-                      "border-b border-r px-3 py-2 text-left font-medium whitespace-nowrap text-zinc-400",
-                      sectionBorder,
-                      panel
-                    )}
-                  >
-                    {col}
-                  </th>
-                ))}
+                {result.columns.map((col) => {
+                  const meta = colMeta.get(col);
+                  return (
+                    <th
+                      key={col}
+                      className={cn(
+                        "border-b border-r px-3 py-2 text-left font-medium whitespace-nowrap text-zinc-400",
+                        sectionBorder,
+                        panel
+                      )}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        {meta?.primary && (
+                          <span className="rounded px-1 py-px text-[8px] font-bold uppercase tracking-wider bg-blue-950 text-blue-300 border border-blue-800/60">PK</span>
+                        )}
+                        {!meta?.primary && meta?.unique && (
+                          <span className="rounded px-1 py-px text-[8px] font-bold uppercase tracking-wider bg-purple-950 text-purple-300 border border-purple-800/60">UQ</span>
+                        )}
+                        {!meta?.primary && !meta?.unique && meta?.indexed && (
+                          <span className="rounded px-1 py-px text-[8px] font-bold uppercase tracking-wider bg-zinc-800 text-zinc-400 border border-zinc-700/60">IDX</span>
+                        )}
+                        <span>{col}</span>
+                      </div>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>

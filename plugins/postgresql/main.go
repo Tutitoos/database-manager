@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 )
+
+var validIdentRe = regexp.MustCompile(`^\w+$`)
 
 type Request struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -111,6 +114,53 @@ func dispatch(req Request) Response {
 			return fail(req.ID, err)
 		}
 		result, err := getTableData(env.Params, env.Database, env.Table, env.Limit, env.Offset, env.Where, env.Cursor)
+		if err != nil {
+			return fail(req.ID, err)
+		}
+		return ok(req.ID, result)
+	case "explain_query":
+		var env struct {
+			Params   ConnectionParams `json:"params"`
+			Database string           `json:"database"`
+			Table    string           `json:"table"`
+			Where    string           `json:"where"`
+			Cursor   string           `json:"cursor"`
+			PkColumn string           `json:"pk_column"`
+		}
+		if err := json.Unmarshal(req.Params, &env); err != nil {
+			return fail(req.ID, err)
+		}
+		result, err := explainQuery(env.Params, env.Database, env.Table, env.Where, env.Cursor, env.PkColumn)
+		if err != nil {
+			return fail(req.ID, err)
+		}
+		return ok(req.ID, result)
+	case "get_table_indexes":
+		var env struct {
+			Params   ConnectionParams `json:"params"`
+			Database string           `json:"database"`
+			Table    string           `json:"table"`
+		}
+		if err := json.Unmarshal(req.Params, &env); err != nil {
+			return fail(req.ID, err)
+		}
+		result, err := getTableIndexes(env.Params, env.Database, env.Table)
+		if err != nil {
+			return fail(req.ID, err)
+		}
+		return ok(req.ID, result)
+	case "get_distinct_values":
+		var env struct {
+			Params   ConnectionParams `json:"params"`
+			Database string           `json:"database"`
+			Table    string           `json:"table"`
+			Column   string           `json:"column"`
+			Search   string           `json:"search"`
+		}
+		if err := json.Unmarshal(req.Params, &env); err != nil {
+			return fail(req.ID, err)
+		}
+		result, err := getDistinctValues(env.Params, env.Database, env.Table, env.Column, env.Search)
 		if err != nil {
 			return fail(req.ID, err)
 		}
@@ -598,6 +648,214 @@ func decodeRaw(b []byte, oid uint32) any {
 		}
 	}
 	return s
+}
+
+func explainQuery(params ConnectionParams, database, table, where, cursor, pkColumn string) (map[string]any, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	db := database
+	if db == "" {
+		db = params.Database
+	}
+	schema := "public"
+	tableName := table
+	if idx := strings.LastIndex(table, "."); idx >= 0 {
+		schema = table[:idx]
+		tableName = table[idx+1:]
+	}
+	quotedTable := fmt.Sprintf("%s.%s", schema, tableName)
+	useCursor := cursor != "" && pkColumn != ""
+
+	var baseQ string
+	var args []any
+	if useCursor {
+		if where != "" {
+			baseQ = fmt.Sprintf("SELECT * FROM %s WHERE (%s) AND %s > $2 ORDER BY %s LIMIT $1", quotedTable, where, pkColumn, pkColumn)
+		} else {
+			baseQ = fmt.Sprintf("SELECT * FROM %s WHERE %s > $2 ORDER BY %s LIMIT $1", quotedTable, pkColumn, pkColumn)
+		}
+		args = []any{100, cursor}
+	} else {
+		if where != "" {
+			baseQ = fmt.Sprintf("SELECT * FROM %s WHERE %s", quotedTable, where)
+		} else {
+			baseQ = fmt.Sprintf("SELECT * FROM %s", quotedTable)
+		}
+		if pkColumn != "" {
+			baseQ += " ORDER BY " + pkColumn
+		}
+		baseQ += " LIMIT $1 OFFSET $2"
+		args = []any{100, 0}
+	}
+
+	conn, err := connect(ctx, params, db)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close(ctx)
+
+	explainQ := "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + baseQ
+	var planBytes []byte
+	if err := conn.QueryRow(ctx, explainQ, args...).Scan(&planBytes); err != nil {
+		return nil, err
+	}
+
+	var plans []map[string]any
+	if err := json.Unmarshal(planBytes, &plans); err != nil {
+		return nil, err
+	}
+
+	planningMs := extractPlanFloat(plans[0], "Planning Time")
+	executionMs := extractPlanFloat(plans[0], "Execution Time")
+	seqScans := findSeqScans(plans[0]["Plan"])
+	if seqScans == nil {
+		seqScans = []map[string]any{}
+	}
+
+	return map[string]any{
+		"plan":         plans,
+		"planning_ms":  planningMs,
+		"execution_ms": executionMs,
+		"seq_scans":    seqScans,
+	}, nil
+}
+
+func extractPlanFloat(plan map[string]any, key string) float64 {
+	if v, ok := plan[key].(float64); ok {
+		return v
+	}
+	return 0
+}
+
+func findSeqScans(node any) []map[string]any {
+	m, ok := node.(map[string]any)
+	if !ok {
+		return nil
+	}
+	var result []map[string]any
+	if m["Node Type"] == "Seq Scan" {
+		entry := map[string]any{"relation": m["Relation Name"]}
+		if f, ok := m["Filter"]; ok {
+			entry["filter"] = f
+		}
+		result = append(result, entry)
+	}
+	if plans, ok := m["Plans"]; ok {
+		if arr, ok := plans.([]any); ok {
+			for _, p := range arr {
+				result = append(result, findSeqScans(p)...)
+			}
+		}
+	}
+	if plan, ok := m["Plan"]; ok {
+		result = append(result, findSeqScans(plan)...)
+	}
+	return result
+}
+
+func getTableIndexes(params ConnectionParams, database, table string) ([]map[string]any, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	db := database
+	if db == "" {
+		db = params.Database
+	}
+	schema := "public"
+	tableName := table
+	if idx := strings.LastIndex(table, "."); idx >= 0 {
+		schema = table[:idx]
+		tableName = table[idx+1:]
+	}
+
+	conn, err := connect(ctx, params, db)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close(ctx)
+
+	rows, err := conn.Query(ctx, `
+		SELECT i.indexname, i.indexdef,
+		       ix.indisprimary, ix.indisunique
+		FROM pg_indexes i
+		JOIN pg_class c ON c.relname = i.indexname
+		JOIN pg_index ix ON ix.indexrelid = c.oid
+		WHERE i.schemaname = $1 AND i.tablename = $2
+		ORDER BY ix.indisprimary DESC, i.indexname
+	`, schema, tableName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []map[string]any
+	for rows.Next() {
+		var name, def string
+		var primary, unique bool
+		if err := rows.Scan(&name, &def, &primary, &unique); err != nil {
+			continue
+		}
+		result = append(result, map[string]any{
+			"name": name, "definition": def,
+			"primary": primary, "unique": unique,
+		})
+	}
+	if result == nil {
+		result = []map[string]any{}
+	}
+	return result, rows.Err()
+}
+
+func getDistinctValues(params ConnectionParams, database, table, column, search string) ([]string, error) {
+	if !validIdentRe.MatchString(column) {
+		return nil, fmt.Errorf("invalid column name")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	db := database
+	if db == "" {
+		db = params.Database
+	}
+	schema := "public"
+	tableName := table
+	if idx := strings.LastIndex(table, "."); idx >= 0 {
+		schema = table[:idx]
+		tableName = table[idx+1:]
+	}
+	quotedTable := fmt.Sprintf(`%s.%s`, schema, tableName)
+	quotedCol := fmt.Sprintf(`"%s"`, column)
+
+	conn, err := connect(ctx, params, db)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close(ctx)
+
+	q := fmt.Sprintf(
+		`SELECT DISTINCT %s::text FROM %s WHERE %s::text ILIKE $1 ORDER BY %s::text LIMIT 20`,
+		quotedCol, quotedTable, quotedCol, quotedCol,
+	)
+	rows, err := conn.Query(ctx, q, search+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []string
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			continue
+		}
+		result = append(result, v)
+	}
+	if result == nil {
+		result = []string{}
+	}
+	return result, rows.Err()
 }
 
 func failOrOK(id any, err error) Response {

@@ -11,8 +11,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <main className={cn("min-h-screen p-4 text-zinc-100", appBg)}>
-      <section className={cn("mx-auto flex h-[calc(100vh-32px)] max-w-[1320px] overflow-hidden rounded-lg shadow-[0_0_0_1px_rgba(255,255,255,.04)]", surface)}>
+    <main className={cn("flex h-screen text-zinc-100", appBg)}>
+      <section className={cn("flex h-screen w-full overflow-hidden", surface)}>
         <aside className={cn("flex w-14 flex-col items-center border-r", panel, sectionBorder)}>
           <div className="mt-4 grid h-9 w-9 place-items-center rounded-md border border-zinc-700/70 bg-[#101010] text-zinc-100">
             <Boxes className="h-5 w-5" />

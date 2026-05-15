@@ -269,7 +269,7 @@ function ConnectionsView(props: {
       </div>
 
       {viewMode === "grid" && (
-        <div className="grid min-w-0 grid-cols-1 content-start gap-3 overflow-x-hidden overflow-y-auto p-5 lg:grid-cols-2 xl:grid-cols-3">
+        <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 content-start gap-3 overflow-x-hidden overflow-y-auto p-5 lg:grid-cols-2 xl:grid-cols-3">
           {props.connections.length === 0 && (
             <div className={cn("col-span-full flex min-h-64 flex-col items-center justify-center rounded-lg p-8 text-center", surface)}>
               <div className="grid h-10 w-10 place-items-center rounded-md border border-zinc-700/70 bg-[#101010] text-zinc-400">
@@ -322,7 +322,7 @@ function ConnectionsView(props: {
       )}
 
       {viewMode === "list" && (
-        <div className="flex min-w-0 flex-col gap-1 overflow-x-hidden overflow-y-auto p-5">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto p-5">
           {props.connections.length === 0 && (
             <div className={cn("flex min-h-64 flex-col items-center justify-center rounded-lg p-8 text-center", surface)}>
               <div className="grid h-10 w-10 place-items-center rounded-md border border-zinc-700/70 bg-[#101010] text-zinc-400">

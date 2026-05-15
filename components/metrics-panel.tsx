@@ -46,9 +46,9 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub?: s
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-4">
-      <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{title}</p>
-      {children}
+    <div className="flex flex-col rounded-lg border border-zinc-800 bg-zinc-950/60 p-4">
+      <p className="mb-2 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{title}</p>
+      <div className="min-h-0 flex-1">{children}</div>
     </div>
   );
 }
@@ -103,23 +103,17 @@ function PgMetricsView({ latest, series, topTables }: {
   topTables: { schema: string; name: string; size: string; size_bytes: number }[];
 }) {
   return (
-    <div className="space-y-4">
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="flex h-full flex-col gap-3 p-4">
+      <div className="grid shrink-0 grid-cols-4 gap-3">
         <StatCard label="Tamaño DB" value={latest.db_size as string} />
-        <StatCard
-          label="Conexiones"
-          value={String(latest.active_connections)}
-          sub={latest.max_connections ? `de ${latest.max_connections} máx.` : undefined}
-        />
+        <StatCard label="Conexiones" value={String(latest.active_connections)} sub={latest.max_connections ? `de ${latest.max_connections} máx.` : undefined} />
         <StatCard label="Cache hit" value={`${latest.cache_hit_ratio ?? "—"}%`} />
         <StatCard label="Tablas" value={String(latest.table_count ?? "—")} />
       </div>
 
-      {/* Charts row 1 */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="min-h-0 flex-1 grid grid-cols-2 gap-3">
         <ChartCard title="Conexiones activas">
-          <ResponsiveContainer width="100%" height={120}>
+          <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <defs>
                 <linearGradient id="gConn" x1="0" y1="0" x2="0" y2="1">
@@ -137,7 +131,7 @@ function PgMetricsView({ latest, series, topTables }: {
         </ChartCard>
 
         <ChartCard title="Cache hit ratio (%)">
-          <ResponsiveContainer width="100%" height={120}>
+          <ResponsiveContainer width="100%" height="100%">
             <LineChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
               <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#71717a" }} interval="preserveStartEnd" />
@@ -147,12 +141,9 @@ function PgMetricsView({ latest, series, topTables }: {
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
-      </div>
 
-      {/* Charts row 2 */}
-      <div className="grid grid-cols-2 gap-3">
         <ChartCard title="Transacciones / s">
-          <ResponsiveContainer width="100%" height={120}>
+          <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <defs>
                 <linearGradient id="gTps" x1="0" y1="0" x2="0" y2="1">
@@ -170,7 +161,7 @@ function PgMetricsView({ latest, series, topTables }: {
         </ChartCard>
 
         <ChartCard title="Escrituras / s (ins+upd+del)">
-          <ResponsiveContainer width="100%" height={120}>
+          <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <defs>
                 <linearGradient id="gWps" x1="0" y1="0" x2="0" y2="1">
@@ -188,14 +179,13 @@ function PgMetricsView({ latest, series, topTables }: {
         </ChartCard>
       </div>
 
-      {/* Top tables */}
       {topTables.length > 0 && (
-        <div>
+        <div className="shrink-0">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Tablas más grandes</p>
-          <div className="overflow-hidden rounded-lg border border-zinc-800">
+          <div className="min-h-52 max-h-72 overflow-auto rounded-lg border border-zinc-800">
             <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-900/60">
+              <thead className="sticky top-0">
+                <tr className="border-b border-zinc-800 bg-zinc-900/90">
                   <th className="px-3 py-2 text-left font-medium text-zinc-400">Tabla</th>
                   <th className="px-3 py-2 text-right font-medium text-zinc-400">Tamaño</th>
                 </tr>
@@ -203,9 +193,7 @@ function PgMetricsView({ latest, series, topTables }: {
               <tbody>
                 {topTables.map((t, i) => (
                   <tr key={i} className="border-b border-zinc-800/40 hover:bg-zinc-900/40">
-                    <td className="px-3 py-2 font-mono text-zinc-300">
-                      <span className="text-zinc-600">{t.schema}.</span>{t.name}
-                    </td>
+                    <td className="px-3 py-2 font-mono text-zinc-300"><span className="text-zinc-600">{t.schema}.</span>{t.name}</td>
                     <td className="px-3 py-2 text-right font-mono text-blue-300/80">{t.size}</td>
                   </tr>
                 ))}
@@ -276,17 +264,17 @@ function MongoMetricsView({ latest, series, collStats }: {
   collStats: { name: string; count: number }[];
 }) {
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="flex h-full flex-col gap-3 p-4">
+      <div className="grid shrink-0 grid-cols-4 gap-3">
         {latest.data_size_bytes != null && <StatCard label="Datos" value={fmtBytes(latest.data_size_bytes)} />}
         {latest.storage_size_bytes != null && <StatCard label="Almacenamiento" value={fmtBytes(latest.storage_size_bytes)} />}
         <StatCard label="Conexiones" value={String(latest.active_connections)} sub={`${latest.available_connections} disponibles`} />
         <StatCard label="Memoria RSS" value={`${latest.mem_resident_mb} MB`} sub={`${latest.mem_virtual_mb} MB virtual`} />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="min-h-0 flex-1 grid grid-cols-2 gap-3">
         <ChartCard title="Conexiones activas">
-          <ResponsiveContainer width="100%" height={120}>
+          <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <defs>
                 <linearGradient id="gMConn" x1="0" y1="0" x2="0" y2="1">
@@ -304,7 +292,7 @@ function MongoMetricsView({ latest, series, collStats }: {
         </ChartCard>
 
         <ChartCard title="Memoria RSS (MB)">
-          <ResponsiveContainer width="100%" height={120}>
+          <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <defs>
                 <linearGradient id="gMem" x1="0" y1="0" x2="0" y2="1">
@@ -320,11 +308,9 @@ function MongoMetricsView({ latest, series, collStats }: {
             </AreaChart>
           </ResponsiveContainer>
         </ChartCard>
-      </div>
 
-      <div className="grid grid-cols-2 gap-3">
         <ChartCard title="Queries + Escrituras / s">
-          <ResponsiveContainer width="100%" height={120}>
+          <ResponsiveContainer width="100%" height="100%">
             <LineChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
               <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#71717a" }} interval="preserveStartEnd" />
@@ -337,7 +323,7 @@ function MongoMetricsView({ latest, series, collStats }: {
         </ChartCard>
 
         <ChartCard title="Red KB/s">
-          <ResponsiveContainer width="100%" height={120}>
+          <ResponsiveContainer width="100%" height="100%">
             <LineChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
               <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#71717a" }} interval="preserveStartEnd" />
@@ -351,12 +337,12 @@ function MongoMetricsView({ latest, series, collStats }: {
       </div>
 
       {collStats.length > 0 && (
-        <div>
+        <div className="shrink-0">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Colecciones</p>
-          <div className="overflow-hidden rounded-lg border border-zinc-800">
+          <div className="max-h-44 overflow-auto rounded-lg border border-zinc-800">
             <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-900/60">
+              <thead className="sticky top-0">
+                <tr className="border-b border-zinc-800 bg-zinc-900/90">
                   <th className="px-3 py-2 text-left font-medium text-zinc-400">Colección</th>
                   <th className="px-3 py-2 text-right font-medium text-zinc-400">Documentos (~)</th>
                 </tr>
@@ -436,8 +422,8 @@ function RedisMetricsView({ latest, series }: { latest: RedisSnap; series: Redis
     : `${Math.floor(latest.uptime_seconds / 3600)}h ${Math.floor((latest.uptime_seconds % 3600) / 60)}m`;
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="flex h-full flex-col gap-3 p-4">
+      <div className="grid shrink-0 grid-cols-4 gap-3">
         <StatCard
           label="Redis"
           value={`v${latest.redis_version}`}
@@ -456,9 +442,9 @@ function RedisMetricsView({ latest, series }: { latest: RedisSnap; series: Redis
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="min-h-0 flex-1 grid grid-cols-2 gap-3">
         <ChartCard title="Memoria usada (MB)">
-          <ResponsiveContainer width="100%" height={120}>
+          <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <defs>
                 <linearGradient id="gRMem" x1="0" y1="0" x2="0" y2="1">
@@ -476,7 +462,7 @@ function RedisMetricsView({ latest, series }: { latest: RedisSnap; series: Redis
         </ChartCard>
 
         <ChartCard title="Conexiones activas">
-          <ResponsiveContainer width="100%" height={120}>
+          <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <defs>
                 <linearGradient id="gRConn" x1="0" y1="0" x2="0" y2="1">
@@ -492,11 +478,9 @@ function RedisMetricsView({ latest, series }: { latest: RedisSnap; series: Redis
             </AreaChart>
           </ResponsiveContainer>
         </ChartCard>
-      </div>
 
-      <div className="grid grid-cols-2 gap-3">
         <ChartCard title="Comandos / s">
-          <ResponsiveContainer width="100%" height={120}>
+          <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <defs>
                 <linearGradient id="gRCmds" x1="0" y1="0" x2="0" y2="1">
@@ -514,7 +498,7 @@ function RedisMetricsView({ latest, series }: { latest: RedisSnap; series: Redis
         </ChartCard>
 
         <ChartCard title="Keyspace hit rate (%)">
-          <ResponsiveContainer width="100%" height={120}>
+          <ResponsiveContainer width="100%" height="100%">
             <LineChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
               <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#71717a" }} interval="preserveStartEnd" />
@@ -575,8 +559,8 @@ export function MetricsPanel({ connection, database }: { connection: Connection;
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-4">
-        {error && <p className="text-xs text-red-400">{error}</p>}
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {error && <p className="p-4 text-xs text-red-400">{error}</p>}
         {loading && (
           <div className={cn("flex h-full items-center justify-center text-xs", mutedText)}>
             Cargando métricas...
