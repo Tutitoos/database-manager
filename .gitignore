@@ -8,3 +8,4 @@ src-tauri/target
 .DS_Store
 plugins/*/*-plugin
 plugins/*/*.exe
+tsconfig.tsbuildinfo
