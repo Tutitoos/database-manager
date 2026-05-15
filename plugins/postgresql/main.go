@@ -407,8 +407,8 @@ func getTableData(params ConnectionParams, database, table string, limit, offset
 		if where == "" {
 			var estimated int64
 			if err := conn.QueryRow(ctx,
-				"SELECT reltuples::bigint FROM pg_class WHERE relname = $1",
-				tableName,
+				"SELECT c.reltuples::bigint FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = $1 AND c.relname = $2",
+				schema, tableName,
 			).Scan(&estimated); err == nil && estimated > 0 {
 				total = estimated
 				isEstimated = true

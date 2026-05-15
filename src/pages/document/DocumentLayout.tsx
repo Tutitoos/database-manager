@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowLeft, BarChart2, ChevronDown, ChevronRight, Database, FileText, Loader2 } from "lucide-react";
+import { ArrowLeft, BarChart2, ChevronDown, ChevronRight, Database, FileText, Loader2, Search, X } from "lucide-react";
 import { Link, Outlet, useNavigate, useSearchParams } from "react-router";
 import { useCallback, useEffect, useState } from "react";
 import { MetricsPanel } from "@/components/metrics-panel";
@@ -8,6 +8,7 @@ import { mutedText, panel, sectionBorder } from "@/lib/styles";
 import type { Connection } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useSessionsStore, type DocumentSession } from "@/store/sessions";
+import { Select } from "@/components/ui/select";
 
 export default function DocumentLayout() {
   const [searchParams] = useSearchParams();
@@ -26,11 +27,12 @@ export default function DocumentLayout() {
   const [collectionsPerDb, setCollectionsPerDb] = useState<Record<string, string[]>>(() => stored?.collectionsPerDb ?? {});
   const [loadingDbs, setLoadingDbs] = useState(false);
   const [loadingCollections, setLoadingCollections] = useState<Record<string, boolean>>({});
+  const [collectionSearch, setCollectionSearch] = useState(() => stored?.collectionSearch ?? "");
 
   useEffect(() => {
     if (!connectionId) return;
-    updateSession(connectionId, { expandedDbs: [...expandedDbs], collectionsPerDb });
-  }, [expandedDbs, collectionsPerDb]);
+    updateSession(connectionId, { expandedDbs: [...expandedDbs], collectionsPerDb, collectionSearch, activeDb, activeCollection, activeView: view ?? "" });
+  }, [expandedDbs, collectionsPerDb, collectionSearch, activeDb, activeCollection, view, connectionId]);
 
   useEffect(() => {
     invoke<Connection[]>("list_connections").then((all) => {
@@ -45,7 +47,11 @@ export default function DocumentLayout() {
       .then((all) => {
         const settings = parseSettings(connection.settings_json);
         const selected = Array.isArray(settings.selectedDatabases) ? (settings.selectedDatabases as string[]) : [];
-        setDatabases(selected.length > 0 ? all.filter((db) => selected.includes(db)) : all);
+        const dbs = selected.length > 0 ? all.filter((db) => selected.includes(db)) : all;
+        setDatabases(dbs);
+        if (!activeDb && dbs.length > 0) {
+          navigate(`/connections/document?id=${connectionId}&db=${encodeURIComponent(dbs[0])}`, { replace: true });
+        }
       })
       .catch(() => setDatabases([]))
       .finally(() => setLoadingDbs(false));
@@ -63,6 +69,13 @@ export default function DocumentLayout() {
       setLoadingCollections((prev) => ({ ...prev, [db]: false }));
     }
   }, [connection, collectionsPerDb]);
+
+  useEffect(() => {
+    if (activeDb && expandedDbs.has(activeDb)) {
+      loadCollections(activeDb);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDb]);
 
   function toggleDb(db: string) {
     setExpandedDbs((prev) => {
@@ -87,6 +100,11 @@ export default function DocumentLayout() {
 
   const provider = connection ? getProviderUi(connection.plugin_id) : null;
   const metricsDb = activeDb || databases[0] || connection?.database || "";
+
+  if (connectionId && !sessions[connectionId]) {
+    navigate("/connections", { replace: true });
+    return null;
+  }
 
   return (
     <div className={cn("flex min-w-0 flex-1 flex-col", panel)}>
@@ -130,9 +148,25 @@ export default function DocumentLayout() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <aside className={cn("flex w-48 shrink-0 flex-col border-r", panel, sectionBorder)}>
-          <div className={cn("border-b px-3 py-2 text-xs font-semibold uppercase tracking-[.14em]", sectionBorder, mutedText)}>
+        {view !== "metrics" && <aside className="flex w-64 shrink-0 flex-col border-r border-white/5 bg-zinc-950/50">
+          <div className="border-b border-white/5 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[.14em] text-zinc-500 bg-white/[0.01]">
             Bases de datos
+          </div>
+          <div className="border-b border-white/5 bg-zinc-950/20 px-3 py-2">
+            <div className="flex items-center gap-2 rounded-lg border border-white/5 bg-black/40 px-2.5 py-1.5 transition-colors focus-within:border-white/20 focus-within:ring-1 focus-within:ring-white/10 shadow-inner">
+              <Search className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+              <input
+                value={collectionSearch}
+                onChange={(e) => setCollectionSearch(e.target.value)}
+                placeholder="Buscar colecciones..."
+                className="min-w-0 flex-1 bg-transparent text-xs text-zinc-200 placeholder-zinc-600 outline-none"
+              />
+              {collectionSearch && (
+                <button onClick={() => setCollectionSearch("")} className="shrink-0 text-zinc-600 transition-colors hover:text-zinc-400">
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto py-1">
             {loadingDbs && (
@@ -143,23 +177,26 @@ export default function DocumentLayout() {
             )}
             {databases.map((db) => {
               const expanded = expandedDbs.has(db);
-              const collections = collectionsPerDb[db] ?? [];
+              const allCollections = collectionsPerDb[db] ?? [];
+              const collections = collectionSearch
+                ? allCollections.filter((c) => c.toLowerCase().includes(collectionSearch.toLowerCase()))
+                : allCollections;
               const loading = loadingCollections[db];
               return (
                 <div key={db}>
                   <button
                     onClick={() => toggleDb(db)}
                     className={cn(
-                      "flex w-full items-center gap-2 px-2 py-1 text-left text-xs transition-colors hover:bg-zinc-900",
+                      "flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-all hover:bg-white/5",
                       activeDb === db && !activeCollection ? "text-white" : "text-zinc-400"
                     )}
                   >
-                    {expanded ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
-                    <Database className="h-3 w-3 shrink-0 text-zinc-500" />
-                    <span className="truncate">{db}</span>
+                    {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-600" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />}
+                    <Database className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+                    <span className="truncate font-medium">{db}</span>
                   </button>
                   {expanded && (
-                    <div className="pl-6">
+                    <div>
                       {loading && (
                         <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-600">
                           <Loader2 className="h-3 w-3 animate-spin" />
@@ -171,19 +208,22 @@ export default function DocumentLayout() {
                           key={col}
                           onClick={() => selectCollection(db, col)}
                           className={cn(
-                            "flex w-full items-center gap-2 border-l-2 px-2 py-1 text-left text-xs transition-colors",
+                            "flex w-full items-center gap-2 border-l-2 py-1.5 pr-3 text-left text-xs transition-all",
                             activeDb === db && activeCollection === col
-                              ? "bg-zinc-900/60 text-white"
-                              : "border-transparent text-zinc-500 hover:bg-zinc-900/50 hover:text-zinc-300"
+                              ? "bg-blue-500/10 text-blue-400 border-blue-500/30 shadow-inner"
+                              : "border-transparent text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
                           )}
-                          style={activeDb === db && activeCollection === col ? { borderColor: provider?.color } : undefined}
+                          style={{
+                            paddingLeft: 24,
+                            ...(activeDb === db && activeCollection === col ? { borderColor: provider?.color } : {})
+                          }}
                         >
-                          <FileText className="h-3 w-3 shrink-0 text-zinc-600" />
-                          <span className="truncate text-sm">{col}</span>
+                          <FileText className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+                          <span className="truncate font-mono">{col}</span>
                         </button>
                       ))}
                       {!loading && collections.length === 0 && (
-                        <p className="px-3 py-1.5 text-xs text-zinc-600">Sin colecciones</p>
+                        <p className="px-6 py-1.5 text-xs text-zinc-600">Sin colecciones</p>
                       )}
                     </div>
                   )}
@@ -194,7 +234,26 @@ export default function DocumentLayout() {
               <div className={cn("px-4 py-4 text-xs", mutedText)}>No hay bases de datos disponibles.</div>
             )}
           </div>
-        </aside>
+          <div className="shrink-0 border-t border-white/5 px-3 py-2">
+            {loadingDbs ? (
+              <div className="flex items-center gap-2 text-xs text-zinc-500">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>Cargando DBs...</span>
+              </div>
+            ) : (
+              <Select
+                value={activeDb}
+                onChange={(val) => {
+                  setExpandedDbs((prev) => { const next = new Set(prev); next.add(val); return next; });
+                  navigate(`/connections/document?id=${connectionId}&db=${encodeURIComponent(val)}`);
+                }}
+                options={databases.map((db) => ({ value: db, label: db }))}
+                className="text-[11px] h-8 w-full"
+                upward
+              />
+            )}
+          </div>
+        </aside>}
 
         <div className="flex min-w-0 flex-1 flex-col">
           <main className={view === "metrics" ? "min-h-0 flex-1 overflow-hidden" : "min-h-0 flex-1 overflow-auto"}>

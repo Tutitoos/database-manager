@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { MessageSquare, Plus, Send, Radio } from "lucide-react";
@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { mutedText, panel, sectionBorder, surface } from "@/lib/styles";
 import { JsonTree } from "@/components/json-tree";
+import { useSessionsStore, type RedisSession } from "@/store/sessions";
 import type { Connection } from "@/lib/types";
 
 interface Message {
@@ -17,12 +18,29 @@ interface Message {
 }
 
 export default function RedisPubSubPage({ connection }: { connection: Connection }) {
-  const [channels, setChannels] = useState<string[]>([]);
-  const [activeChannel, setActiveChannel] = useState<string | null>(null);
+  const { sessions, updateSession } = useSessionsStore();
+  const stored = sessions[connection.id] as RedisSession | undefined;
+
+  const [channels, setChannels] = useState<string[]>(() => stored?.pubsubChannels ?? []);
+  const [activeChannel, setActiveChannel] = useState<string | null>(() => stored?.pubsubActiveChannel ?? null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newChannel, setNewChannel] = useState("");
   const [draftMessage, setDraftMessage] = useState("");
+  const restoredRef = useRef(false);
 
+  // Sync channels + activeChannel back to store
+  useEffect(() => {
+    updateSession(connection.id, { pubsubChannels: channels, pubsubActiveChannel: activeChannel });
+  }, [channels, activeChannel]);
+
+  // Re-subscribe to persisted channels on first mount
+  useEffect(() => {
+    if (restoredRef.current || channels.length === 0) return;
+    restoredRef.current = true;
+    for (const ch of channels) {
+      invoke("redis_subscribe", { input: connection, channel: ch }).catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,50 +77,40 @@ export default function RedisPubSubPage({ connection }: { connection: Connection
     if (!newChannel.trim()) return;
     const ch = newChannel.trim();
     if (!channels.includes(ch)) {
-      setChannels([...channels, ch]);
+      setChannels((prev) => [...prev, ch]);
     }
     setActiveChannel(ch);
     setNewChannel("");
-    
+
     try {
-      await invoke("redis_subscribe", {
-        input: connection,
-        channel: ch,
-      });
+      await invoke("redis_subscribe", { input: connection, channel: ch });
     } catch (err) {
-      console.error("Failed to subscribe:", err);
+      void err;
     }
   }
 
   async function unsubscribe(channel: string) {
     setChannels((prev) => prev.filter((c) => c !== channel));
     if (activeChannel === channel) setActiveChannel(null);
-    
+
     try {
-      await invoke("redis_unsubscribe", {
-        input: connection,
-        channel: channel,
-      });
+      await invoke("redis_unsubscribe", { input: connection, channel });
     } catch (err) {
-      console.error("Failed to unsubscribe:", err);
+      void err;
     }
   }
 
   async function publish(e: React.FormEvent) {
     e.preventDefault();
     if (!activeChannel || !draftMessage.trim()) return;
-    
+
     const msgText = draftMessage.trim();
     setDraftMessage("");
-    
+
     try {
-      await invoke("redis_publish", {
-        input: connection,
-        channel: activeChannel,
-        payload: msgText,
-      });
+      await invoke("redis_publish", { input: connection, channel: activeChannel, payload: msgText });
     } catch (err) {
-      console.error("Failed to publish:", err);
+      void err;
     }
   }
 
@@ -188,7 +196,7 @@ export default function RedisPubSubPage({ connection }: { connection: Connection
                 {activeMessages.length} mensajes
               </div>
             </div>
-            
+
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {activeMessages.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center text-center">

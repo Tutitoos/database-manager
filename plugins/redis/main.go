@@ -457,6 +457,10 @@ func getMetrics(params ConnectionParams) (map[string]any, error) {
 		// Replication
 		"role":            raw["role"],
 		"connected_slaves": parseInt("connected_slaves"),
+		// Pub/Sub
+		"pubsub_channels":      parseInt("pubsub_channels"),
+		"pubsub_patterns":      parseInt("pubsub_patterns"),
+		"pubsub_shardchannels": parseInt("pubsub_shardchannels"),
 	}
 
 	// Keyspace: db0:keys=X,expires=Y → total keys

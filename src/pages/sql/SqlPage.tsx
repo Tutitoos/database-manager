@@ -95,15 +95,19 @@ function SqlPage() {
   const [error, setError] = useState<string | null>(null);
 
   const { sessions, updateSession } = useSessionsStore();
-  const storedFilter = (sessions[connectionId] as SqlSession | undefined)?.appliedFilter ?? "";
+  const tableKey = `${db}.${table}`;
+  const storedFilter = (sessions[connectionId] as SqlSession | undefined)?.tableFilters?.[tableKey] ?? "";
 
   const [filterInput, setFilterInput] = useState(storedFilter);
   const [appliedFilter, setAppliedFilter] = useState(storedFilter);
   const [filterFocused, setFilterFocused] = useState(false);
 
   useEffect(() => {
-    if (connectionId) updateSession(connectionId, { appliedFilter });
-  }, [appliedFilter]);
+    if (connectionId && db && table) {
+      const current = (useSessionsStore.getState().sessions[connectionId] as SqlSession | undefined)?.tableFilters ?? {};
+      updateSession(connectionId, { tableFilters: { ...current, [tableKey]: appliedFilter } });
+    }
+  }, [appliedFilter, connectionId]);
 
   // Cursor pagination — stack of cursors, undefined = first page
   const [cursorStack, setCursorStack] = useState<(string | undefined)[]>([undefined]);
@@ -154,13 +158,14 @@ function SqlPage() {
   }, [connectionId]);
 
   useEffect(() => {
+    const stored = (useSessionsStore.getState().sessions[connectionId] as SqlSession | undefined)?.tableFilters?.[`${db}.${table}`] ?? "";
     setCursorStack([undefined]);
     setStackIdx(0);
     setResult(null);
     setPrevQueryMs(null);
     setError(null);
-    setFilterInput("");
-    setAppliedFilter("");
+    setFilterInput(stored);
+    setAppliedFilter(stored);
     setDynamicValues(new Map());
     setExplainOpen(false);
     setExplainData(null);
@@ -296,12 +301,13 @@ function SqlPage() {
 
   if (!db || !table) {
     return (
-      <div className="flex h-full flex-col items-center justify-center p-8 text-center">
-        <div className="grid h-12 w-12 place-items-center rounded-md border border-zinc-700/70 bg-[#101010] text-zinc-400">
-          <Table className="h-6 w-6" />
+      <div className="flex h-full flex-col items-center justify-center p-8 text-center bg-black/20 relative overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(59,130,246,0.05)_0%,transparent_70%)]" />
+        <div className="grid h-16 w-16 place-items-center rounded-2xl border border-white/5 bg-zinc-900/50 text-zinc-400 shadow-2xl backdrop-blur-sm relative">
+          <Table className="h-8 w-8 text-blue-400/50" />
         </div>
-        <h2 className="mt-4 text-sm font-medium text-white">Selecciona una tabla</h2>
-        <p className={cn("mt-1 max-w-xs text-xs", mutedText)}>
+        <h2 className="mt-6 text-base font-medium text-white relative">Selecciona una tabla</h2>
+        <p className="mt-2 max-w-sm text-sm text-zinc-500 relative">
           Expande una base de datos en el panel izquierdo y haz clic en una tabla para ver sus datos.
         </p>
       </div>
@@ -390,8 +396,8 @@ function SqlPage() {
         <span className="text-xs text-zinc-700">/</span>
         <span className="text-xs font-medium text-zinc-200">{table}</span>
         {result && (
-          <span className="ml-1 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">
-            {result.is_estimated ? "~" : ""}{result.total.toLocaleString()} filas
+          <span className="ml-2 rounded-md bg-indigo-500/15 border border-indigo-500/30 px-2 py-0.5 text-[10px] font-bold text-indigo-400 shadow-sm shadow-indigo-900/20">
+            Cargadas: {result.rows.length} | Total: {result.is_estimated ? "~" : ""}{result.total.toLocaleString()}
           </span>
         )}
         {result?.query_ms != null && !loading && (

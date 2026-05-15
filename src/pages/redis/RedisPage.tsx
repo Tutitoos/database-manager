@@ -224,13 +224,14 @@ function RedisPage() {
 
   if (!key) {
     return (
-      <div className="flex h-full flex-col items-center justify-center p-8 text-center">
-        <div className="grid h-10 w-10 place-items-center rounded-md border border-zinc-700/70 bg-[#101010] text-zinc-400">
-          <Key className="h-5 w-5" />
+      <div className="flex h-full flex-col items-center justify-center p-8 text-center bg-black/20 relative overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(59,130,246,0.05)_0%,transparent_70%)]" />
+        <div className="grid h-16 w-16 place-items-center rounded-2xl border border-white/5 bg-zinc-900/50 text-zinc-400 shadow-2xl backdrop-blur-sm relative">
+          <Key className="h-8 w-8 text-blue-400/50" />
         </div>
-        <h2 className="mt-4 text-sm font-medium text-white">Selecciona una clave</h2>
-        <p className={cn("mt-1 max-w-xs text-xs", mutedText)}>
-          Selecciona una clave del panel izquierdo para ver su valor.
+        <h2 className="mt-6 text-base font-medium text-white relative">Selecciona una clave</h2>
+        <p className="mt-2 max-w-sm text-sm text-zinc-500 relative">
+          Selecciona una clave del panel izquierdo para explorar su contenido, tipo y tiempo de vida.
         </p>
       </div>
     );
@@ -240,28 +241,25 @@ function RedisPage() {
     <div className="flex h-full flex-col">
       {/* ── Filter area ── */}
       {showFilter && (
-        <div className={cn("shrink-0 border-b", sectionBorder)}>
-          <div className="flex items-center gap-2 px-3 py-2">
-            <div className={cn(
-              "flex min-w-0 flex-1 items-center gap-2 rounded-lg border bg-zinc-950/60 px-2.5 py-1.5 transition-colors",
-              filterFocused ? "border-zinc-600" : "border-zinc-800/80"
-            )}>
+        <div className="shrink-0 border-b border-white/5 bg-zinc-950/40 backdrop-blur-md">
+          <div className="flex items-center gap-2 px-4 py-2.5">
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/5 bg-black/40 px-3 py-1.5 transition-all shadow-inner focus-within:border-white/20 focus-within:ring-1 focus-within:ring-white/10">
               <AutocompleteInput
                 value={fieldFilter}
                 onChange={setFieldFilter}
                 suggestions={filterSuggestions}
                 placeholder={filterPlaceholder}
-                className="min-w-0 flex-1 bg-transparent text-xs text-zinc-300 placeholder-zinc-700 outline-none"
+                className="min-w-0 flex-1 bg-transparent text-sm text-zinc-200 placeholder-zinc-600 outline-none"
                 onFocusChange={setFilterFocused}
               />
               {fieldFilter && (
                 <button onClick={() => setFieldFilter("")} className="shrink-0 text-zinc-600 transition-colors hover:text-zinc-400">
-                  <X className="h-3 w-3" />
+                  <X className="h-4 w-4" />
                 </button>
               )}
             </div>
             {q && data && (
-              <span className="shrink-0 rounded-full border border-zinc-700 bg-zinc-800/60 px-2.5 py-1 text-[10px] text-zinc-500">
+              <span className="shrink-0 rounded-full border border-white/5 bg-blue-500/10 text-blue-400 px-3 py-1 text-[11px] font-medium shadow-inner">
                 <FilterCount data={data} q={q} /> resultados
               </span>
             )}
@@ -270,34 +268,35 @@ function RedisPage() {
       )}
 
       {/* ── Key header ── */}
-      <div className={cn("flex h-10 shrink-0 items-center gap-2 border-b px-4", sectionBorder)}>
-        <span className="truncate font-mono text-xs font-medium text-zinc-200">{key}</span>
+      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-white/5 bg-zinc-950/40 px-5 backdrop-blur-md">
+        <span className="truncate font-mono text-sm font-medium text-zinc-100">{key}</span>
         {data && (
           <>
-            <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase", TYPE_COLORS[data.key_type] ?? "bg-zinc-800 text-zinc-400")}>
+            <span className={cn("shrink-0 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", TYPE_COLORS[data.key_type] ?? "bg-zinc-800 text-zinc-400")}>
               {data.key_type}
             </span>
-            <span className="shrink-0 text-[10px] text-zinc-600">
+            <span className="shrink-0 rounded-full border border-white/5 bg-black/40 px-2.5 py-0.5 text-[11px] text-zinc-400 shadow-inner">
               TTL: {displayTtl !== null ? (displayTtl < 0 ? "∞" : `${displayTtl}s`) : (data.ttl < 0 ? "∞" : `${data.ttl}s`)}
             </span>
           </>
         )}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex items-center gap-2">
           {data && (
             <button
               onClick={copyValue}
               title="Copiar valor"
-              className="flex items-center gap-1 rounded px-1.5 py-1 text-zinc-600 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+              className="flex items-center gap-1.5 rounded-md border border-white/5 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200 shadow-inner"
             >
               {copied ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+              <span className="hidden sm:inline">{copied ? "Copiado" : "Copiar"}</span>
             </button>
           )}
-          {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-500" />}
+          {loading && <Loader2 className="h-4 w-4 animate-spin text-blue-400" />}
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-4">
-        {error && <div className="text-xs text-red-400">{error}</div>}
+      <div className="min-h-0 flex-1 overflow-auto p-5 bg-black/20">
+        {error && <div className="text-xs text-red-400 mb-4 bg-red-500/10 border border-red-500/20 rounded p-3">{error}</div>}
         {data && <KeyValueDisplay data={data} q={q} />}
       </div>
     </div>
@@ -329,9 +328,9 @@ function FilterCount({ data, q }: { data: KeyValue; q: string }) {
 }
 
 function KeyValueDisplay({ data, q }: { data: KeyValue; q: string }) {
-  const thClass = "border-b border-r border-zinc-800 bg-zinc-900/60 px-3 py-2 text-left text-[10px] font-medium text-zinc-500";
-  const trClass = "border-b border-zinc-800/40 transition-colors hover:bg-zinc-900/40";
-  const tdKey = "border-r border-zinc-800/50 px-3 py-2 font-mono text-xs text-zinc-400 align-top";
+  const thClass = "border-b border-r border-white/5 bg-white/[0.03] px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-zinc-500";
+  const trClass = "border-b border-white/5 transition-colors hover:bg-white/[0.02]";
+  const tdKey = "border-r border-white/5 px-4 py-2.5 font-mono text-xs text-zinc-200 align-top bg-white/[0.01]";
 
   switch (data.key_type) {
     case "string": {
@@ -346,22 +345,24 @@ function KeyValueDisplay({ data, q }: { data: KeyValue; q: string }) {
       const items = data.value as string[];
       const filtered = q ? items.filter((v) => v.toLowerCase().includes(q)) : items;
       return (
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr>
-              <th className={cn(thClass, "w-16")}>Index</th>
-              <th className={cn(thClass, "border-r-0")}>Value</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((item) => (
-              <tr key={items.indexOf(item)} className={trClass}>
-                <td className={cn(tdKey, "text-zinc-500 text-right")}>{items.indexOf(item)}</td>
-                <td className="px-3 py-2"><SmartCell val={item} /></td>
+        <div className="overflow-hidden rounded-lg border border-white/5 bg-zinc-950/20 shadow-inner">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr>
+                <th className={cn(thClass, "w-16")}>Index</th>
+                <th className={cn(thClass, "border-r-0")}>Value</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filtered.map((item) => (
+                <tr key={items.indexOf(item)} className={trClass}>
+                  <td className={cn(tdKey, "text-zinc-500 text-right")}>{items.indexOf(item)}</td>
+                  <td className="px-4 py-2.5"><SmartCell val={item} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       );
     }
 
@@ -372,22 +373,24 @@ function KeyValueDisplay({ data, q }: { data: KeyValue; q: string }) {
         ? entries.filter(([f, v]) => f.toLowerCase().includes(q) || v.toLowerCase().includes(q))
         : entries;
       return (
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr>
-              <th className={cn(thClass, "w-40")}>Field</th>
-              <th className={cn(thClass, "border-r-0")}>Value</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(([field, val]) => (
-              <tr key={field} className={trClass}>
-                <td className={tdKey}>{field}</td>
-                <td className="px-3 py-2"><SmartCell val={val} /></td>
+        <div className="overflow-hidden rounded-lg border border-white/5 bg-zinc-950/20 shadow-inner">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr>
+                <th className={cn(thClass, "w-40")}>Field</th>
+                <th className={cn(thClass, "border-r-0")}>Value</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filtered.map(([field, val]) => (
+                <tr key={field} className={trClass}>
+                  <td className={tdKey}>{field}</td>
+                  <td className="px-4 py-2.5"><SmartCell val={val} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       );
     }
 
@@ -409,22 +412,24 @@ function KeyValueDisplay({ data, q }: { data: KeyValue; q: string }) {
         ? pairs.filter((p) => p.member.toLowerCase().includes(q) || String(p.score).includes(q))
         : pairs;
       return (
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr>
-              <th className={cn(thClass, "w-24")}>Score</th>
-              <th className={cn(thClass, "border-r-0")}>Member</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((p, i) => (
-              <tr key={i} className={trClass}>
-                <td className={cn(tdKey, "text-blue-300/80")}>{p.score}</td>
-                <td className="px-3 py-2"><SmartCell val={p.member} /></td>
+        <div className="overflow-hidden rounded-lg border border-white/5 bg-zinc-950/20 shadow-inner">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr>
+                <th className={cn(thClass, "w-24")}>Score</th>
+                <th className={cn(thClass, "border-r-0")}>Member</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filtered.map((p, i) => (
+                <tr key={i} className={trClass}>
+                  <td className={cn(tdKey, "text-blue-300/80")}>{p.score}</td>
+                  <td className="px-4 py-2.5"><SmartCell val={p.member} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       );
     }
 

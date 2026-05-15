@@ -4,14 +4,8 @@ import { IconButton } from "@/components/icon-button";
 import { ProviderIcon } from "@/lib/providers";
 import { appBg, panel, sectionBorder, surface } from "@/lib/styles";
 import { cn } from "@/lib/utils";
-import { useSessionsStore, type Session } from "@/store/sessions";
+import { useSessionsStore, sessionRoute, type Session } from "@/store/sessions";
 
-function sessionRoute(session: Session): string {
-  const id = session.connection.id;
-  if (session.type === "document") return `/connections/document?id=${id}`;
-  if (session.type === "redis") return `/connections/redis?id=${id}`;
-  return `/connections/sql?id=${id}`;
-}
 
 function SessionItem({ session, active, onClose }: { session: Session; active: boolean; onClose: () => void }) {
   const navigate = useNavigate();

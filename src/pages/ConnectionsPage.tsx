@@ -27,12 +27,13 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useEffect, useMemo, useState } from "react";
-import { useSessionsStore } from "@/store/sessions";
+import { useSessionsStore, sessionRoute } from "@/store/sessions";
 import { IconButton } from "@/components/icon-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Select } from "@/components/ui/select";
 import {
   buildConnectionString,
   emptyConnection,
@@ -244,8 +245,13 @@ function ConnectionsView(props: {
   const [testResults, setTestResults] = useState<Record<number, { ms: number | null; loading: boolean; ok: boolean }>>({});
 
   function connectTo(connection: Connection) {
+    const existing = sessions[connection.id];
     addSession(connection);
-    navigate(`/connections/${getProviderViewType(connection.plugin_id)}?id=${connection.id}`);
+    if (existing) {
+      navigate(sessionRoute(existing));
+    } else {
+      navigate(`/connections/${getProviderViewType(connection.plugin_id)}?id=${connection.id}`);
+    }
   }
 
   async function testInline(connection: Connection) {
@@ -1292,15 +1298,14 @@ function ModalSelect({
   options: Array<string | { value: string; label: string }>;
   onChange: (value: string) => void;
 }) {
+  const normalizedOptions = options.map((option) =>
+    typeof option === "string" ? { value: option, label: option } : option
+  );
+
   return (
     <label className={cn("grid gap-1.5 text-[10px] font-medium uppercase tracking-[.08em]", mutedText)}>
       {label}
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="h-9 rounded-md border border-zinc-700/70 bg-[#0a0a0a] px-3 text-[13px] font-medium text-zinc-100 outline-none transition-colors hover:border-zinc-600 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500/20">
-        {options.map((option) => {
-          const item = typeof option === "string" ? { value: option, label: option } : option;
-          return <option key={item.value} value={item.value}>{item.label}</option>;
-        })}
-      </select>
+      <Select value={value} onChange={onChange} options={normalizedOptions} className="h-9 text-[13px] font-medium" />
     </label>
   );
 }

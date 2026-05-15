@@ -6,7 +6,11 @@ export interface SqlSession {
   connection: Connection;
   expandedDbs: string[];
   tablesPerDb: Record<string, string[]>;
-  appliedFilter: string;
+  tableFilters: Record<string, string>;
+  tableSearch: string;
+  activeDb: string;
+  activeTable: string;
+  activeView: string;
 }
 
 export interface DocumentSession {
@@ -14,7 +18,11 @@ export interface DocumentSession {
   connection: Connection;
   expandedDbs: string[];
   collectionsPerDb: Record<string, string[]>;
-  appliedFilter: string;
+  collectionFilters: Record<string, string>;
+  collectionSearch: string;
+  activeDb: string;
+  activeCollection: string;
+  activeView: string;
 }
 
 export interface RedisSession {
@@ -23,9 +31,32 @@ export interface RedisSession {
   keySearch: string;
   typeFilter: string;
   viewMode: "list" | "tree";
+  pubsubChannels: string[];
+  pubsubActiveChannel: string | null;
+  activeDb: string;
+  activeKey: string;
+  activeView: string;
 }
 
 export type Session = SqlSession | DocumentSession | RedisSession;
+
+export function sessionRoute(session: Session): string {
+  const id = session.connection.id;
+  const view = session.activeView ? `&view=${session.activeView}` : "";
+  if (session.type === "document") {
+    const db = session.activeDb ? `&db=${encodeURIComponent(session.activeDb)}` : "";
+    const col = session.activeCollection ? `&collection=${encodeURIComponent(session.activeCollection)}` : "";
+    return `/connections/document?id=${id}${db}${col}${view}`;
+  }
+  if (session.type === "redis") {
+    const db = session.activeDb ? `&db=${encodeURIComponent(session.activeDb)}` : "";
+    const key = session.activeKey ? `&key=${encodeURIComponent(session.activeKey)}` : "";
+    return `/connections/redis?id=${id}${db}${key}${view}`;
+  }
+  const db = session.activeDb ? `&db=${encodeURIComponent(session.activeDb)}` : "";
+  const table = session.activeTable ? `&table=${encodeURIComponent(session.activeTable)}` : "";
+  return `/connections/sql?id=${id}${db}${table}${view}`;
+}
 
 function sessionTypeFor(pluginId: string): Session["type"] {
   if (pluginId === "mongodb") return "document";
@@ -49,11 +80,11 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
       const type = sessionTypeFor(connection.plugin_id);
       let session: Session;
       if (type === "document") {
-        session = { type, connection, expandedDbs: [], collectionsPerDb: {}, appliedFilter: "" };
+        session = { type, connection, expandedDbs: [], collectionsPerDb: {}, collectionFilters: {}, collectionSearch: "", activeDb: "", activeCollection: "", activeView: "" };
       } else if (type === "redis") {
-        session = { type, connection, keySearch: "", typeFilter: "all", viewMode: "tree" };
+        session = { type, connection, keySearch: "", typeFilter: "all", viewMode: "tree", pubsubChannels: [], pubsubActiveChannel: null, activeDb: "", activeKey: "", activeView: "" };
       } else {
-        session = { type, connection, expandedDbs: [], tablesPerDb: {}, appliedFilter: "" };
+        session = { type, connection, expandedDbs: [], tablesPerDb: {}, tableFilters: {}, tableSearch: "", activeDb: "", activeTable: "", activeView: "" };
       }
       return { sessions: { ...state.sessions, [connection.id]: session } };
     });

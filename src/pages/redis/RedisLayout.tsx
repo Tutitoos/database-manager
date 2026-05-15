@@ -10,6 +10,7 @@ import { mutedText, panel, sectionBorder } from "@/lib/styles";
 import type { Connection, RedisKey } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useSessionsStore, type RedisSession } from "@/store/sessions";
+import { Select } from "@/components/ui/select";
 
 const KEY_TYPE_COLORS: Record<string, string> = {
   string: "bg-violet-500/20 text-violet-300",
@@ -96,8 +97,10 @@ function KeyRow({
     <button
       onClick={() => onSelect(rkey.key)}
       className={cn(
-        "flex w-full items-center gap-1.5 border-l-2 px-2 py-1 text-left text-xs transition-colors",
-        active ? "bg-zinc-900/60 text-white" : "border-transparent text-zinc-500 hover:bg-zinc-900/50 hover:text-zinc-300"
+        "flex w-full items-center gap-1.5 border-l-2 px-3 py-1.5 text-left text-xs transition-all",
+        active
+          ? "bg-blue-500/10 text-blue-400 border-blue-500/30 shadow-inner"
+          : "border-transparent text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
       )}
       style={active ? { borderColor: providerColor } : undefined}
     >
@@ -140,10 +143,10 @@ function TreeNodeList({
             key={node.key}
             onClick={() => onSelect(node.key)}
             className={cn(
-              "flex w-full items-center gap-1.5 border-l-2 py-1 pr-2 text-left text-xs transition-colors",
+              "flex w-full items-center gap-1.5 border-l-2 py-1.5 pr-3 text-left text-xs transition-all",
               activeKey === node.key
-                ? "bg-zinc-900/60 text-white"
-                : "border-transparent text-zinc-500 hover:bg-zinc-900/50 hover:text-zinc-300"
+                ? "bg-blue-500/10 text-blue-400 border-blue-500/30 shadow-inner"
+                : "border-transparent text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
             )}
             style={{
               paddingLeft: depth * 10 + 8,
@@ -182,7 +185,7 @@ function FolderRow({
     <div>
       <button
         onClick={() => setOpen((x) => !x)}
-        className="flex w-full items-center gap-1.5 border-l-2 border-transparent py-1 pr-2 text-left text-xs text-zinc-400 transition-colors hover:bg-zinc-900/50 hover:text-zinc-300"
+        className="flex w-full items-center gap-1.5 border-l-2 border-transparent py-1.5 pr-3 text-left text-xs text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
         style={{ paddingLeft: depth * 10 + 8 }}
       >
         <svg
@@ -286,8 +289,8 @@ export default function RedisLayout() {
 
   useEffect(() => {
     if (!connectionId) return;
-    updateSession(connectionId, { keySearch, typeFilter, viewMode });
-  }, [keySearch, typeFilter, viewMode]);
+    updateSession(connectionId, { keySearch, typeFilter, viewMode, activeDb, activeKey, activeView: view ?? "" });
+  }, [keySearch, typeFilter, viewMode, activeDb, activeKey, view, connectionId]);
 
   useEffect(() => {
     invoke<Connection[]>("list_connections").then((all) => {
@@ -365,6 +368,11 @@ export default function RedisLayout() {
   const keyPatterns = useMemo(() => buildKeyPatterns(keys), [keys]);
   const getKeySuggestions = useMemo(() => buildKeySuggestions(keyPatterns), [keyPatterns]);
 
+  if (connectionId && !sessions[connectionId]) {
+    navigate("/connections", { replace: true });
+    return null;
+  }
+
   return (
     <div className={cn("flex min-w-0 flex-1 flex-col", panel)}>
       <header className={cn("flex h-12 shrink-0 items-center gap-3 border-b px-4", panel, sectionBorder)}>
@@ -418,7 +426,7 @@ export default function RedisLayout() {
 
       {view === "metrics" && connection && (
         <div className="min-h-0 flex-1 overflow-hidden">
-          <MetricsPanel connection={connection} database={activeDb} />
+          <MetricsPanel connection={connection} database={activeDb} pubsubChannels={stored?.pubsubChannels ?? []} />
         </div>
       )}
 
@@ -428,25 +436,22 @@ export default function RedisLayout() {
         </div>
       )}
 
-      {view !== "metrics" && view !== "pubsub" && <div className={cn("flex h-10 shrink-0 items-center gap-1.5 border-b px-3", sectionBorder)}>
-        <select
+      {view !== "metrics" && view !== "pubsub" && <div className="flex h-14 shrink-0 items-center gap-2 border-b border-white/5 bg-zinc-950/40 px-4">
+        <Select
           value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className="shrink-0 rounded border border-zinc-700/60 bg-zinc-800/60 px-2 py-1 text-[10px] text-zinc-300 outline-none transition-colors hover:border-zinc-600 focus:border-zinc-500"
-        >
-          {TYPE_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
+          onChange={setTypeFilter}
+          options={TYPE_OPTIONS}
+          className="text-[11px] h-8"
+        />
 
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded border border-zinc-800/60 bg-zinc-900/40 px-2 py-1 transition-colors focus-within:border-zinc-600">
+        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/5 bg-black/40 px-2.5 py-1.5 transition-colors focus-within:border-white/20 focus-within:ring-1 focus-within:ring-white/10 shadow-inner">
           <Search className="h-3 w-3 shrink-0 text-zinc-600" />
           <AutocompleteInput
             value={keySearch}
             onChange={setKeySearch}
             getSuggestions={getKeySuggestions}
-            placeholder="Filter by Key Name or Pattern..."
-            className="min-w-0 flex-1 bg-transparent text-xs text-zinc-300 placeholder-zinc-600 outline-none"
+            placeholder="Search by Key Name or Pattern..."
+            className="min-w-0 flex-1 bg-transparent text-xs text-zinc-200 placeholder-zinc-600 outline-none"
           />
           {keySearch && (
             <button onClick={() => setKeySearch("")} className="shrink-0 text-zinc-600 transition-colors hover:text-zinc-400">
@@ -455,7 +460,7 @@ export default function RedisLayout() {
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-0.5 rounded border border-zinc-800 p-0.5">
+        <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-white/5 bg-black/40 p-1 shadow-inner">
           <button onClick={() => setViewMode("list")} title="Lista" className={cn("rounded p-0.5 transition-colors", viewMode === "list" ? "bg-zinc-700 text-white" : "text-zinc-600 hover:text-zinc-400")}>
             <List className="h-3 w-3" />
           </button>
@@ -469,21 +474,18 @@ export default function RedisLayout() {
         {loadingDbs ? (
           <Loader2 className="h-3 w-3 animate-spin text-zinc-600" />
         ) : (
-          <select
+          <Select
             value={activeDb}
-            onChange={(e) => selectDb(e.target.value)}
-            className="rounded border border-zinc-700/60 bg-zinc-800/60 px-2 py-1 text-[10px] text-zinc-300 outline-none transition-colors hover:border-zinc-600 focus:border-zinc-500"
-          >
-            {databases.map((db) => (
-              <option key={db} value={db}>db {db}</option>
-            ))}
-          </select>
+            onChange={selectDb}
+            options={databases.map((db) => ({ value: db, label: `db ${db}` }))}
+            className="text-[11px] h-8"
+          />
         )}
       </div>}
 
-      {view !== "metrics" && view !== "pubsub" && <div className="flex min-h-0 flex-1">
-        <div className={cn("flex w-105 shrink-0 flex-col border-r", sectionBorder)}>
-          <div className={cn("flex h-7 shrink-0 items-center justify-between border-b px-3", sectionBorder)}>
+      {view !== "metrics" && view !== "pubsub" && <div className="flex min-h-0 flex-1 bg-black/20">
+        <div className="flex w-80 shrink-0 flex-col border-r border-white/5 bg-zinc-950/50">
+          <div className="flex h-10 shrink-0 items-center justify-between border-b border-white/5 px-4 bg-white/[0.01]">
             <span className="text-[10px] text-zinc-500">
               Results: <span className="text-zinc-400">{filteredKeys.length.toLocaleString()}</span>
             </span>

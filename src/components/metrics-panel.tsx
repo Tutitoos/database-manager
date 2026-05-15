@@ -339,7 +339,7 @@ function MongoMetricsView({ latest, series, collStats }: {
       {collStats.length > 0 && (
         <div className="shrink-0 mb-6">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Colecciones</p>
-          <div className="max-h-44 overflow-auto rounded-lg border border-zinc-800">
+          <div className="min-h-52 max-h-72 overflow-auto rounded-lg border border-zinc-800">
             <table className="w-full text-xs">
               <thead className="sticky top-0">
                 <tr className="border-b border-zinc-800 bg-zinc-900/90">
@@ -388,6 +388,9 @@ type RedisSnap = {
   uptime_seconds: number;
   uptime_days: number;
   role: string;
+  pubsub_channels: number;
+  pubsub_patterns: number;
+  pubsub_shardchannels: number;
   [k: string]: unknown;
 };
 
@@ -416,7 +419,7 @@ function buildRedisSeries(snaps: RedisSnap[]): RedisPoint[] {
   });
 }
 
-function RedisMetricsView({ latest, series }: { latest: RedisSnap; series: RedisPoint[] }) {
+function RedisMetricsView({ latest, series, pubsubChannels }: { latest: RedisSnap; series: RedisPoint[]; pubsubChannels: string[] }) {
   const uptimeStr = latest.uptime_days > 0
     ? `${latest.uptime_days}d ${Math.floor((latest.uptime_seconds % 86400) / 3600)}h`
     : `${Math.floor(latest.uptime_seconds / 3600)}h ${Math.floor((latest.uptime_seconds % 3600) / 60)}m`;
@@ -509,13 +512,42 @@ function RedisMetricsView({ latest, series }: { latest: RedisSnap; series: Redis
           </ResponsiveContainer>
         </ChartCard>
       </div>
+
+      {(latest.pubsub_channels > 0 || pubsubChannels.length > 0) && (
+        <div className="shrink-0 mb-6">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Pub/Sub</p>
+          <div className="grid grid-cols-3 gap-3 mb-3">
+            <StatCard label="Canales activos" value={String(latest.pubsub_channels)} />
+            <StatCard label="Patrones" value={String(latest.pubsub_patterns)} />
+            {latest.pubsub_shardchannels > 0 && <StatCard label="Shard channels" value={String(latest.pubsub_shardchannels)} />}
+          </div>
+          {pubsubChannels.length > 0 && (
+            <div className="rounded-lg border border-zinc-800 overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0">
+                  <tr className="border-b border-zinc-800 bg-zinc-900/90">
+                    <th className="px-3 py-2 text-left font-medium text-zinc-400">Canal suscrito</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pubsubChannels.map((ch) => (
+                    <tr key={ch} className="border-b border-zinc-800/40 hover:bg-zinc-900/40">
+                      <td className="px-3 py-2 font-mono text-emerald-300/80">{ch}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 // ── Main export ──────────────────────────────────────────────────────────────
 
-export function MetricsPanel({ connection, database }: { connection: Connection; database: string }) {
+export function MetricsPanel({ connection, database, pubsubChannels = [] }: { connection: Connection; database: string; pubsubChannels?: string[] }) {
   const [snaps, setSnaps] = useState<Record<string, unknown>[]>([]);
   const [error, setError] = useState<string | null>(null);
   const firstRef = useRef(true);
@@ -577,6 +609,7 @@ export function MetricsPanel({ connection, database }: { connection: Connection;
             ? <RedisMetricsView
                 latest={latest as unknown as RedisSnap}
                 series={buildRedisSeries(snaps as unknown as RedisSnap[])}
+                pubsubChannels={pubsubChannels}
               />
             : <PgMetricsView
                 latest={latest as unknown as PgSnap}
