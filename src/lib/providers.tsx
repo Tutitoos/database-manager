@@ -96,31 +96,16 @@ export function getProviderUi(pluginId: string, manifest?: PluginManifest): Prov
 
 export function ProviderIcon({ providerId, className }: { providerId: string; className?: string }) {
   const icon = getProviderUi(providerId).icon;
-  if (icon === "postgresql") {
+  if (["postgresql", "mongodb", "redis"].includes(icon)) {
+    const skillName = icon === "postgresql" ? "postgres" : icon;
     return (
-      <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="none">
-        <path d="M7.1 14.2c-1.7-.8-2.7-2.3-2.7-4.4 0-3.2 2.4-5.6 5.9-5.6h2.2c4.3 0 7.1 2.7 7.1 6.8v2.1c0 2.2-1 3.6-2.7 4.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        <path d="M8.1 18.3c.7 1 2.1 1.5 3.9 1.5s3.2-.5 3.9-1.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        <path d="M9 9.2h.1M14.9 9.2h.1" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" />
-        <path d="M10.3 12.4c.5.4 1.1.6 1.7.6s1.2-.2 1.7-.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-        <path d="M7.1 14.2 5 18.8M16.9 14.2l2.1 4.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      </svg>
-    );
-  }
-  if (icon === "mongodb") {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="none">
-        <path d="M12 3.2c3.4 3 5.1 5.8 5.1 8.6 0 3.7-2.1 6.2-5.1 7.1-3-.9-5.1-3.4-5.1-7.1 0-2.8 1.7-5.6 5.1-8.6Z" fill="currentColor" />
-        <path d="M12 7.3v12.9" stroke="rgba(255,255,255,.75)" strokeWidth="1.3" strokeLinecap="round" />
-      </svg>
-    );
-  }
-  if (icon === "redis") {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="none">
-        <path d="m12 4 7.5 3.4L12 10.8 4.5 7.4 12 4Z" fill="currentColor" />
-        <path d="m5.3 11 6.7 3 6.7-3M5.3 15l6.7 3 6.7-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+      <img
+        src={`https://skillicons.dev/icons?i=${skillName}`}
+        alt={icon}
+        className={className}
+        loading="lazy"
+        decoding="async"
+      />
     );
   }
   return <Database className={className} />;

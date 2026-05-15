@@ -244,7 +244,7 @@ function ConnectionsView(props: {
           <h1 className="text-base font-semibold tracking-[-0.01em] text-white">Conexiones</h1>
           <span className={cn("text-xs", mutedText)}>{props.total} conexiones</span>
         </div>
-        <Button variant="primary" onClick={props.onCreate}>
+        <Button variant="primary" onClick={props.onCreate} className="shadow-lg shadow-blue-900/20 hover:shadow-blue-900/40 transition-all">
           <Plus className="h-4 w-4" />
           Agregar Conexión
         </Button>
@@ -266,33 +266,35 @@ function ConnectionsView(props: {
       {viewMode === "grid" && (
         <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 content-start gap-3 overflow-x-hidden overflow-y-auto p-5 lg:grid-cols-2 xl:grid-cols-3">
           {props.connections.length === 0 && (
-            <div className={cn("col-span-full flex min-h-64 flex-col items-center justify-center rounded-lg p-8 text-center", surface)}>
-              <div className="grid h-10 w-10 place-items-center rounded-md border border-zinc-700/70 bg-[#101010] text-zinc-400">
-                <Database className="h-5 w-5" />
+            <div className={cn("col-span-full flex min-h-64 flex-col items-center justify-center rounded-xl p-8 text-center border-2 border-dashed border-zinc-800/60 bg-zinc-900/20 backdrop-blur-sm")}>
+              <div className="grid h-12 w-12 place-items-center rounded-xl border border-white/5 bg-white/5 text-zinc-400 shadow-inner">
+                <Database className="h-6 w-6" />
               </div>
-              <h2 className="mt-4 text-sm font-medium text-white">No hay conexiones</h2>
-              <p className={cn("mt-1 max-w-sm text-xs", mutedText)}>Crea una conexión local para PostgreSQL, MongoDB o Redis.</p>
+              <h2 className="mt-5 text-sm font-semibold text-zinc-200">No hay conexiones</h2>
+              <p className={cn("mt-2 max-w-sm text-xs", mutedText)}>Crea una conexión local para PostgreSQL, MongoDB o Redis.</p>
             </div>
           )}
           {props.connections.map((connection) => {
             const plugin = props.pluginMap.get(connection.plugin_id);
             return (
-              <article key={connection.id} className={cn("rounded-lg p-4", surface, hoverSurface)}>
-                <div className="flex gap-3">
-                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-white" style={{ backgroundColor: getProviderUi(connection.plugin_id, plugin?.manifest).color }}>
-                    <ProviderIcon providerId={connection.plugin_id} className="h-4 w-4" />
+              <article key={connection.id} className={cn("rounded-xl p-5", surface, hoverSurface)}>
+                <div className="flex gap-4">
+                  <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-white/10 shadow-inner">
+                    <ProviderIcon providerId={connection.plugin_id} className="block h-full w-full object-cover" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-sm font-semibold text-white">{connection.name}</h3>
-                    <Badge className="mt-1">{plugin?.name ?? connection.plugin_id}</Badge>
-                    <p className={cn("mt-3 truncate text-xs", softText)}>
+                    <h3 className="truncate text-base font-semibold text-zinc-100">{connection.name}</h3>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset" style={{ color: getProviderUi(connection.plugin_id, plugin?.manifest).color, backgroundColor: `${getProviderUi(connection.plugin_id, plugin?.manifest).color}15`, borderColor: `${getProviderUi(connection.plugin_id, plugin?.manifest).color}30` }}>{plugin?.name ?? connection.plugin_id}</span>
+                    </div>
+                    <p className={cn("mt-3 truncate text-xs font-mono", softText)}>
                       {connection.host}:{connection.port ?? "-"}
                     </p>
                   </div>
                 </div>
-                <Link to={`/connections/${getProviderViewType(connection.plugin_id)}?id=${connection.id}`} className="mt-4 block">
-                  <Button variant="primary" size="sm" className="w-full">
-                    <LogIn className="h-3.5 w-3.5" />
+                <Link to={`/connections/${getProviderViewType(connection.plugin_id)}?id=${connection.id}`} className="mt-5 block">
+                  <Button variant="primary" size="sm" className="w-full shadow-lg shadow-blue-900/20 transition-all hover:shadow-blue-900/40">
+                    <LogIn className="h-4 w-4" />
                     Conectar
                   </Button>
                 </Link>
@@ -319,24 +321,24 @@ function ConnectionsView(props: {
       {viewMode === "list" && (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto p-5">
           {props.connections.length === 0 && (
-            <div className={cn("flex min-h-64 flex-col items-center justify-center rounded-lg p-8 text-center", surface)}>
-              <div className="grid h-10 w-10 place-items-center rounded-md border border-zinc-700/70 bg-[#101010] text-zinc-400">
-                <Database className="h-5 w-5" />
+            <div className={cn("flex min-h-64 flex-col items-center justify-center rounded-xl p-8 text-center border-2 border-dashed border-zinc-800/60 bg-zinc-900/20 backdrop-blur-sm")}>
+              <div className="grid h-12 w-12 place-items-center rounded-xl border border-white/5 bg-white/5 text-zinc-400 shadow-inner">
+                <Database className="h-6 w-6" />
               </div>
-              <h2 className="mt-4 text-sm font-medium text-white">No hay conexiones</h2>
-              <p className={cn("mt-1 max-w-sm text-xs", mutedText)}>Crea una conexión local para PostgreSQL, MongoDB o Redis.</p>
+              <h2 className="mt-5 text-sm font-semibold text-zinc-200">No hay conexiones</h2>
+              <p className={cn("mt-2 max-w-sm text-xs", mutedText)}>Crea una conexión local para PostgreSQL, MongoDB o Redis.</p>
             </div>
           )}
           {props.connections.map((connection) => {
             const plugin = props.pluginMap.get(connection.plugin_id);
             return (
-              <div key={connection.id} className={cn("flex items-center gap-3 rounded-md px-3 py-2", surface, hoverSurface)}>
-                <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-white" style={{ backgroundColor: getProviderUi(connection.plugin_id, plugin?.manifest).color }}>
-                  <ProviderIcon providerId={connection.plugin_id} className="h-3.5 w-3.5" />
+              <div key={connection.id} className={cn("flex items-center gap-4 rounded-xl px-4 py-3", surface, hoverSurface)}>
+                <div className="h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-white/10 shadow-inner">
+                  <ProviderIcon providerId={connection.plugin_id} className="block h-full w-full object-cover" />
                 </div>
-                <span className="min-w-0 flex-1 truncate text-sm font-semibold text-white">{connection.name}</span>
-                <Badge className="shrink-0">{plugin?.name ?? connection.plugin_id}</Badge>
-                <span className={cn("shrink-0 text-xs", softText)}>{connection.host}:{connection.port ?? "-"}</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">{connection.name}</span>
+                <span className="shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset" style={{ color: getProviderUi(connection.plugin_id, plugin?.manifest).color, backgroundColor: `${getProviderUi(connection.plugin_id, plugin?.manifest).color}15`, borderColor: `${getProviderUi(connection.plugin_id, plugin?.manifest).color}30` }}>{plugin?.name ?? connection.plugin_id}</span>
+                <span className={cn("shrink-0 text-xs font-mono w-32 truncate text-right", softText)}>{connection.host}:{connection.port ?? "-"}</span>
                 <div className="flex shrink-0 gap-1 text-zinc-500">
                   <Link to={`/connections/${getProviderViewType(connection.plugin_id)}?id=${connection.id}`}>
                     <Button variant="ghost" size="icon" title="Conectar" className="text-blue-400 hover:text-blue-300">
@@ -689,8 +691,8 @@ function ConnectionDialog(props: {
                         !isLocked && "hover:border-zinc-700/70 hover:bg-zinc-900 hover:text-white"
                       )}
                     >
-                      <span className="grid h-6 w-6 place-items-center rounded-md text-white" style={{ backgroundColor: getProviderUi(plugin.id, plugin.manifest).color }}>
-                        <ProviderIcon providerId={plugin.id} className="h-3.5 w-3.5" />
+                      <span className="shrink-0 h-6 w-6 overflow-hidden rounded-md border border-white/10 shadow-inner">
+                        <ProviderIcon providerId={plugin.id} className="block h-full w-full object-cover" />
                       </span>
                       <span className="truncate">{plugin.name}</span>
                     </button>

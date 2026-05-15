@@ -43,7 +43,10 @@ pub fn run() {
             commands::get_db_metrics,
             commands::explain_query,
             commands::get_table_indexes,
-            commands::get_distinct_values
+            commands::get_distinct_values,
+            commands::redis_subscribe,
+            commands::redis_unsubscribe,
+            commands::redis_publish
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

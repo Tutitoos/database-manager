@@ -167,3 +167,31 @@ pub async fn get_distinct_values(
 ) -> Result<Value, String> {
     state.plugins.get_distinct_values(&input, &database, &table, &column, &search).await
 }
+
+#[tauri::command]
+pub async fn redis_subscribe(
+    state: State<'_, AppState>,
+    input: ConnectionInput,
+    channel: String,
+) -> Result<(), String> {
+    state.plugins.redis_subscribe(&input, &channel).await
+}
+
+#[tauri::command]
+pub async fn redis_unsubscribe(
+    state: State<'_, AppState>,
+    input: ConnectionInput,
+    channel: String,
+) -> Result<(), String> {
+    state.plugins.redis_unsubscribe(&input, &channel).await
+}
+
+#[tauri::command]
+pub async fn redis_publish(
+    state: State<'_, AppState>,
+    input: ConnectionInput,
+    channel: String,
+    payload: String,
+) -> Result<(), String> {
+    state.plugins.redis_publish(&input, &channel, &payload).await
+}

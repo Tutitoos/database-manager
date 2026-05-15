@@ -117,8 +117,8 @@ export default function PluginsPage() {
           {plugins.map((plugin) => (
             <article key={plugin.id} className={cn("overflow-hidden rounded-lg", surface, hoverSurface)}>
               <div className={cn("flex items-center gap-3 border-b p-4", sectionBorder)}>
-                <div className="grid h-8 w-8 place-items-center rounded-md text-white" style={{ backgroundColor: getProviderUi(plugin.id, plugin.manifest).color }}>
-                  <ProviderIcon providerId={plugin.id} className="h-4 w-4" />
+                <div className="shrink-0 h-8 w-8 overflow-hidden rounded-md border border-white/10 shadow-inner">
+                  <ProviderIcon providerId={plugin.id} className="block h-full w-full object-cover" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <h3 className="truncate text-sm font-semibold text-white">{plugin.name}</h3>

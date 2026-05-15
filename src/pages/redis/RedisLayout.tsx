@@ -1,9 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowLeft, BarChart2, Database, Folder, List, Loader2, RefreshCw, Search, X } from "lucide-react";
+import { ArrowLeft, BarChart2, Database, Folder, List, Loader2, Radio, RefreshCw, Search, X } from "lucide-react";
 import { AutocompleteInput, type GetSuggestions, type SuggestionItem } from "@/components/autocomplete-input";
 import { Link, Outlet, useNavigate, useSearchParams } from "react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MetricsPanel } from "@/components/metrics-panel";
+import RedisPubSubPage from "./RedisPubSubPage";
 import { getProviderUi, ProviderIcon } from "@/lib/providers";
 import { mutedText, panel, sectionBorder } from "@/lib/styles";
 import type { Connection, RedisKey } from "@/lib/types";
@@ -317,9 +318,11 @@ export default function RedisLayout() {
     navigate(`/connections/redis?id=${connectionId}&db=${encodeURIComponent(activeDb)}&key=${encodeURIComponent(key)}`);
   }
 
-  function navView(target: "data" | "metrics") {
+  function navView(target: "data" | "metrics" | "pubsub") {
     if (target === "metrics") {
       navigate(`/connections/redis?id=${connectionId}&db=${encodeURIComponent(activeDb)}&view=metrics`);
+    } else if (target === "pubsub") {
+      navigate(`/connections/redis?id=${connectionId}&db=${encodeURIComponent(activeDb)}&view=pubsub`);
     } else {
       navigate(`/connections/redis?id=${connectionId}&db=${encodeURIComponent(activeDb)}`);
     }
@@ -363,8 +366,8 @@ export default function RedisLayout() {
         <span className="text-zinc-700">/</span>
         {connection && provider && (
           <div className="flex items-center gap-2">
-            <span className="grid h-5 w-5 place-items-center rounded text-white" style={{ backgroundColor: provider.color }}>
-              <ProviderIcon providerId={connection.plugin_id} className="h-3 w-3" />
+            <span className="shrink-0 h-5 w-5 overflow-hidden rounded border border-white/10 shadow-inner">
+              <ProviderIcon providerId={connection.plugin_id} className="block h-full w-full object-cover" />
             </span>
             <span className="text-sm font-medium text-white">{connection.name}</span>
             <span className={cn("text-xs", mutedText)}>{connection.host}:{connection.port ?? "-"}</span>
@@ -375,11 +378,21 @@ export default function RedisLayout() {
             onClick={() => navView("data")}
             className={cn(
               "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              view !== "metrics" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300"
+              view !== "metrics" && view !== "pubsub" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300"
             )}
           >
             <Database className="h-3.5 w-3.5" />
             Datos
+          </button>
+          <button
+            onClick={() => navView("pubsub")}
+            className={cn(
+              "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              view === "pubsub" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300"
+            )}
+          >
+            <Radio className="h-3.5 w-3.5" />
+            Pub/Sub
           </button>
           <button
             onClick={() => navView("metrics")}
@@ -400,7 +413,13 @@ export default function RedisLayout() {
         </div>
       )}
 
-      {view !== "metrics" && <div className={cn("flex h-10 shrink-0 items-center gap-1.5 border-b px-3", sectionBorder)}>
+      {view === "pubsub" && connection && (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <RedisPubSubPage connection={connection} />
+        </div>
+      )}
+
+      {view !== "metrics" && view !== "pubsub" && <div className={cn("flex h-10 shrink-0 items-center gap-1.5 border-b px-3", sectionBorder)}>
         <select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
@@ -453,7 +472,7 @@ export default function RedisLayout() {
         )}
       </div>}
 
-      {view !== "metrics" && <div className="flex min-h-0 flex-1">
+      {view !== "metrics" && view !== "pubsub" && <div className="flex min-h-0 flex-1">
         <div className={cn("flex w-105 shrink-0 flex-col border-r", sectionBorder)}>
           <div className={cn("flex h-7 shrink-0 items-center justify-between border-b px-3", sectionBorder)}>
             <span className="text-[10px] text-zinc-500">

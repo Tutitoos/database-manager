@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -50,6 +51,18 @@ type ConnectionParams struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
+
+type PubSubEnvelope struct {
+	Params  ConnectionParams `json:"params"`
+	Channel string           `json:"channel"`
+	Payload string           `json:"payload"`
+}
+
+var (
+	stdoutMutex sync.Mutex
+	subClients  = make(map[string]*redis.PubSub)
+	subMutex    sync.Mutex
+)
 
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
@@ -128,6 +141,33 @@ func dispatch(req Request) Response {
 		return ok(req.ID, []string{})
 	case "get_tables", "get_columns":
 		return ok(req.ID, []any{})
+	case "pubsub_subscribe":
+		var env PubSubEnvelope
+		if err := json.Unmarshal(req.Params, &env); err != nil {
+			return fail(req.ID, err)
+		}
+		if err := pubsubSubscribe(env.Params, env.Channel); err != nil {
+			return fail(req.ID, err)
+		}
+		return ok(req.ID, true)
+	case "pubsub_unsubscribe":
+		var env PubSubEnvelope
+		if err := json.Unmarshal(req.Params, &env); err != nil {
+			return fail(req.ID, err)
+		}
+		if err := pubsubUnsubscribe(env.Channel); err != nil {
+			return fail(req.ID, err)
+		}
+		return ok(req.ID, true)
+	case "pubsub_publish":
+		var env PubSubEnvelope
+		if err := json.Unmarshal(req.Params, &env); err != nil {
+			return fail(req.ID, err)
+		}
+		if err := pubsubPublish(env.Params, env.Channel, env.Payload); err != nil {
+			return fail(req.ID, err)
+		}
+		return ok(req.ID, true)
 	default:
 		return Response{JSONRPC: "2.0", Error: &Error{Code: -32601, Message: "method not found"}, ID: req.ID}
 	}
@@ -452,6 +492,70 @@ func fail(id any, err error) Response {
 	return Response{JSONRPC: "2.0", Error: &Error{Code: -32603, Message: err.Error()}, ID: id}
 }
 
-func write(resp Response) {
+func write(resp any) {
+	stdoutMutex.Lock()
+	defer stdoutMutex.Unlock()
 	_ = json.NewEncoder(os.Stdout).Encode(resp)
+}
+
+func pubsubSubscribe(params ConnectionParams, channel string) error {
+	subMutex.Lock()
+	defer subMutex.Unlock()
+
+	if _, exists := subClients[channel]; exists {
+		return nil // already subscribed
+	}
+
+	client := newClient(params)
+	if params.Database != "" {
+		if n, err := strconv.Atoi(params.Database); err == nil {
+			client.Options().DB = n
+		}
+	}
+
+	pubsub := client.PSubscribe(context.Background(), channel)
+	subClients[channel] = pubsub
+
+	go func() {
+		defer client.Close()
+		ch := pubsub.Channel()
+		for msg := range ch {
+			write(map[string]any{
+				"jsonrpc": "2.0",
+				"method":  "pubsub_message",
+				"params": map[string]any{
+					"channel": msg.Channel,
+					"payload": msg.Payload,
+				},
+			})
+		}
+	}()
+
+	return nil
+}
+
+func pubsubUnsubscribe(channel string) error {
+	subMutex.Lock()
+	defer subMutex.Unlock()
+
+	if pubsub, exists := subClients[channel]; exists {
+		_ = pubsub.Close()
+		delete(subClients, channel)
+	}
+	return nil
+}
+
+func pubsubPublish(params ConnectionParams, channel, payload string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	client := newClient(params)
+	if params.Database != "" {
+		if n, err := strconv.Atoi(params.Database); err == nil {
+			client.Options().DB = n
+		}
+	}
+	defer client.Close()
+
+	return client.Publish(ctx, channel, payload).Err()
 }

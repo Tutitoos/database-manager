@@ -1,10 +1,10 @@
-export const appBg = "bg-[#050505]";
-export const panel = "bg-[#0a0a0a]";
-export const surface = "border border-zinc-800 bg-[#0f0f10]";
+export const appBg = "bg-[#050505] bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-zinc-900/20 via-[#050505] to-[#050505]";
+export const panel = "bg-[#0a0a0a]/95 backdrop-blur-xl";
+export const surface = "border border-white/5 bg-white/5 shadow-sm backdrop-blur-md";
 export const mutedText = "text-zinc-400";
 export const softText = "text-zinc-500";
-export const hoverSurface = "transition-colors hover:border-zinc-700/80 hover:bg-[#151515]";
-export const sectionBorder = "border-zinc-800/80";
+export const hoverSurface = "transition-all duration-300 hover:-translate-y-1 hover:border-white/10 hover:bg-white/10 hover:shadow-2xl hover:shadow-black/50";
+export const sectionBorder = "border-white/5";
 
 // ── Tipografía ─────────────────────────────────────────────
 export const textTitle = "text-lg font-semibold tracking-[-0.01em] text-white";

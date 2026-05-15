@@ -90,8 +90,8 @@ export default function SqlLayout() {
         <span className="text-zinc-700">/</span>
         {connection && provider && (
           <div className="flex items-center gap-2">
-            <span className="grid h-5 w-5 place-items-center rounded text-white" style={{ backgroundColor: provider.color }}>
-              <ProviderIcon providerId={connection.plugin_id} className="h-3 w-3" />
+            <span className="shrink-0 h-5 w-5 overflow-hidden rounded border border-white/10 shadow-inner">
+              <ProviderIcon providerId={connection.plugin_id} className="block h-full w-full object-cover" />
             </span>
             <span className="text-sm font-medium text-white">{connection.name}</span>
             <span className={cn("text-xs", mutedText)}>{connection.host}:{connection.port ?? "-"}</span>

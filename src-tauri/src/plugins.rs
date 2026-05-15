@@ -99,8 +99,8 @@ struct RuntimePlugin {
 struct PluginProcess {
     child: AsyncMutex<Child>,
     stdin: AsyncMutex<ChildStdin>,
-    stdout: AsyncMutex<BufReader<tokio::process::ChildStdout>>,
     next_id: AsyncMutex<u64>,
+    pending_requests: Arc<AsyncMutex<HashMap<u64, tokio::sync::oneshot::Sender<Result<Value, String>>>>>,
 }
 
 #[derive(Clone)]
@@ -119,9 +119,12 @@ struct RpcRequest {
 }
 
 #[derive(Deserialize)]
-struct RpcResponse {
+struct RpcMessage {
+    id: Option<u64>,
     result: Option<Value>,
     error: Option<RpcError>,
+    method: Option<String>,
+    params: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -210,7 +213,7 @@ impl PluginManager {
                 process: None,
             };
             if enabled {
-                if let Err(error) = start_runtime_plugin(&mut runtime).await {
+                if let Err(error) = start_runtime_plugin(&mut runtime, self.app.clone()).await {
                     runtime.error = Some(error);
                 }
             }
@@ -272,7 +275,7 @@ impl PluginManager {
         };
         runtime.enabled = true;
         runtime.error = None;
-        if let Err(error) = start_runtime_plugin(&mut runtime).await {
+        if let Err(error) = start_runtime_plugin(&mut runtime, self.app.clone()).await {
             runtime.error = Some(error.clone());
             self.plugins
                 .lock()
@@ -480,6 +483,49 @@ impl PluginManager {
         serde_json::from_value(result).map_err(|e| format!("invalid redis keys response: {e}"))
     }
 
+    pub async fn redis_subscribe(&self, input: &ConnectionInput, channel: &str) -> Result<(), String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        process.call("pubsub_subscribe", json!({
+            "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+            "channel": channel
+        })).await?;
+        Ok(())
+    }
+
+    pub async fn redis_unsubscribe(&self, input: &ConnectionInput, channel: &str) -> Result<(), String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        process.call("pubsub_unsubscribe", json!({
+            "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+            "channel": channel
+        })).await?;
+        Ok(())
+    }
+
+    pub async fn redis_publish(&self, input: &ConnectionInput, channel: &str, payload: &str) -> Result<(), String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        process.call("pubsub_publish", json!({
+            "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+            "channel": channel,
+            "payload": payload
+        })).await?;
+        Ok(())
+    }
+
     pub async fn get_db_metrics(&self, input: &ConnectionInput, database: &str) -> Result<Value, String> {
         let process = {
             let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
@@ -560,7 +606,7 @@ impl PluginManager {
 }
 
 impl PluginProcess {
-    async fn start(executable: PathBuf) -> Result<Self, String> {
+    async fn start(executable: PathBuf, plugin_id: String, app: AppHandle) -> Result<Self, String> {
         let mut child = Command::new(executable)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -575,11 +621,51 @@ impl PluginProcess {
             .stdout
             .take()
             .ok_or_else(|| "failed to open plugin stdout".to_string())?;
+            
+        let pending_requests: Arc<AsyncMutex<HashMap<u64, tokio::sync::oneshot::Sender<Result<Value, String>>>>> = Arc::new(AsyncMutex::new(HashMap::new()));
+        let pending_requests_clone = pending_requests.clone();
+        
+        let mut stdout_reader = BufReader::new(stdout);
+        tokio::spawn(async move {
+            use tauri::Emitter;
+            let mut line = String::new();
+            loop {
+                line.clear();
+                match stdout_reader.read_line(&mut line).await {
+                    Ok(0) => break, // EOF
+                    Ok(_) => {
+                        if let Ok(msg) = serde_json::from_str::<RpcMessage>(&line) {
+                            if let Some(id) = msg.id {
+                                let mut pending = pending_requests_clone.lock().await;
+                                if let Some(sender) = pending.remove(&id) {
+                                    let result = if let Some(error) = msg.error {
+                                        Err(error.message)
+                                    } else {
+                                        Ok(msg.result.unwrap_or(Value::Null))
+                                    };
+                                    let _ = sender.send(result);
+                                }
+                            } else if let Some(method) = msg.method {
+                                if let Some(params) = msg.params {
+                                    let event_name = format!("plugin:{}:{}", plugin_id, method);
+                                    let _ = app.emit(&event_name, params);
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error reading plugin stdout: {}", e);
+                        break;
+                    }
+                }
+            }
+        });
+
         Ok(Self {
             child: AsyncMutex::new(child),
             stdin: AsyncMutex::new(stdin),
-            stdout: AsyncMutex::new(BufReader::new(stdout)),
             next_id: AsyncMutex::new(1),
+            pending_requests,
         })
     }
 
@@ -597,6 +683,13 @@ impl PluginProcess {
             id,
         };
         let payload = serde_json::to_string(&request).map_err(|error| error.to_string())? + "\n";
+        
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        {
+            let mut pending = self.pending_requests.lock().await;
+            pending.insert(id, tx);
+        }
+
         {
             let mut stdin = self.stdin.lock().await;
             stdin
@@ -605,20 +698,16 @@ impl PluginProcess {
                 .map_err(|error| error.to_string())?;
             stdin.flush().await.map_err(|error| error.to_string())?;
         }
-        let mut line = String::new();
-        timeout(Duration::from_secs(60), async {
-            let mut stdout = self.stdout.lock().await;
-            stdout.read_line(&mut line).await
-        })
-        .await
-        .map_err(|_| "plugin request timed out".to_string())?
-        .map_err(|error| error.to_string())?;
-        let response: RpcResponse = serde_json::from_str(&line)
-            .map_err(|error| format!("invalid plugin response: {error}"))?;
-        if let Some(error) = response.error {
-            return Err(error.message);
+        
+        match timeout(Duration::from_secs(60), rx).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err("plugin request dropped".to_string()),
+            Err(_) => {
+                let mut pending = self.pending_requests.lock().await;
+                pending.remove(&id);
+                Err("plugin request timed out".to_string())
+            }
         }
-        Ok(response.result.unwrap_or(Value::Null))
     }
 
     async fn shutdown(&self) {
@@ -629,7 +718,7 @@ impl PluginProcess {
     }
 }
 
-async fn start_runtime_plugin(runtime: &mut RuntimePlugin) -> Result<(), String> {
+async fn start_runtime_plugin(runtime: &mut RuntimePlugin, app: AppHandle) -> Result<(), String> {
     let executable = runtime.path.join(&runtime.manifest.executable);
     if !executable.exists() {
         return Err(format!(
@@ -637,7 +726,7 @@ async fn start_runtime_plugin(runtime: &mut RuntimePlugin) -> Result<(), String>
             executable.display()
         ));
     }
-    let process = Arc::new(PluginProcess::start(executable).await?);
+    let process = Arc::new(PluginProcess::start(executable, runtime.manifest.id.clone(), app).await?);
     process.call("initialize", json!({ "settings": {} })).await?;
     runtime.loaded = true;
     runtime.process = Some(process);
