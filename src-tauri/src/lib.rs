@@ -4,12 +4,13 @@ mod plugins;
 
 use std::sync::Arc;
 
-use db::Database;
+use db::{Database, SessionsDb};
 use plugins::PluginManager;
 use tauri::Manager;
 
 pub struct AppState {
     pub db: Database,
+    pub sessions_db: SessionsDb,
     pub plugins: Arc<PluginManager>,
 }
 
@@ -17,11 +18,12 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             let db = Database::new(app.handle()).map_err(|error| error.to_string())?;
+            let sessions_db = SessionsDb::new(app.handle()).map_err(|error| error.to_string())?;
             let plugins = Arc::new(PluginManager::new(app.handle().clone(), db.clone()));
             plugins
                 .rescan_blocking()
                 .map_err(|error| error.to_string())?;
-            app.manage(AppState { db, plugins });
+            app.manage(AppState { db, sessions_db, plugins });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -46,7 +48,9 @@ pub fn run() {
             commands::get_distinct_values,
             commands::redis_subscribe,
             commands::redis_unsubscribe,
-            commands::redis_publish
+            commands::redis_publish,
+            commands::save_sessions,
+            commands::load_sessions
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

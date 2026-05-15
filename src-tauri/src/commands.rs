@@ -195,3 +195,13 @@ pub async fn redis_publish(
 ) -> Result<(), String> {
     state.plugins.redis_publish(&input, &channel, &payload).await
 }
+
+#[tauri::command]
+pub fn save_sessions(state: State<'_, AppState>, data: String) -> Result<(), String> {
+    state.sessions_db.save_sessions(&data)
+}
+
+#[tauri::command]
+pub fn load_sessions(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    state.sessions_db.load_sessions()
+}

@@ -331,3 +331,68 @@ impl Database {
         f(&guard)
     }
 }
+
+// ── Sessions DB ───────────────────────────────────────────────────────────────
+
+#[derive(Clone)]
+pub struct SessionsDb {
+    conn: Arc<Mutex<Connection>>,
+}
+
+impl SessionsDb {
+    pub fn new(app: &AppHandle) -> Result<Self, String> {
+        let home = app
+            .path()
+            .home_dir()
+            .map_err(|e| format!("home dir unavailable: {e}"))?;
+        let dir = home.join("database-manager");
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("failed to create sessions dir: {e}"))?;
+        let path = dir.join("sessions.db");
+        let conn = Connection::open(&path)
+            .map_err(|e| format!("failed to open sessions.db: {e}"))?;
+        let db = Self { conn: Arc::new(Mutex::new(conn)) };
+        db.migrate()?;
+        Ok(db)
+    }
+
+    fn migrate(&self) -> Result<(), String> {
+        self.with_conn(|conn| {
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+            )
+            .map_err(|e| e.to_string())
+        })
+    }
+
+    pub fn save_sessions(&self, data: &str) -> Result<(), String> {
+        self.with_conn(|conn| {
+            conn.execute(
+                "INSERT OR REPLACE INTO kv (key, value) VALUES ('sessions', ?1)",
+                params![data],
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+    }
+
+    pub fn load_sessions(&self) -> Result<Option<String>, String> {
+        self.with_conn(|conn| {
+            conn.query_row(
+                "SELECT value FROM kv WHERE key = 'sessions'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())
+        })
+    }
+
+    fn with_conn<T>(&self, f: impl FnOnce(&Connection) -> Result<T, String>) -> Result<T, String> {
+        let guard = self
+            .conn
+            .lock()
+            .map_err(|_| "sessions db lock poisoned".to_string())?;
+        f(&guard)
+    }
+}

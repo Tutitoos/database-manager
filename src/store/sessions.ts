@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { invoke } from "@tauri-apps/api/core";
 import type { Connection } from "@/lib/types";
 
 export interface SqlSession {
@@ -66,13 +67,16 @@ function sessionTypeFor(pluginId: string): Session["type"] {
 
 interface SessionsStore {
   sessions: Record<number, Session>;
+  loaded: boolean;
   addSession: (connection: Connection) => void;
   removeSession: (connectionId: number) => void;
   updateSession: (connectionId: number, patch: Partial<Session>) => void;
+  hydrate: (sessions: Record<number, Session>) => void;
 }
 
 export const useSessionsStore = create<SessionsStore>((set) => ({
   sessions: {},
+  loaded: false,
 
   addSession(connection) {
     set((state) => {
@@ -105,4 +109,18 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
       return { sessions: { ...state.sessions, [connectionId]: { ...existing, ...patch } as Session } };
     });
   },
+
+  hydrate(sessions) {
+    set({ sessions, loaded: true });
+  },
 }));
+
+// Auto-save to SQLite with 1s debounce — only after initial hydration
+let _saveTimer: ReturnType<typeof setTimeout> | null = null;
+useSessionsStore.subscribe((state) => {
+  if (!state.loaded) return;
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    invoke("save_sessions", { data: JSON.stringify(state.sessions) }).catch(() => {});
+  }, 1000);
+});

@@ -1,5 +1,7 @@
+import { invoke } from "@tauri-apps/api/core";
 import { Boxes, Plug, Settings, X } from "lucide-react";
 import { Link, Outlet, useLocation, useNavigate, useSearchParams } from "react-router";
+import { useEffect } from "react";
 import { IconButton } from "@/components/icon-button";
 import { ProviderIcon } from "@/lib/providers";
 import { appBg, panel, sectionBorder, surface } from "@/lib/styles";
@@ -44,6 +46,19 @@ export default function AppLayout() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { sessions, removeSession } = useSessionsStore();
+
+  useEffect(() => {
+    invoke<string | null>("load_sessions").then((json) => {
+      try {
+        const data = json ? (JSON.parse(json) as Record<number, Session>) : {};
+        useSessionsStore.getState().hydrate(data);
+      } catch {
+        useSessionsStore.getState().hydrate({});
+      }
+    }).catch(() => {
+      useSessionsStore.getState().hydrate({});
+    });
+  }, []);
   const currentId = Number(searchParams.get("id"));
 
   const sessionList = Object.values(sessions);
