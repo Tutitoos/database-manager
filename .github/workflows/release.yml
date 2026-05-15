@@ -94,9 +94,6 @@ jobs:
       - name: Install frontend deps
         run: pnpm install
 
-      - name: Generate icons
-        run: pnpm tauri icon src-tauri/icons/icon.png
-
       - name: Build and publish
         uses: tauri-apps/tauri-action@v0
         env:
