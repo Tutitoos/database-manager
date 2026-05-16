@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::Mutex as AsyncMutex;
@@ -798,16 +798,33 @@ impl PluginManager {
 
     fn seed_development_plugins(&self) -> Result<(), String> {
         let app_plugins = Database::app_plugins_dir(&self.app)?;
-        let current_dir = std::env::current_dir().map_err(|error| error.to_string())?;
-        let repo_plugins = if current_dir.join("plugins").exists() {
-            current_dir.join("plugins")
-        } else {
-            current_dir.join("..").join("plugins")
-        };
-        if !repo_plugins.exists() {
-            return Ok(());
+
+        // Source candidates, in priority order:
+        //   1. Bundled resource dir (production .deb/.app/.msi installs).
+        //   2. ./plugins next to current_dir (tauri dev from project root).
+        //   3. ../plugins (tauri dev from src-tauri/).
+        let mut sources: Vec<PathBuf> = Vec::new();
+        if let Ok(res_dir) = self.app.path().resource_dir() {
+            let p = res_dir.join("plugins");
+            if p.exists() {
+                sources.push(p);
+            }
         }
-        for entry in std::fs::read_dir(repo_plugins).map_err(|error| error.to_string())? {
+        if let Ok(cwd) = std::env::current_dir() {
+            let direct = cwd.join("plugins");
+            if direct.exists() {
+                sources.push(direct);
+            }
+            let parent = cwd.join("..").join("plugins");
+            if parent.exists() {
+                sources.push(parent);
+            }
+        }
+        let Some(source_dir) = sources.into_iter().next() else {
+            return Ok(());
+        };
+
+        for entry in std::fs::read_dir(&source_dir).map_err(|error| error.to_string())? {
             let entry = entry.map_err(|error| error.to_string())?;
             let source = entry.path();
             if !source.is_dir() {
@@ -818,8 +835,30 @@ impl PluginManager {
             };
             let dest = app_plugins.join(name);
             copy_dir_all(&source, &dest)?;
+            // Resources extracted from a .deb/.rpm/.app may lose the +x bit on
+            // the plugin binary. Re-stamp it based on manifest.json.
+            ensure_plugin_executable(&dest);
         }
         Ok(())
+    }
+}
+
+fn ensure_plugin_executable(plugin_dir: &Path) {
+    let manifest_path = plugin_dir.join("manifest.json");
+    let Ok(content) = std::fs::read_to_string(&manifest_path) else { return };
+    let Ok(manifest) = serde_json::from_str::<PluginManifest>(&content) else { return };
+    let exe = plugin_dir.join(&manifest.executable);
+    if !exe.exists() {
+        return;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(&exe) {
+            let mut perm = meta.permissions();
+            perm.set_mode(0o755);
+            let _ = std::fs::set_permissions(&exe, perm);
+        }
     }
 }
 

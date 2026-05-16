@@ -71,9 +71,15 @@ jobs:
         shell: bash
         run: sh scripts/build-plugins.sh
 
-      - name: Build plugins (Linux)
+      - name: Build plugins (Linux musl static)
         if: matrix.os == 'ubuntu-22.04'
-        run: sh scripts/build-plugins.sh
+        run: |
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
+          for plugin in postgresql mongodb redis; do
+            cargo build --release --target x86_64-unknown-linux-musl -p dbm-${plugin}-plugin
+            cp target/x86_64-unknown-linux-musl/release/${plugin}-plugin plugins/${plugin}/${plugin}-plugin
+          done
 
       - name: Install frontend deps
         run: pnpm install
