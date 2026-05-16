@@ -28,6 +28,20 @@ function fmtBytes(bytes: number): string {
   return `${bytes} B`;
 }
 
+// Binary (base 1024) — matches DB-admin convention. Switches units at 1024, not
+// at 10240 like pg_size_pretty, so 2.5 GiB shows as "2.50 GB" instead of "2564 MB".
+function fmtSizeBin(bytes: number): string {
+  const TB = 1024 ** 4;
+  const GB = 1024 ** 3;
+  const MB = 1024 ** 2;
+  const KB = 1024;
+  if (bytes >= TB) return `${(bytes / TB).toFixed(2)} TB`;
+  if (bytes >= GB) return `${(bytes / GB).toFixed(2)} GB`;
+  if (bytes >= MB) return `${(bytes / MB).toFixed(1)} MB`;
+  if (bytes >= KB) return `${(bytes / KB).toFixed(0)} KB`;
+  return `${bytes} B`;
+}
+
 function fmtNum(n: number) {
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
   if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
@@ -66,6 +80,7 @@ const TOOLTIP_STYLE = {
 type PgSnap = {
   ts: number;
   label: string;
+  db_size_bytes: number;
   active_connections: number;
   cache_hit_ratio: number;
   xact_commit: number;
@@ -87,13 +102,38 @@ type PgPoint = {
 };
 
 function buildPgSeries(snaps: PgSnap[]): PgPoint[] {
-  if (snaps.length < 2) return snaps.map((s) => ({ label: s.label, connections: s.active_connections, cache_pct: s.cache_hit_ratio, tps: 0, wps: 0 }));
+  if (snaps.length < 2) {
+    return snaps.map((s) => ({
+      label: s.label,
+      connections: s.active_connections,
+      cache_pct: s.cache_hit_ratio,
+      tps: 0,
+      wps: 0,
+    }));
+  }
   return snaps.slice(1).map((curr, i) => {
     const prev = snaps[i];
     const dt = Math.max((curr.ts - prev.ts) / 1000, 0.001);
     const tps = Math.max(0, (curr.xact_commit - prev.xact_commit) / dt);
-    const wps = Math.max(0, ((curr.tup_inserted - prev.tup_inserted) + (curr.tup_updated - prev.tup_updated) + (curr.tup_deleted - prev.tup_deleted)) / dt);
-    return { label: curr.label, connections: curr.active_connections, cache_pct: curr.cache_hit_ratio, tps: Math.round(tps * 10) / 10, wps: Math.round(wps * 10) / 10 };
+    const dIns = Math.max(0, (curr.tup_inserted ?? 0) - (prev.tup_inserted ?? 0));
+    const dUpd = Math.max(0, (curr.tup_updated ?? 0) - (prev.tup_updated ?? 0));
+    const dDel = Math.max(0, (curr.tup_deleted ?? 0) - (prev.tup_deleted ?? 0));
+    const wps = (dIns + dUpd + dDel) / dt;
+    // Per-interval cache hit: more useful than the cumulative lifetime ratio.
+    // Fall back to cumulative when there was no buffer I/O in the interval.
+    const dHit = Math.max(0, (curr.blks_hit ?? 0) - (prev.blks_hit ?? 0));
+    const dRead = Math.max(0, (curr.blks_read ?? 0) - (prev.blks_read ?? 0));
+    const totalBlks = dHit + dRead;
+    const cache_pct = totalBlks > 0
+      ? Math.round((dHit / totalBlks) * 1000) / 10
+      : (curr.cache_hit_ratio ?? 0);
+    return {
+      label: curr.label,
+      connections: curr.active_connections,
+      cache_pct,
+      tps: Math.round(tps * 100) / 100,
+      wps: Math.round(wps * 100) / 100,
+    };
   });
 }
 
@@ -105,9 +145,22 @@ function PgMetricsView({ latest, series, topTables }: {
   return (
     <div className="flex flex-col gap-3 px-4 pb-6 pt-4">
       <div className="grid shrink-0 grid-cols-4 gap-3">
-        <StatCard label="Tamaño DB" value={latest.db_size as string} />
-        <StatCard label="Conexiones" value={String(latest.active_connections)} sub={latest.max_connections ? `de ${latest.max_connections} máx.` : undefined} />
-        <StatCard label="Cache hit" value={`${latest.cache_hit_ratio ?? "—"}%`} />
+        <StatCard
+          label="Tamaño DB"
+          value={latest.db_size_bytes != null
+            ? fmtSizeBin(latest.db_size_bytes as number)
+            : ((latest.db_size as string) ?? "—")}
+        />
+        <StatCard
+          label="Conexiones"
+          value={String(latest.active_connections)}
+          sub={latest.max_connections ? `de ${latest.max_connections} máx.` : undefined}
+        />
+        <StatCard
+          label="Cache hit (acum.)"
+          value={latest.cache_hit_ratio != null ? `${latest.cache_hit_ratio}%` : "—"}
+          sub={series.length > 0 ? `intervalo: ${series[series.length - 1].cache_pct}%` : undefined}
+        />
         <StatCard label="Tablas" value={String(latest.table_count ?? "—")} />
       </div>
 
@@ -130,7 +183,7 @@ function PgMetricsView({ latest, series, topTables }: {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Cache hit ratio (%)">
+        <ChartCard title="Cache hit ratio (%) por intervalo">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
@@ -194,7 +247,7 @@ function PgMetricsView({ latest, series, topTables }: {
                 {topTables.map((t, i) => (
                   <tr key={i} className="border-b border-zinc-800/40 hover:bg-zinc-900/40">
                     <td className="px-3 py-2 font-mono text-zinc-300"><span className="text-zinc-600">{t.schema}.</span>{t.name}</td>
-                    <td className="px-3 py-2 text-right font-mono text-blue-300/80">{t.size}</td>
+                    <td className="px-3 py-2 text-right font-mono text-blue-300/80">{fmtSizeBin(t.size_bytes)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -7,7 +7,7 @@ use dbm_plugin_rpc::{fail, method_not_found, ok, serve, ConnectionParams, Handle
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tokio_postgres::{Client, Config, NoTls};
+use tokio_postgres::{Client, Config, NoTls, SimpleQueryMessage};
 
 static PK_CACHE: Lazy<Mutex<HashMap<String, String>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
@@ -254,89 +254,144 @@ async fn get_columns_meta(client: &Client, schema: &str, table: &str) -> Vec<Str
 }
 
 async fn get_table_data(env: DataEnvelope) -> anyhow::Result<Value> {
-    let client = connect(&env.params, &env.database).await?;
+    let dbg = std::env::var("DBM_PG_TRACE").ok().as_deref() == Some("1");
+    let t_total = Instant::now();
+    if dbg { eprintln!("[pg] get_table_data start table={} db={} where={:?} cursor={:?} limit={} offset={}", env.table, env.database, env.where_clause, env.cursor, env.limit, env.offset); }
+
     let (schema, table_name) = split_schema_table(&env.table);
-    let columns = get_columns_meta(&client, &schema, &table_name).await;
-    if columns.is_empty() {
-        return Err(anyhow::anyhow!("table not found or has no columns"));
-    }
-    let pk = get_cached_pk(&client, &env.params, &env.database, &schema, &table_name).await;
     let limit = if env.limit <= 0 { 100 } else { env.limit };
-    let select_cols = columns
-        .iter()
-        .map(|c| format!("{}::text AS {}", quote_ident(c), quote_ident(c)))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let quoted_table = format!("{}.{}", quote_ident(&schema), quote_ident(&table_name));
-    let where_clause = env.where_clause.trim();
-    let mut where_parts: Vec<String> = Vec::new();
-    if !where_clause.is_empty() {
-        where_parts.push(format!("({where_clause})"));
-    }
-    let use_cursor = !env.cursor.is_empty() && !pk.is_empty();
-    if use_cursor {
-        // numeric or string cursor; quote as literal via param
-        where_parts.push(format!("{} > $1", quote_ident(&pk)));
-    }
-    let where_sql = if where_parts.is_empty() {
-        String::new()
-    } else {
-        format!("WHERE {}", where_parts.join(" AND "))
-    };
-    let order_sql = if !pk.is_empty() {
-        format!("ORDER BY {} ASC", quote_ident(&pk))
-    } else {
-        String::new()
-    };
-    let offset_sql = if use_cursor {
-        String::new()
-    } else {
-        format!("OFFSET {}", env.offset.max(0))
-    };
-    let data_q = format!(
-        "SELECT {select_cols} FROM {quoted_table} {where_sql} {order_sql} LIMIT {limit} {offset_sql}"
-    );
-    let count_q = if where_clause.is_empty() {
-        format!("SELECT reltuples::bigint FROM pg_class WHERE oid = '{quoted_table}'::regclass")
-    } else {
-        format!("SELECT COUNT(*) FROM {quoted_table} WHERE {where_clause}")
-    };
+    let where_clause = env.where_clause.trim().to_string();
     let is_estimated = where_clause.is_empty();
+    let q_timeout = Duration::from_secs(55);
 
-    let t0 = Instant::now();
-    let rows = if use_cursor {
-        client.query(&data_q, &[&env.cursor]).await?
-    } else {
-        client.query(&data_q, &[]).await?
-    };
-    let query_ms = t0.elapsed().as_millis() as i64;
+    // Two connections in parallel:
+    //   conn A (meta+count): pk lookup → publish pk → count query
+    //   conn B (data): wait for pk → build data_q → simple_query
+    // Columns derived from data response — no separate columns_meta query.
+    let (pk_tx, pk_rx) = tokio::sync::oneshot::channel::<String>();
 
-    let total: i64 = client
-        .query_one(&count_q, &[])
-        .await
-        .ok()
-        .and_then(|r| r.try_get::<_, i64>(0).ok())
-        .unwrap_or(0);
-
-    let mut out_rows: Vec<Vec<Value>> = Vec::with_capacity(rows.len());
-    for row in &rows {
-        let mut r: Vec<Value> = Vec::with_capacity(columns.len());
-        for i in 0..columns.len() {
-            let v: Option<String> = row.try_get(i).ok().flatten();
-            r.push(match v {
-                Some(s) => Value::String(s),
-                None => Value::Null,
-            });
+    let meta_params = env.params.clone();
+    let meta_db = env.database.clone();
+    let meta_schema = schema.clone();
+    let meta_table = table_name.clone();
+    let meta_where = where_clause.clone();
+    let count_fut = async move {
+        let tc = Instant::now();
+        let client = connect(&meta_params, &meta_db).await?;
+        if dbg { eprintln!("[pg] meta connect    {:>5}ms", tc.elapsed().as_millis()); }
+        let t = Instant::now();
+        let pk = get_cached_pk(&client, &meta_params, &meta_db, &meta_schema, &meta_table).await;
+        if dbg { eprintln!("[pg] pk lookup       {:>5}ms  pk={:?}", t.elapsed().as_millis(), pk); }
+        let _ = pk_tx.send(pk);
+        let quoted_table = format!("{}.{}", quote_ident(&meta_schema), quote_ident(&meta_table));
+        let count_q = if meta_where.is_empty() {
+            format!(
+                "SELECT c.reltuples::bigint FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = '{}' AND c.relname = '{}'",
+                meta_schema.replace('\'', "''"),
+                meta_table.replace('\'', "''"),
+            )
+        } else {
+            format!("SELECT COUNT(*)::bigint FROM {} WHERE {}", quoted_table, meta_where)
+        };
+        if dbg { eprintln!("[pg] count_q : {}", count_q); }
+        let t = Instant::now();
+        let res = tokio::time::timeout(q_timeout, client.simple_query(&count_q)).await;
+        if dbg { eprintln!("[pg] count query     {:>5}ms", t.elapsed().as_millis()); }
+        let msgs = match res {
+            Ok(Ok(m)) => m,
+            _ => return Ok::<i64, anyhow::Error>(0),
+        };
+        for msg in msgs {
+            if let SimpleQueryMessage::Row(row) = msg {
+                if let Some(s) = row.get(0) {
+                    if let Ok(n) = s.parse::<i64>() { return Ok(n); }
+                }
+            }
         }
-        out_rows.push(r);
+        Ok(0)
+    };
+
+    let data_params = env.params.clone();
+    let data_db = env.database.clone();
+    let data_cursor = env.cursor.clone();
+    let data_schema = schema.clone();
+    let data_table = table_name.clone();
+    let data_where = where_clause.clone();
+    let data_offset = env.offset.max(0);
+    let data_fut = async move {
+        let tc = Instant::now();
+        let client = connect(&data_params, &data_db).await?;
+        if dbg { eprintln!("[pg] data connect    {:>5}ms", tc.elapsed().as_millis()); }
+        let pk = pk_rx.await.unwrap_or_default();
+        let use_cursor = !data_cursor.is_empty() && !pk.is_empty();
+        let mut where_parts: Vec<String> = Vec::new();
+        if !data_where.is_empty() {
+            where_parts.push(format!("({})", data_where));
+        }
+        if use_cursor {
+            let lit = format!("'{}'", data_cursor.replace('\'', "''"));
+            where_parts.push(format!("{} > {}", quote_ident(&pk), lit));
+        }
+        let where_sql = if where_parts.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", where_parts.join(" AND "))
+        };
+        let order_sql = if !pk.is_empty() {
+            format!("ORDER BY {} ASC", quote_ident(&pk))
+        } else {
+            String::new()
+        };
+        let offset_sql = if use_cursor { String::new() } else { format!("OFFSET {}", data_offset) };
+        let quoted_table = format!("{}.{}", quote_ident(&data_schema), quote_ident(&data_table));
+        let data_q = format!(
+            "SELECT * FROM {quoted_table} {where_sql} {order_sql} LIMIT {limit} {offset_sql}"
+        );
+        if dbg { eprintln!("[pg] data_q  : {}", data_q); }
+        let t0 = Instant::now();
+        let res = tokio::time::timeout(q_timeout, client.simple_query(&data_q)).await;
+        if dbg { eprintln!("[pg] data query      {:>5}ms", t0.elapsed().as_millis()); }
+        let msgs = res.map_err(|_| anyhow::anyhow!("data query timed out after 55s"))??;
+        let query_ms = t0.elapsed().as_millis() as i64;
+        Ok::<_, anyhow::Error>((pk, msgs, query_ms))
+    };
+
+    let (count_res, data_res) = tokio::join!(count_fut, data_fut);
+    let total = count_res?;
+    let (pk, msgs, query_ms) = data_res?;
+
+    let mut columns_out: Vec<String> = Vec::new();
+    let mut out_rows: Vec<Vec<Value>> = Vec::new();
+    for msg in &msgs {
+        if let SimpleQueryMessage::Row(row) = msg {
+            if columns_out.is_empty() {
+                columns_out = (0..row.len())
+                    .map(|i| row.columns().get(i).map(|c| c.name().to_string()).unwrap_or_default())
+                    .collect();
+            }
+            let mut r: Vec<Value> = Vec::with_capacity(row.len());
+            for i in 0..row.len() {
+                r.push(match row.get(i) {
+                    Some(s) => Value::String(s.to_string()),
+                    None => Value::Null,
+                });
+            }
+            out_rows.push(r);
+        }
+    }
+    if columns_out.is_empty() {
+        // No rows returned and no row description came through — fall back to a
+        // catalog lookup so the frontend gets the right column headers.
+        if let Ok(c) = connect(&env.params, &env.database).await {
+            columns_out = get_columns_meta(&c, &schema, &table_name).await;
+        }
     }
 
-    let next_cursor = if !pk.is_empty() && rows.len() as i64 == limit {
-        // The last row's pk text value (which is at the pk column index)
-        if let Some(pk_idx) = columns.iter().position(|c| c == &pk) {
-            rows.last()
-                .and_then(|r| r.try_get::<_, Option<String>>(pk_idx).ok().flatten())
-                .unwrap_or_default()
+    if dbg { eprintln!("[pg] join done       {:>5}ms total elapsed (rows={} total={})", t_total.elapsed().as_millis(), out_rows.len(), total); }
+
+    let next_cursor = if !pk.is_empty() && out_rows.len() as i64 == limit {
+        if let Some(pk_idx) = columns_out.iter().position(|c| c == &pk) {
+            out_rows.last().and_then(|r| r.get(pk_idx)).and_then(|v| v.as_str()).unwrap_or("").to_string()
         } else {
             String::new()
         }
@@ -344,15 +399,20 @@ async fn get_table_data(env: DataEnvelope) -> anyhow::Result<Value> {
         String::new()
     };
 
-    Ok(json!({
-        "columns": columns,
+    let result = json!({
+        "columns": columns_out,
         "rows": out_rows,
         "total": total,
         "is_estimated": is_estimated,
         "next_cursor": next_cursor,
         "pk_column": pk,
         "query_ms": query_ms,
-    }))
+    });
+    if dbg {
+        let serialized_bytes = serde_json::to_string(&result).map(|s| s.len()).unwrap_or(0);
+        eprintln!("[pg] build done      {:>5}ms  payload={} bytes", t_total.elapsed().as_millis(), serialized_bytes);
+    }
+    Ok(result)
 }
 
 async fn get_table_indexes(env: IndexEnvelope) -> anyhow::Result<Value> {
@@ -397,16 +457,18 @@ async fn get_distinct_values(env: DistinctEnvelope) -> anyhow::Result<Value> {
     let quoted_table = format!("{}.{}", quote_ident(&schema), quote_ident(&table_name));
     let col = quote_ident(&env.column);
     let q = if env.search.is_empty() {
-        format!("SELECT DISTINCT {col}::text FROM {quoted_table} WHERE {col} IS NOT NULL LIMIT 50")
+        format!(
+            "SELECT DISTINCT {col}::text FROM {quoted_table} WHERE {col} IS NOT NULL ORDER BY {col}::text LIMIT 20"
+        )
     } else {
         format!(
-            "SELECT DISTINCT {col}::text FROM {quoted_table} WHERE {col}::text ILIKE $1 LIMIT 50"
+            "SELECT DISTINCT {col}::text FROM {quoted_table} WHERE {col}::text ILIKE $1 ORDER BY {col}::text LIMIT 20"
         )
     };
     let rows = if env.search.is_empty() {
         client.query(&q, &[]).await?
     } else {
-        let pat = format!("%{}%", env.search);
+        let pat = format!("{}%", env.search);
         client.query(&q, &[&pat]).await?
     };
     let list: Vec<Value> = rows
@@ -432,44 +494,199 @@ async fn explain_query(env: ExplainEnvelope) -> anyhow::Result<Value> {
     } else {
         format!("WHERE {}", where_parts.join(" AND "))
     };
-    let sql = format!("EXPLAIN (FORMAT JSON, ANALYZE, BUFFERS) SELECT * FROM {quoted_table} {where_sql}");
+    let sql = format!(
+        "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT * FROM {quoted_table} {where_sql}"
+    );
     let row = if !env.cursor.is_empty() && !env.pk_column.is_empty() {
         client.query_one(&sql, &[&env.cursor]).await?
     } else {
         client.query_one(&sql, &[]).await?
     };
     let plan: Value = row.try_get(0)?;
-    Ok(plan)
+    let plans_arr = plan.as_array().cloned().unwrap_or_default();
+    let first = plans_arr.first().cloned().unwrap_or(Value::Null);
+    let planning_ms = first.get("Planning Time").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let execution_ms = first.get("Execution Time").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let mut seq_scans: Vec<Value> = Vec::new();
+    if let Some(node) = first.get("Plan") {
+        find_seq_scans(node, &mut seq_scans);
+    }
+    Ok(json!({
+        "plan": plan,
+        "planning_ms": planning_ms,
+        "execution_ms": execution_ms,
+        "seq_scans": seq_scans,
+    }))
+}
+
+fn find_seq_scans(node: &Value, out: &mut Vec<Value>) {
+    let Some(obj) = node.as_object() else { return };
+    if obj.get("Node Type").and_then(|v| v.as_str()) == Some("Seq Scan") {
+        let mut entry = serde_json::Map::new();
+        if let Some(rel) = obj.get("Relation Name") {
+            entry.insert("relation".to_string(), rel.clone());
+        }
+        if let Some(filter) = obj.get("Filter") {
+            entry.insert("filter".to_string(), filter.clone());
+        }
+        out.push(Value::Object(entry));
+    }
+    if let Some(children) = obj.get("Plans").and_then(|v| v.as_array()) {
+        for child in children {
+            find_seq_scans(child, out);
+        }
+    }
+    if let Some(child) = obj.get("Plan") {
+        find_seq_scans(child, out);
+    }
 }
 
 async fn get_metrics(env: MetricsEnvelope) -> anyhow::Result<Value> {
     let client = connect(&env.params, &env.database).await?;
-    let size: Option<i64> = client
-        .query_one("SELECT pg_database_size(current_database())::bigint", &[])
-        .await
-        .ok()
-        .and_then(|r| r.try_get(0).ok());
-    let conns: Option<i64> = client
+    let mut result = serde_json::Map::new();
+
+    // DB size
+    if let Ok(row) = client
         .query_one(
-            "SELECT count(*)::bigint FROM pg_stat_activity WHERE datname = current_database()",
+            "SELECT pg_size_pretty(pg_database_size(current_database())), pg_database_size(current_database())::bigint",
+            &[],
+        )
+        .await
+    {
+        if let Ok(s) = row.try_get::<_, String>(0) {
+            result.insert("db_size".to_string(), Value::String(s));
+        }
+        if let Ok(n) = row.try_get::<_, i64>(1) {
+            result.insert("db_size_bytes".to_string(), json!(n));
+        }
+    } else {
+        result.insert("db_size_bytes".to_string(), json!(0));
+    }
+
+    // Active connections
+    let active_conns: i64 = client
+        .query_one(
+            "SELECT count(*)::bigint FROM pg_stat_activity WHERE state IS NOT NULL",
             &[],
         )
         .await
         .ok()
-        .and_then(|r| r.try_get(0).ok());
-    let tables: Option<i64> = client
+        .and_then(|r| r.try_get(0).ok())
+        .unwrap_or(0);
+    result.insert("active_connections".to_string(), json!(active_conns));
+
+    // Max connections
+    if let Ok(row) = client.query_one("SHOW max_connections", &[]).await {
+        if let Ok(s) = row.try_get::<_, String>(0) {
+            result.insert("max_connections".to_string(), Value::String(s));
+        }
+    }
+
+    // Cache hit ratio
+    if let Ok(row) = client
         .query_one(
-            "SELECT count(*)::bigint FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema')",
+            "SELECT ROUND(100.0 * sum(heap_blks_hit) / NULLIF(sum(heap_blks_hit) + sum(heap_blks_read), 0), 2)::float8 FROM pg_statio_user_tables",
+            &[],
+        )
+        .await
+    {
+        if let Ok(Some(v)) = row.try_get::<_, Option<f64>>(0) {
+            result.insert("cache_hit_ratio".to_string(), json!(v));
+        }
+    }
+
+    // Table count
+    let table_count: i64 = client
+        .query_one(
+            "SELECT count(*)::bigint FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('pg_catalog', 'information_schema')",
             &[],
         )
         .await
         .ok()
-        .and_then(|r| r.try_get(0).ok());
-    Ok(json!({
-        "data_size_bytes": size.unwrap_or(0),
-        "connections": conns.unwrap_or(0),
-        "tables_count": tables.unwrap_or(0),
-    }))
+        .and_then(|r| r.try_get(0).ok())
+        .unwrap_or(0);
+    result.insert("table_count".to_string(), json!(table_count));
+
+    // Top tables by size
+    let top_tables = client
+        .query(
+            r#"
+            SELECT table_schema, table_name,
+                   pg_size_pretty(pg_total_relation_size(quote_ident(table_schema)||'.'||quote_ident(table_name))),
+                   pg_total_relation_size(quote_ident(table_schema)||'.'||quote_ident(table_name))::bigint
+            FROM information_schema.tables
+            WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('pg_catalog', 'information_schema')
+            ORDER BY pg_total_relation_size(quote_ident(table_schema)||'.'||quote_ident(table_name)) DESC
+            LIMIT 10
+            "#,
+            &[],
+        )
+        .await
+        .map(|rows| {
+            rows.into_iter()
+                .map(|r| {
+                    json!({
+                        "schema": r.try_get::<_, String>(0).unwrap_or_default(),
+                        "name": r.try_get::<_, String>(1).unwrap_or_default(),
+                        "size": r.try_get::<_, String>(2).unwrap_or_default(),
+                        "size_bytes": r.try_get::<_, i64>(3).unwrap_or(0),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    result.insert("top_tables".to_string(), Value::Array(top_tables));
+
+    // pg_stat_database counters
+    if let Ok(row) = client
+        .query_one(
+            r#"
+            SELECT xact_commit::bigint, xact_rollback::bigint, blks_read::bigint, blks_hit::bigint,
+                   tup_inserted::bigint, tup_updated::bigint, tup_deleted::bigint
+            FROM pg_stat_database WHERE datname = current_database()
+            "#,
+            &[],
+        )
+        .await
+    {
+        for (i, key) in [
+            "xact_commit",
+            "xact_rollback",
+            "blks_read",
+            "blks_hit",
+            "tup_inserted",
+            "tup_updated",
+            "tup_deleted",
+        ]
+        .iter()
+        .enumerate()
+        {
+            let v: i64 = row.try_get(i).unwrap_or(0);
+            result.insert((*key).to_string(), json!(v));
+        }
+    }
+
+    // Connection states breakdown
+    let conn_state_rows = client
+        .query(
+            r#"
+            SELECT coalesce(state, 'other'), count(*)::bigint
+            FROM pg_stat_activity WHERE pid <> pg_backend_pid()
+            GROUP BY state
+            "#,
+            &[],
+        )
+        .await
+        .unwrap_or_default();
+    let mut conn_states = serde_json::Map::new();
+    for r in conn_state_rows {
+        let state: String = r.try_get(0).unwrap_or_else(|_| "other".to_string());
+        let cnt: i64 = r.try_get(1).unwrap_or(0);
+        conn_states.insert(state, json!(cnt));
+    }
+    result.insert("conn_states".to_string(), Value::Object(conn_states));
+
+    Ok(Value::Object(result))
 }
 
 async fn update_row(env: UpdateRowEnvelope) -> anyhow::Result<Value> {
@@ -629,7 +846,7 @@ impl Handler for PgHandler {
     }
 }
 
-#[tokio::main(flavor = "multi_thread")]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> std::io::Result<()> {
     serve(PgHandler).await
 }

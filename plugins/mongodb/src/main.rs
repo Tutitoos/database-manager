@@ -1,13 +1,15 @@
 use async_trait::async_trait;
 use bson::{doc, oid::ObjectId, Bson, Document};
 use dbm_plugin_rpc::{fail, method_not_found, ok, serve, ConnectionParams, Handler, Request, Response};
-use futures::TryStreamExt;
+use futures::{future::join_all, TryStreamExt};
 use mongodb::{
     options::{ClientOptions, FindOptions},
     Client,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::time::Instant;
 
 struct MongoHandler;
@@ -107,11 +109,26 @@ fn build_uri(p: &ConnectionParams) -> String {
     format!("mongodb://{auth}{}:{}/?authSource=admin", p.host, port)
 }
 
+fn client_cache() -> &'static tokio::sync::Mutex<HashMap<String, Client>> {
+    static CACHE: OnceLock<tokio::sync::Mutex<HashMap<String, Client>>> = OnceLock::new();
+    CACHE.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()))
+}
+
 async fn build_client(p: &ConnectionParams) -> anyhow::Result<Client> {
-    let mut opts = ClientOptions::parse(build_uri(p)).await?;
+    let uri = build_uri(p);
+    {
+        let cache = client_cache().lock().await;
+        if let Some(c) = cache.get(&uri) {
+            return Ok(c.clone());
+        }
+    }
+    let mut opts = ClientOptions::parse(&uri).await?;
     opts.connect_timeout = Some(std::time::Duration::from_secs(8));
     opts.server_selection_timeout = Some(std::time::Duration::from_secs(8));
-    Ok(Client::with_options(opts)?)
+    let client = Client::with_options(opts)?;
+    let mut cache = client_cache().lock().await;
+    cache.entry(uri).or_insert_with(|| client.clone());
+    Ok(client)
 }
 
 async fn test_connection(p: &ConnectionParams) -> anyhow::Result<()> {
@@ -237,19 +254,31 @@ async fn get_documents(env: DataEnvelope) -> anyhow::Result<Value> {
     if !use_cursor {
         find_opts.skip = Some(env.offset.max(0) as u64);
     }
-    let t0 = Instant::now();
-    let mut cursor = coll.find(query_filter, find_opts).await?;
-    let mut docs: Vec<Value> = Vec::new();
-    while let Some(d) = cursor.try_next().await? {
-        docs.push(bson_to_json(&Bson::Document(d)));
-    }
-    let query_ms = t0.elapsed().as_millis() as i64;
 
-    let total: i64 = if env.filter.trim().is_empty() && !use_cursor {
-        coll.estimated_document_count(None).await.unwrap_or(0) as i64
-    } else {
-        coll.count_documents(user_filter.clone(), None).await.unwrap_or(0) as i64
+    // find + count in parallel — mongodb Client multiplexes via its internal pool.
+    let coll_for_count = coll.clone();
+    let user_filter_for_count = user_filter.clone();
+    let no_filter = env.filter.trim().is_empty() && !use_cursor;
+    let count_fut = async move {
+        if no_filter {
+            coll_for_count.estimated_document_count(None).await.unwrap_or(0) as i64
+        } else {
+            coll_for_count.count_documents(user_filter_for_count, None).await.unwrap_or(0) as i64
+        }
     };
+
+    let t0 = Instant::now();
+    let find_fut = async move {
+        let mut cursor = coll.find(query_filter, find_opts).await?;
+        let mut docs: Vec<Value> = Vec::new();
+        while let Some(d) = cursor.try_next().await? {
+            docs.push(bson_to_json(&Bson::Document(d)));
+        }
+        Ok::<_, anyhow::Error>(docs)
+    };
+    let (docs_res, total) = tokio::join!(find_fut, count_fut);
+    let docs = docs_res?;
+    let query_ms = t0.elapsed().as_millis() as i64;
 
     let mut result = json!({
         "documents": docs,
@@ -268,28 +297,98 @@ async fn get_documents(env: DataEnvelope) -> anyhow::Result<Value> {
     Ok(result)
 }
 
+fn bson_num(b: &Bson) -> i64 {
+    match b {
+        Bson::Int32(v) => *v as i64,
+        Bson::Int64(v) => *v,
+        Bson::Double(v) => *v as i64,
+        Bson::Decimal128(d) => d.to_string().parse::<f64>().unwrap_or(0.0) as i64,
+        _ => 0,
+    }
+}
+
 async fn get_metrics(env: MetricsEnvelope) -> anyhow::Result<Value> {
     let client = build_client(&env.params).await?;
     let db_name = if env.database.is_empty() { &env.params.database } else { &env.database };
     let db = client.database(db_name);
-    let stats: Document = db.run_command(doc! { "dbStats": 1i32 }, None).await?;
-    let server_status: Document = client
-        .database("admin")
-        .run_command(doc! { "serverStatus": 1i32 }, None)
-        .await
-        .unwrap_or_default();
-    let data_size = stats.get("dataSize").and_then(|v| v.as_f64()).unwrap_or(0.0) as i64;
-    let connections = server_status
-        .get_document("connections")
-        .ok()
-        .and_then(|d| d.get("current").and_then(|v| v.as_i64()))
-        .unwrap_or(0);
-    let collections = stats.get("collections").and_then(|v| v.as_i32()).unwrap_or(0) as i64;
-    Ok(json!({
-        "data_size_bytes": data_size,
-        "connections": connections,
-        "collections_count": collections,
-    }))
+    let mut result = serde_json::Map::new();
+
+    // Run dbStats + serverStatus in parallel — independent commands on different DBs.
+    let db_for_stats = db.clone();
+    let admin = client.database("admin");
+    let (db_stats_res, server_res) = tokio::join!(
+        db_for_stats.run_command(doc! { "dbStats": 1i32 }, None),
+        admin.run_command(doc! { "serverStatus": 1i32 }, None),
+    );
+
+    // dbStats
+    if let Ok(stats) = db_stats_res {
+        let pairs = [
+            ("dataSize", "data_size_bytes"),
+            ("storageSize", "storage_size_bytes"),
+            ("collections", "collections"),
+            ("objects", "objects"),
+            ("indexes", "indexes"),
+            ("indexSize", "index_size_bytes"),
+            ("avgObjSize", "avg_obj_size_bytes"),
+        ];
+        for (src, dst) in pairs {
+            if let Some(v) = stats.get(src) {
+                result.insert(dst.to_string(), json!(bson_num(v)));
+            }
+        }
+    }
+
+    // serverStatus — connections, opcounters, mem, network
+    if let Ok(status) = server_res {
+        if let Ok(conns) = status.get_document("connections") {
+            if let Some(v) = conns.get("current") {
+                result.insert("active_connections".to_string(), json!(bson_num(v)));
+            }
+            if let Some(v) = conns.get("available") {
+                result.insert("available_connections".to_string(), json!(bson_num(v)));
+            }
+        }
+        if let Ok(ops) = status.get_document("opcounters") {
+            for k in ["insert", "query", "update", "delete", "command"] {
+                if let Some(v) = ops.get(k) {
+                    result.insert(format!("op_{k}"), json!(bson_num(v)));
+                }
+            }
+        }
+        if let Ok(mem) = status.get_document("mem") {
+            if let Some(v) = mem.get("resident") {
+                result.insert("mem_resident_mb".to_string(), json!(bson_num(v)));
+            }
+            if let Some(v) = mem.get("virtual") {
+                result.insert("mem_virtual_mb".to_string(), json!(bson_num(v)));
+            }
+        }
+        if let Ok(net) = status.get_document("network") {
+            if let Some(v) = net.get("bytesIn") {
+                result.insert("net_bytes_in".to_string(), json!(bson_num(v)));
+            }
+            if let Some(v) = net.get("bytesOut") {
+                result.insert("net_bytes_out".to_string(), json!(bson_num(v)));
+            }
+        }
+    }
+
+    // Per-collection estimated counts — fan out in parallel.
+    let mut coll_stats: Vec<Value> = Vec::new();
+    if let Ok(names) = db.list_collection_names(None).await {
+        let futures = names.into_iter().map(|name| {
+            let coll = db.collection::<Document>(&name);
+            async move {
+                let count = coll.estimated_document_count(None).await.unwrap_or(0) as i64;
+                json!({ "name": name, "count": count })
+            }
+        });
+        coll_stats = join_all(futures).await;
+    }
+    result.insert("collection_stats".to_string(), Value::Array(coll_stats));
+
+    Ok(Value::Object(result))
 }
 
 fn parse_document_id(raw: &str) -> Bson {
@@ -399,7 +498,7 @@ impl Handler for MongoHandler {
     }
 }
 
-#[tokio::main(flavor = "multi_thread")]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> std::io::Result<()> {
     serve(MongoHandler).await
 }

@@ -1,10 +1,13 @@
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 use async_trait::async_trait;
-use dbm_plugin_rpc::{fail, method_not_found, ok, serve, ConnectionParams, Handler, Request, Response};
-use redis::AsyncCommands;
+use dbm_plugin_rpc::{emit_event, fail, method_not_found, ok, serve, ConnectionParams, Handler, Request, Response};
+use futures::StreamExt;
+use redis::{aio::MultiplexedConnection, AsyncCommands};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use tokio::sync::oneshot;
 
 struct RedisHandler;
 
@@ -94,10 +97,23 @@ fn urlencode(s: &str) -> String {
     out
 }
 
-async fn connect(p: &ConnectionParams, database: &str) -> anyhow::Result<redis::aio::MultiplexedConnection> {
+fn conn_cache() -> &'static tokio::sync::Mutex<HashMap<String, MultiplexedConnection>> {
+    static CACHE: OnceLock<tokio::sync::Mutex<HashMap<String, MultiplexedConnection>>> = OnceLock::new();
+    CACHE.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()))
+}
+
+async fn connect(p: &ConnectionParams, database: &str) -> anyhow::Result<MultiplexedConnection> {
     let url = build_url(p, database);
-    let client = redis::Client::open(url)?;
+    {
+        let cache = conn_cache().lock().await;
+        if let Some(c) = cache.get(&url) {
+            return Ok(c.clone());
+        }
+    }
+    let client = redis::Client::open(url.clone())?;
     let conn = client.get_multiplexed_async_connection().await?;
+    let mut cache = conn_cache().lock().await;
+    cache.entry(url).or_insert_with(|| conn.clone());
     Ok(conn)
 }
 
@@ -146,11 +162,20 @@ async fn get_keys_with_types(p: &ConnectionParams, database: &str) -> anyhow::Re
             break;
         }
     }
-    let mut out: Vec<Value> = Vec::with_capacity(keys.len());
-    for k in keys {
-        let t: String = redis::cmd("TYPE").arg(&k).query_async(&mut conn).await.unwrap_or_else(|_| "string".into());
-        out.push(json!({ "key": k, "key_type": t }));
+    if keys.is_empty() {
+        return Ok(Vec::new());
     }
+    // Pipeline TYPE commands: one round-trip instead of N.
+    let mut pipe = redis::pipe();
+    for k in &keys {
+        pipe.cmd("TYPE").arg(k);
+    }
+    let types: Vec<String> = pipe.query_async(&mut conn).await.unwrap_or_else(|_| vec!["string".into(); keys.len()]);
+    let out: Vec<Value> = keys
+        .into_iter()
+        .zip(types.into_iter())
+        .map(|(k, t)| json!({ "key": k, "key_type": t }))
+        .collect();
     Ok(out)
 }
 
@@ -203,30 +228,77 @@ async fn get_key_value(p: &ConnectionParams, database: &str, key: &str) -> anyho
 
 async fn get_metrics(p: &ConnectionParams) -> anyhow::Result<Value> {
     let mut conn = connect(p, "").await?;
-    let info: String = redis::cmd("INFO").query_async(&mut conn).await?;
-    let mut data_size: i64 = 0;
-    let mut conns: i64 = 0;
-    let mut hits: i64 = 0;
-    let mut misses: i64 = 0;
-    let mut uptime: i64 = 0;
+    let info: String = redis::cmd("INFO").arg("all").query_async(&mut conn).await?;
+
+    let mut raw: HashMap<String, String> = HashMap::new();
     for line in info.lines() {
         let line = line.trim();
-        let Some((k, v)) = line.split_once(':') else { continue };
-        match k {
-            "used_memory" => data_size = v.parse().unwrap_or(0),
-            "connected_clients" => conns = v.parse().unwrap_or(0),
-            "keyspace_hits" => hits = v.parse().unwrap_or(0),
-            "keyspace_misses" => misses = v.parse().unwrap_or(0),
-            "uptime_in_seconds" => uptime = v.parse().unwrap_or(0),
-            _ => {}
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((k, v)) = line.split_once(':') {
+            raw.insert(k.trim().to_string(), v.trim().to_string());
         }
     }
+
+    let int_of = |k: &str| -> i64 {
+        raw.get(k).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0)
+    };
+    let float_of = |k: &str| -> f64 {
+        raw.get(k).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0)
+    };
+    let str_of = |k: &str| -> String {
+        raw.get(k).cloned().unwrap_or_default()
+    };
+
+    let mut total_keys: i64 = 0;
+    for (k, v) in raw.iter() {
+        if k.starts_with("db") {
+            for part in v.split(',') {
+                if let Some((kk, kv)) = part.split_once('=') {
+                    if kk == "keys" {
+                        if let Ok(n) = kv.parse::<i64>() {
+                            total_keys += n;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Ok(json!({
-        "data_size_bytes": data_size,
-        "connections": conns,
-        "hits": hits,
-        "misses": misses,
-        "uptime_seconds": uptime,
+        // Server
+        "redis_version": str_of("redis_version"),
+        "uptime_seconds": int_of("uptime_in_seconds"),
+        "uptime_days": int_of("uptime_in_days"),
+        // Clients
+        "connected_clients": int_of("connected_clients"),
+        "blocked_clients": int_of("blocked_clients"),
+        // Memory
+        "used_memory_bytes": int_of("used_memory"),
+        "used_memory_human": str_of("used_memory_human"),
+        "used_memory_rss_bytes": int_of("used_memory_rss"),
+        "used_memory_peak_human": str_of("used_memory_peak_human"),
+        "maxmemory_bytes": int_of("maxmemory"),
+        "maxmemory_human": str_of("maxmemory_human"),
+        "mem_fragmentation_ratio": float_of("mem_fragmentation_ratio"),
+        // Stats
+        "total_commands_processed": int_of("total_commands_processed"),
+        "total_connections_received": int_of("total_connections_received"),
+        "keyspace_hits": int_of("keyspace_hits"),
+        "keyspace_misses": int_of("keyspace_misses"),
+        "ops_per_sec": int_of("instantaneous_ops_per_sec"),
+        "input_kbps": float_of("instantaneous_input_kbps"),
+        "output_kbps": float_of("instantaneous_output_kbps"),
+        // Replication
+        "role": str_of("role"),
+        "connected_slaves": int_of("connected_slaves"),
+        // Pub/Sub
+        "pubsub_channels": int_of("pubsub_channels"),
+        "pubsub_patterns": int_of("pubsub_patterns"),
+        "pubsub_shardchannels": int_of("pubsub_shardchannels"),
+        // Keyspace total
+        "total_keys": total_keys,
     }))
 }
 
@@ -283,6 +355,70 @@ async fn pubsub_publish(env: PubSubEnvelope) -> anyhow::Result<Value> {
         .query_async(&mut conn)
         .await?;
     Ok(json!({ "ok": true }))
+}
+
+fn subscriptions() -> &'static Mutex<HashMap<String, oneshot::Sender<()>>> {
+    static REG: OnceLock<Mutex<HashMap<String, oneshot::Sender<()>>>> = OnceLock::new();
+    REG.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+async fn pubsub_subscribe(env: PubSubEnvelope) -> anyhow::Result<Value> {
+    if env.channel.is_empty() {
+        return Err(anyhow::anyhow!("channel required"));
+    }
+    // Idempotent: if already subscribed, succeed without duplicating.
+    if let Ok(map) = subscriptions().lock() {
+        if map.contains_key(&env.channel) {
+            return Ok(json!(true));
+        }
+    }
+    let url = build_url(&env.params, "");
+    let client = redis::Client::open(url)?;
+    let mut pubsub = client.get_async_pubsub().await?;
+    pubsub.subscribe(&env.channel).await?;
+
+    let (tx, mut rx) = oneshot::channel::<()>();
+    if let Ok(mut map) = subscriptions().lock() {
+        map.insert(env.channel.clone(), tx);
+    }
+
+    let channel_name = env.channel.clone();
+    tokio::spawn(async move {
+        {
+            let mut stream = Box::pin(pubsub.on_message());
+            loop {
+                tokio::select! {
+                    _ = &mut rx => break,
+                    msg = stream.next() => {
+                        let Some(msg) = msg else { break };
+                        let ch = msg.get_channel_name().to_string();
+                        let payload: String = msg.get_payload().unwrap_or_default();
+                        let _ = emit_event(
+                            "pubsub_message",
+                            json!({ "channel": ch, "payload": payload }),
+                        ).await;
+                    }
+                }
+            }
+        }
+        let _ = pubsub.unsubscribe(&channel_name).await;
+        if let Ok(mut map) = subscriptions().lock() {
+            map.remove(&channel_name);
+        }
+    });
+
+    Ok(json!(true))
+}
+
+async fn pubsub_unsubscribe(env: PubSubEnvelope) -> anyhow::Result<Value> {
+    if env.channel.is_empty() {
+        return Err(anyhow::anyhow!("channel required"));
+    }
+    let sender = subscriptions().lock().ok().and_then(|mut m| m.remove(&env.channel));
+    if let Some(tx) = sender {
+        let _ = tx.send(());
+    }
+    Ok(json!(true))
 }
 
 #[async_trait]
@@ -361,9 +497,20 @@ impl Handler for RedisHandler {
                 },
                 Err(e) => fail(id, e.to_string()),
             },
-            // pubsub_subscribe/unsubscribe streaming not yet ported — needs event channel.
-            "pubsub_subscribe" => fail(id, "pubsub_subscribe not implemented in Rust port yet"),
-            "pubsub_unsubscribe" => fail(id, "pubsub_unsubscribe not implemented in Rust port yet"),
+            "pubsub_subscribe" => match serde_json::from_value::<PubSubEnvelope>(req.params) {
+                Ok(env) => match pubsub_subscribe(env).await {
+                    Ok(v) => ok(id, v),
+                    Err(e) => fail(id, e.to_string()),
+                },
+                Err(e) => fail(id, e.to_string()),
+            },
+            "pubsub_unsubscribe" => match serde_json::from_value::<PubSubEnvelope>(req.params) {
+                Ok(env) => match pubsub_unsubscribe(env).await {
+                    Ok(v) => ok(id, v),
+                    Err(e) => fail(id, e.to_string()),
+                },
+                Err(e) => fail(id, e.to_string()),
+            },
             "get_schemas" => ok(id, json!([])),
             "get_tables" | "get_columns" => ok(id, json!([])),
             _ => method_not_found(id),
@@ -371,7 +518,7 @@ impl Handler for RedisHandler {
     }
 }
 
-#[tokio::main(flavor = "multi_thread")]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> std::io::Result<()> {
     serve(RedisHandler).await
 }

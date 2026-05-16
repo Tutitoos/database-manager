@@ -1,10 +1,30 @@
 use std::sync::Arc;
+use std::sync::OnceLock;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Stdout};
 use tokio::sync::Mutex;
+
+/// Process-wide single stdout writer. All RPC responses AND unsolicited
+/// notifications must go through this mutex so concurrent writes never
+/// interleave bytes on the wire (the parent reads one JSON per line).
+fn shared_stdout() -> Arc<Mutex<Stdout>> {
+    static OUT: OnceLock<Arc<Mutex<Stdout>>> = OnceLock::new();
+    OUT.get_or_init(|| Arc::new(Mutex::new(tokio::io::stdout()))).clone()
+}
+
+async fn write_line(text: &str) -> std::io::Result<()> {
+    let mut buf = String::with_capacity(text.len() + 1);
+    buf.push_str(text);
+    buf.push('\n');
+    let stdout = shared_stdout();
+    let mut out = stdout.lock().await;
+    out.write_all(buf.as_bytes()).await?;
+    out.flush().await?;
+    Ok(())
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Request {
@@ -74,7 +94,6 @@ pub trait Handler: Send + Sync + 'static {
 /// and writes responses to stdout. Each response is a single line of JSON.
 pub async fn serve<H: Handler>(handler: H) -> std::io::Result<()> {
     let handler = Arc::new(handler);
-    let stdout = Arc::new(Mutex::new(tokio::io::stdout()));
     let stdin = tokio::io::stdin();
     let mut reader = BufReader::new(stdin).lines();
     while let Some(line) = reader.next_line().await? {
@@ -83,7 +102,6 @@ pub async fn serve<H: Handler>(handler: H) -> std::io::Result<()> {
             continue;
         }
         let handler = handler.clone();
-        let stdout = stdout.clone();
         let line_owned = trimmed.to_string();
         tokio::spawn(async move {
             let resp = match serde_json::from_str::<Request>(&line_owned) {
@@ -91,10 +109,7 @@ pub async fn serve<H: Handler>(handler: H) -> std::io::Result<()> {
                 Err(e) => fail(Value::Null, format!("invalid json: {e}")),
             };
             if let Ok(text) = serde_json::to_string(&resp) {
-                let mut out = stdout.lock().await;
-                let _ = out.write_all(text.as_bytes()).await;
-                let _ = out.write_all(b"\n").await;
-                let _ = out.flush().await;
+                let _ = write_line(&text).await;
             }
         });
     }
@@ -109,11 +124,7 @@ pub async fn emit_event(method: &str, params: Value) -> std::io::Result<()> {
         "params": params,
     });
     let text = serde_json::to_string(&payload)?;
-    let mut out = tokio::io::stdout();
-    out.write_all(text.as_bytes()).await?;
-    out.write_all(b"\n").await?;
-    out.flush().await?;
-    Ok(())
+    write_line(&text).await
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]

@@ -1,6 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openExternal } from "@tauri-apps/plugin-shell";
+import {
+  changeVaultPassphrase,
+  lockVault,
+  refreshVault,
+  setVaultPassphrase,
+  unlockVault,
+} from "@/store/vault";
 import type { AppUser } from "@/lib/types";
 
 export type PassphraseStatus = { configured: boolean; unlocked: boolean };
@@ -9,29 +16,26 @@ export const SUPPORTED_PROVIDERS = ["discord", "github", "google", "microsoft"] 
 export type OAuthProvider = (typeof SUPPORTED_PROVIDERS)[number];
 
 export async function passphraseStatus(): Promise<PassphraseStatus> {
-  return invoke("auth_passphrase_status");
+  return refreshVault();
 }
 
 export async function setPassphrase(passphrase: string): Promise<void> {
-  await invoke("auth_set_passphrase", { passphrase });
+  await setVaultPassphrase(passphrase);
 }
 
 export async function unlock(passphrase: string): Promise<void> {
-  await invoke("auth_unlock", { passphrase });
+  await unlockVault(passphrase);
 }
 
 export async function lock(): Promise<void> {
-  await invoke("auth_lock");
+  await lockVault();
 }
 
 export async function changePassphrase(
   oldPassphrase: string,
   newPassphrase: string,
 ): Promise<void> {
-  await invoke("auth_change_passphrase", {
-    oldPassphrase,
-    newPassphrase,
-  });
+  await changeVaultPassphrase(oldPassphrase, newPassphrase);
 }
 
 export async function currentUser(): Promise<AppUser | null> {

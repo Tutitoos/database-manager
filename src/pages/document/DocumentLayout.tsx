@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowLeft, BarChart2, ChevronDown, ChevronRight, Database, FileText, Loader2, Search, X } from "lucide-react";
+import { ArrowLeft, BarChart2, FileText, Loader2, Search, X } from "lucide-react";
 import { Link, Outlet } from "@tanstack/react-router";
 import { useNavigate, useSearchParams } from "@/lib/router-compat";
 import { useCallback, useEffect, useState } from "react";
@@ -24,7 +24,6 @@ export default function DocumentLayout() {
 
   const [connection, setConnection] = useState<Connection | null>(null);
   const [databases, setDatabases] = useState<string[]>([]);
-  const [expandedDbs, setExpandedDbs] = useState<Set<string>>(() => new Set(stored?.expandedDbs ?? []));
   const [collectionsPerDb, setCollectionsPerDb] = useState<Record<string, string[]>>(() => stored?.collectionsPerDb ?? {});
   const [loadingDbs, setLoadingDbs] = useState(false);
   const [loadingCollections, setLoadingCollections] = useState<Record<string, boolean>>({});
@@ -32,8 +31,15 @@ export default function DocumentLayout() {
 
   useEffect(() => {
     if (!connectionId) return;
-    updateSession(connectionId, { expandedDbs: [...expandedDbs], collectionsPerDb, collectionSearch, activeDb, activeCollection, activeView: view ?? "" });
-  }, [expandedDbs, collectionsPerDb, collectionSearch, activeDb, activeCollection, view, connectionId]);
+    updateSession(connectionId, {
+      expandedDbs: [],
+      collectionsPerDb,
+      collectionSearch,
+      activeDb,
+      activeCollection,
+      activeView: view ?? "",
+    });
+  }, [collectionsPerDb, collectionSearch, activeDb, activeCollection, view, connectionId]);
 
   useEffect(() => {
     invoke<Connection[]>("list_connections").then((all) => {
@@ -72,19 +78,10 @@ export default function DocumentLayout() {
   }, [connection, collectionsPerDb]);
 
   useEffect(() => {
-    if (activeDb && expandedDbs.has(activeDb)) {
+    if (activeDb) {
       loadCollections(activeDb);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDb]);
-
-  function toggleDb(db: string) {
-    setExpandedDbs((prev) => {
-      const next = new Set(prev);
-      if (next.has(db)) { next.delete(db); } else { next.add(db); loadCollections(db); }
-      return next;
-    });
-  }
+  }, [activeDb, loadCollections]);
 
   function selectCollection(db: string, collection: string) {
     navigate(`/connections/document?id=${connectionId}&db=${encodeURIComponent(db)}&collection=${encodeURIComponent(collection)}`);
@@ -124,137 +121,118 @@ export default function DocumentLayout() {
             <span className={cn("text-xs", mutedText)}>{connection.host}:{connection.port ?? "-"}</span>
           </div>
         )}
-        <div className="ml-auto flex items-center gap-0.5">
-          <button
-            onClick={() => navView("data")}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              view !== "metrics" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300"
-            )}
-          >
-            <FileText className="h-3.5 w-3.5" />
-            Datos
-          </button>
-          <button
-            onClick={() => navView("metrics")}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              view === "metrics" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300"
-            )}
-          >
-            <BarChart2 className="h-3.5 w-3.5" />
-            Métricas
-          </button>
+        <div className="ml-auto flex items-center gap-2">
+          <div className="flex items-center gap-0.5 rounded-lg border border-white/5 bg-black/40 p-1 shadow-inner">
+            <button
+              onClick={() => navView("data")}
+              className={cn(
+                "rounded px-3 py-1 text-xs font-medium transition-colors",
+                view !== "metrics" ? "bg-zinc-700 text-white" : "text-zinc-400 hover:text-zinc-200"
+              )}
+            >
+              <BarChart2 className="hidden" />
+              Datos
+            </button>
+            <button
+              onClick={() => navView("metrics")}
+              className={cn(
+                "rounded px-3 py-1 text-xs font-medium transition-colors",
+                view === "metrics" ? "bg-zinc-700 text-white" : "text-zinc-400 hover:text-zinc-200"
+              )}
+            >
+              Métricas
+            </button>
+          </div>
         </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {view !== "metrics" && <aside className="flex w-64 shrink-0 flex-col border-r border-white/5 bg-zinc-950/50">
-          <div className="border-b border-white/5 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[.14em] text-zinc-500 bg-white/[0.01]">
-            Bases de datos
-          </div>
-          <div className="border-b border-white/5 bg-zinc-950/20 px-3 py-2">
-            <div className="flex items-center gap-2 rounded-lg border border-white/5 bg-black/40 px-2.5 py-1.5 transition-colors focus-within:border-white/20 focus-within:ring-1 focus-within:ring-white/10 shadow-inner">
-              <Search className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
-              <input
-                value={collectionSearch}
-                onChange={(e) => setCollectionSearch(e.target.value)}
-                placeholder="Buscar colecciones..."
-                className="min-w-0 flex-1 bg-transparent text-xs text-zinc-200 placeholder-zinc-600 outline-none"
-              />
-              {collectionSearch && (
-                <button onClick={() => setCollectionSearch("")} className="shrink-0 text-zinc-600 transition-colors hover:text-zinc-400">
-                  <X className="h-3 w-3" />
-                </button>
-              )}
+        {view !== "metrics" && (
+          <aside className="flex w-64 shrink-0 flex-col border-r border-white/5 bg-zinc-950/50">
+            <div className="border-b border-white/5 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[.14em] text-zinc-500 bg-white/[0.01]">
+              Colecciones
             </div>
-          </div>
-          <div className="flex-1 overflow-y-auto py-1">
-            {loadingDbs && (
-              <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-500">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Cargando...
+
+            <div className="border-b border-white/5 bg-zinc-950/20 px-3 py-2">
+              <div className="flex items-center gap-2 rounded-lg border border-white/5 bg-black/40 px-2.5 py-1.5 transition-colors focus-within:border-white/20 focus-within:ring-1 focus-within:ring-white/10 shadow-inner">
+                <Search className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+                <input
+                  value={collectionSearch}
+                  onChange={(e) => setCollectionSearch(e.target.value)}
+                  placeholder="Buscar colecciones..."
+                  className="min-w-0 flex-1 bg-transparent text-xs text-zinc-200 placeholder-zinc-600 outline-none"
+                />
+                {collectionSearch && (
+                  <button onClick={() => setCollectionSearch("")} className="shrink-0 text-zinc-600 transition-colors hover:text-zinc-400">
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
               </div>
-            )}
-            {databases.map((db) => {
-              const expanded = expandedDbs.has(db);
-              const allCollections = collectionsPerDb[db] ?? [];
-              const collections = collectionSearch
-                ? allCollections.filter((c) => c.toLowerCase().includes(collectionSearch.toLowerCase()))
-                : allCollections;
-              const loading = loadingCollections[db];
-              return (
-                <div key={db}>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-1">
+              {activeDb && loadingCollections[activeDb] && (
+                <div className="flex items-center gap-2 px-4 py-2 text-xs text-zinc-500">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Cargando colecciones...
+                </div>
+              )}
+              {activeDb && !loadingCollections[activeDb] && (collectionsPerDb[activeDb] ?? [])
+                .filter((col) => col.toLowerCase().includes(collectionSearch.toLowerCase()))
+                .map((col) => (
                   <button
-                    onClick={() => toggleDb(db)}
+                    key={col}
+                    onClick={() => selectCollection(activeDb, col)}
                     className={cn(
-                      "flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-all hover:bg-white/5",
-                      activeDb === db && !activeCollection ? "text-white" : "text-zinc-400"
+                      "flex w-[calc(100%-16px)] mx-2 my-0.5 items-center gap-3 rounded-lg py-1.5 px-2 text-left text-xs transition-all duration-200",
+                      activeCollection === col
+                        ? "bg-blue-600/15 text-blue-400 border border-blue-500/20 shadow-lg shadow-blue-900/10"
+                        : "border border-transparent text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200 hover:border-white/5"
                     )}
                   >
-                    {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-600" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />}
-                    <Database className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
-                    <span className="truncate font-medium">{db}</span>
-                  </button>
-                  {expanded && (
-                    <div>
-                      {loading && (
-                        <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-600">
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          Cargando colecciones...
-                        </div>
-                      )}
-                      {collections.map((col) => (
-                        <button
-                          key={col}
-                          onClick={() => selectCollection(db, col)}
-                          className={cn(
-                            "flex w-full items-center gap-2 border-l-2 py-1.5 pr-3 text-left text-xs transition-all",
-                            activeDb === db && activeCollection === col
-                              ? "bg-blue-500/10 text-blue-400 border-blue-500/30 shadow-inner"
-                              : "border-transparent text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
-                          )}
-                          style={{
-                            paddingLeft: 24,
-                            ...(activeDb === db && activeCollection === col ? { borderColor: provider?.color } : {})
-                          }}
-                        >
-                          <FileText className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
-                          <span className="truncate font-mono">{col}</span>
-                        </button>
-                      ))}
-                      {!loading && collections.length === 0 && (
-                        <p className="px-6 py-1.5 text-xs text-zinc-600">Sin colecciones</p>
-                      )}
+                    <div className={cn(
+                      "grid h-6 w-6 shrink-0 place-items-center rounded-md border transition-colors",
+                      activeCollection === col
+                        ? "border-blue-500/30 bg-blue-500/10 text-blue-400"
+                        : "border-white/5 bg-white/[0.02] text-zinc-600"
+                    )}>
+                      <FileText className="h-3 w-3" />
                     </div>
-                  )}
+                    <div className="flex-1 min-w-0">
+                      <span className={cn("truncate block font-mono", activeCollection === col ? "text-blue-300" : "text-zinc-200")}>
+                        {col}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              {activeDb && !loadingCollections[activeDb] && (collectionsPerDb[activeDb] ?? []).length === 0 && (
+                <div className="px-4 py-4 text-xs text-zinc-600">
+                  No hay colecciones disponibles.
                 </div>
-              );
-            })}
-            {!loadingDbs && databases.length === 0 && (
-              <div className={cn("px-4 py-4 text-xs", mutedText)}>No hay bases de datos disponibles.</div>
-            )}
-          </div>
-          <div className="shrink-0 border-t border-white/5 px-3 py-2">
-            {loadingDbs ? (
-              <div className="flex items-center gap-2 text-xs text-zinc-500">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                <span>Cargando DBs...</span>
-              </div>
-            ) : (
-              <Select
-                value={activeDb}
-                onChange={(val) => {
-                  setExpandedDbs((prev) => { const next = new Set(prev); next.add(val); return next; });
-                  navigate(`/connections/document?id=${connectionId}&db=${encodeURIComponent(val)}`);
-                }}
-                options={databases.map((db) => ({ value: db, label: db }))}
-                className="text-[11px] h-8 w-full"
-                upward
-              />
-            )}
-          </div>
-        </aside>}
+              )}
+              {!activeDb && !loadingDbs && (
+                <div className={cn("px-4 py-4 text-xs", mutedText)}>Selecciona una base de datos.</div>
+              )}
+            </div>
+
+            <div className="border-t border-white/5 bg-zinc-950/40 px-3 py-2">
+              {loadingDbs ? (
+                <div className="flex items-center gap-2 text-xs text-zinc-500">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span>Cargando DBs...</span>
+                </div>
+              ) : (
+                <Select
+                  value={activeDb}
+                  onChange={(val) => navigate(`/connections/document?id=${connectionId}&db=${encodeURIComponent(val)}`)}
+                  options={databases.map((db) => ({ value: db, label: db }))}
+                  className="text-[11px] h-8 w-full"
+                  upward
+                />
+              )}
+            </div>
+          </aside>
+        )}
 
         <div className="flex min-w-0 flex-1 flex-col">
           <main className={view === "metrics" ? "min-h-0 flex-1 overflow-hidden" : "min-h-0 flex-1 overflow-auto"}>
