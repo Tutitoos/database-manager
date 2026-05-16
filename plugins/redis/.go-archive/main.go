@@ -141,6 +141,43 @@ func dispatch(req Request) Response {
 		return ok(req.ID, []string{})
 	case "get_tables", "get_columns":
 		return ok(req.ID, []any{})
+	case "set_value":
+		var env struct {
+			Params   ConnectionParams `json:"params"`
+			Database string           `json:"database"`
+			Key      string           `json:"key"`
+			Value    string           `json:"value"`
+		}
+		if err := json.Unmarshal(req.Params, &env); err != nil {
+			return fail(req.ID, err)
+		}
+		if err := setKeyValue(env.Params, env.Database, env.Key, env.Value); err != nil {
+			return fail(req.ID, err)
+		}
+		return ok(req.ID, map[string]bool{"ok": true})
+	case "delete_key":
+		var env DataEnvelope
+		if err := json.Unmarshal(req.Params, &env); err != nil {
+			return fail(req.ID, err)
+		}
+		if err := deleteKey(env.Params, env.Database, env.Key); err != nil {
+			return fail(req.ID, err)
+		}
+		return ok(req.ID, map[string]bool{"ok": true})
+	case "expire_key":
+		var env struct {
+			Params   ConnectionParams `json:"params"`
+			Database string           `json:"database"`
+			Key      string           `json:"key"`
+			Ttl      int64            `json:"ttl"`
+		}
+		if err := json.Unmarshal(req.Params, &env); err != nil {
+			return fail(req.ID, err)
+		}
+		if err := expireKey(env.Params, env.Database, env.Key, env.Ttl); err != nil {
+			return fail(req.ID, err)
+		}
+		return ok(req.ID, map[string]bool{"ok": true})
 	case "pubsub_subscribe":
 		var env PubSubEnvelope
 		if err := json.Unmarshal(req.Params, &env); err != nil {
@@ -171,6 +208,81 @@ func dispatch(req Request) Response {
 	default:
 		return Response{JSONRPC: "2.0", Error: &Error{Code: -32601, Message: "method not found"}, ID: req.ID}
 	}
+}
+
+func clientForDB(params ConnectionParams, database string) *redis.Client {
+	db := 0
+	if database != "" {
+		if n, err := strconv.Atoi(database); err == nil {
+			db = n
+		}
+	}
+	if params.Port == 0 {
+		params.Port = 6379
+	}
+	return redis.NewClient(&redis.Options{
+		Addr:     params.Host + ":" + strconv.Itoa(params.Port),
+		Username: params.Username,
+		Password: params.Password,
+		DB:       db,
+	})
+}
+
+func setKeyValue(params ConnectionParams, database, key, value string) error {
+	if key == "" {
+		return fmt.Errorf("key required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	client := clientForDB(params, database)
+	defer client.Close()
+	keyType, err := client.Type(ctx, key).Result()
+	if err != nil {
+		return err
+	}
+	if keyType != "none" && keyType != "string" {
+		return fmt.Errorf("cannot edit key of type %s", keyType)
+	}
+	return client.Set(ctx, key, value, 0).Err()
+}
+
+func deleteKey(params ConnectionParams, database, key string) error {
+	if key == "" {
+		return fmt.Errorf("key required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	client := clientForDB(params, database)
+	defer client.Close()
+	n, err := client.Del(ctx, key).Result()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("key not found")
+	}
+	return nil
+}
+
+func expireKey(params ConnectionParams, database, key string, ttl int64) error {
+	if key == "" {
+		return fmt.Errorf("key required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	client := clientForDB(params, database)
+	defer client.Close()
+	if ttl <= 0 {
+		return client.Persist(ctx, key).Err()
+	}
+	ok, err := client.Expire(ctx, key, time.Duration(ttl)*time.Second).Result()
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("key not found")
+	}
+	return nil
 }
 
 func newClient(params ConnectionParams) *redis.Client {

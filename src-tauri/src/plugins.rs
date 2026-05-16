@@ -291,6 +291,29 @@ impl PluginManager {
         Ok(())
     }
 
+    pub async fn shutdown_all(&self) {
+        let processes: Vec<_> = {
+            let mut guard = match self.plugins.lock() {
+                Ok(g) => g,
+                Err(_) => return,
+            };
+            guard
+                .values_mut()
+                .filter_map(|p| {
+                    if p.manifest.builtin {
+                        None
+                    } else {
+                        p.loaded = false;
+                        p.process.take()
+                    }
+                })
+                .collect()
+        };
+        for process in processes {
+            process.shutdown().await;
+        }
+    }
+
     pub async fn disable(&self, plugin_id: &str) -> Result<(), String> {
         let process = {
             let mut guard = self
@@ -454,6 +477,201 @@ impl PluginManager {
             "database": database, "collection": collection, "limit": limit, "offset": offset, "filter": filter, "cursor": cursor
         })).await?;
         serde_json::from_value(result).map_err(|e| format!("invalid documents response: {e}"))
+    }
+
+    pub async fn update_document(
+        &self,
+        input: &ConnectionInput,
+        database: &str,
+        collection: &str,
+        document_id: &str,
+        update_json: &str,
+    ) -> Result<(), String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        process
+            .call(
+                "update_document",
+                json!({
+                    "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+                    "database": database,
+                    "collection": collection,
+                    "document_id": document_id,
+                    "update": update_json,
+                }),
+            )
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn delete_document(
+        &self,
+        input: &ConnectionInput,
+        database: &str,
+        collection: &str,
+        document_id: &str,
+    ) -> Result<(), String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        process
+            .call(
+                "delete_document",
+                json!({
+                    "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+                    "database": database,
+                    "collection": collection,
+                    "document_id": document_id,
+                }),
+            )
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn update_row(
+        &self,
+        input: &ConnectionInput,
+        database: &str,
+        table: &str,
+        pk_column: &str,
+        pk_value: serde_json::Value,
+        values: serde_json::Value,
+    ) -> Result<(), String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        process
+            .call(
+                "update_row",
+                json!({
+                    "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+                    "database": database,
+                    "table": table,
+                    "pk_column": pk_column,
+                    "pk_value": pk_value,
+                    "values": values,
+                }),
+            )
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn delete_row(
+        &self,
+        input: &ConnectionInput,
+        database: &str,
+        table: &str,
+        pk_column: &str,
+        pk_value: serde_json::Value,
+    ) -> Result<(), String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        process
+            .call(
+                "delete_row",
+                json!({
+                    "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+                    "database": database,
+                    "table": table,
+                    "pk_column": pk_column,
+                    "pk_value": pk_value,
+                }),
+            )
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn set_redis_value(
+        &self,
+        input: &ConnectionInput,
+        database: &str,
+        key: &str,
+        value: &str,
+    ) -> Result<(), String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        process
+            .call(
+                "set_value",
+                json!({
+                    "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+                    "database": database,
+                    "key": key,
+                    "value": value,
+                }),
+            )
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn delete_redis_key(
+        &self,
+        input: &ConnectionInput,
+        database: &str,
+        key: &str,
+    ) -> Result<(), String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        process
+            .call(
+                "delete_key",
+                json!({
+                    "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+                    "database": database,
+                    "key": key,
+                }),
+            )
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn expire_redis_key(
+        &self,
+        input: &ConnectionInput,
+        database: &str,
+        key: &str,
+        ttl: i64,
+    ) -> Result<(), String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        process
+            .call(
+                "expire_key",
+                json!({
+                    "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+                    "database": database,
+                    "key": key,
+                    "ttl": ttl,
+                }),
+            )
+            .await
+            .map(|_| ())
     }
 
     pub async fn get_key_value(&self, input: &ConnectionInput, database: &str, key: &str) -> Result<KeyValue, String> {

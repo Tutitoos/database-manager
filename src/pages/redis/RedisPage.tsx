@@ -2,11 +2,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Check, ChevronRight, Copy, Key, Loader2, X } from "lucide-react";
 import { Suspense, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useSearchParams } from "@/lib/router-compat";
 import { mutedText, sectionBorder, surface } from "@/lib/styles";
 import type { Connection, KeyValue } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AutocompleteInput, type SuggestionItem } from "@/components/autocomplete-input";
+import { Modal } from "@/components/modal";
+import { CodeEditor } from "@/components/code-editor";
 
 // ── JSON tree ────────────────────────────────────────────────────────────────
 
@@ -154,6 +156,62 @@ function RedisPage() {
   const [copied, setCopied] = useState(false);
   const [displayTtl, setDisplayTtl] = useState<number | null>(null);
   const ttlTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [editor, setEditor] = useState<{ value: string; saving: boolean; error: string | null } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [ttlEditor, setTtlEditor] = useState<{ seconds: string; saving: boolean; error: string | null } | null>(null);
+
+  function reload() {
+    if (!connection || !key) return;
+    setLoading(true);
+    invoke<KeyValue>("get_key_value", { input: connection, database: db, key })
+      .then((kv) => {
+        setData(kv);
+        setDisplayTtl(kv.ttl);
+      })
+      .catch((e: unknown) => setError(String(e)))
+      .finally(() => setLoading(false));
+  }
+
+  async function performSetValue() {
+    if (!connection || !editor) return;
+    setEditor({ ...editor, saving: true, error: null });
+    try {
+      await invoke("set_redis_value", { input: connection, database: db, key, value: editor.value });
+      setEditor(null);
+      reload();
+    } catch (e) {
+      setEditor({ ...editor, saving: false, error: String(e) });
+    }
+  }
+
+  async function performDelete() {
+    if (!connection) return;
+    try {
+      await invoke("delete_redis_key", { input: connection, database: db, key });
+      setDeleteConfirm(false);
+      setData(null);
+    } catch (e) {
+      setError(String(e));
+      setDeleteConfirm(false);
+    }
+  }
+
+  async function performExpire() {
+    if (!connection || !ttlEditor) return;
+    const ttl = Number(ttlEditor.seconds);
+    if (!Number.isFinite(ttl)) {
+      setTtlEditor({ ...ttlEditor, error: "TTL inválido" });
+      return;
+    }
+    setTtlEditor({ ...ttlEditor, saving: true, error: null });
+    try {
+      await invoke("expire_redis_key", { input: connection, database: db, key, ttl: Math.trunc(ttl) });
+      setTtlEditor(null);
+      reload();
+    } catch (e) {
+      setTtlEditor({ ...ttlEditor, saving: false, error: String(e) });
+    }
+  }
 
   useEffect(() => {
     invoke<Connection[]>("list_connections").then((all) => {
@@ -291,6 +349,33 @@ function RedisPage() {
               <span className="hidden sm:inline">{copied ? "Copiado" : "Copiar"}</span>
             </button>
           )}
+          {data && data.key_type === "string" && (
+            <button
+              onClick={() => setEditor({ value: typeof data.value === "string" ? data.value : JSON.stringify(data.value), saving: false, error: null })}
+              title="Editar valor"
+              className="rounded-md border border-white/5 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
+            >
+              Editar
+            </button>
+          )}
+          {data && (
+            <button
+              onClick={() => setTtlEditor({ seconds: data.ttl >= 0 ? String(data.ttl) : "0", saving: false, error: null })}
+              title="Cambiar TTL"
+              className="rounded-md border border-white/5 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
+            >
+              TTL
+            </button>
+          )}
+          {data && (
+            <button
+              onClick={() => setDeleteConfirm(true)}
+              title="Eliminar clave"
+              className="rounded-md border border-red-900/40 bg-red-950/30 px-2.5 py-1.5 text-xs text-red-300 hover:bg-red-950/60"
+            >
+              Eliminar
+            </button>
+          )}
           {loading && <Loader2 className="h-4 w-4 animate-spin text-blue-400" />}
         </div>
       </div>
@@ -299,6 +384,75 @@ function RedisPage() {
         {error && <div className="text-xs text-red-400 mb-4 bg-red-500/10 border border-red-500/20 rounded p-3">{error}</div>}
         {data && <KeyValueDisplay data={data} q={q} />}
       </div>
+
+      {editor && (
+        <Modal onClose={() => !editor.saving && setEditor(null)}>
+          <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-md border border-zinc-800 bg-zinc-950 shadow-xl">
+            <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+              <h2 className="text-sm font-medium text-zinc-100">Editar valor — {key}</h2>
+              <button className="rounded p-1 text-zinc-500 hover:bg-zinc-800" onClick={() => setEditor(null)}>✕</button>
+            </div>
+            <div className="min-h-[40vh] flex-1 overflow-auto bg-zinc-950">
+              <CodeEditor
+                lang="json"
+                value={editor.value}
+                onChange={(v) => setEditor({ ...editor, value: v, error: null })}
+                minHeight="40vh"
+              />
+            </div>
+            {editor.error && <div className="border-t border-red-900/40 bg-red-950/30 px-4 py-2 text-xs text-red-300">{editor.error}</div>}
+            <div className="flex justify-end gap-2 border-t border-zinc-800 px-4 py-3">
+              <button className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800" onClick={() => setEditor(null)} disabled={editor.saving}>
+                Cancelar
+              </button>
+              <button className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50" onClick={performSetValue} disabled={editor.saving}>
+                {editor.saving ? "Guardando…" : "Guardar"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {ttlEditor && (
+        <Modal onClose={() => !ttlEditor.saving && setTtlEditor(null)}>
+          <div className="w-full max-w-md rounded-md border border-zinc-800 bg-zinc-950 p-5 shadow-xl">
+            <h2 className="text-sm font-medium text-zinc-100">TTL — {key}</h2>
+            <p className="mt-2 text-xs text-zinc-500">Segundos antes de expirar. 0 o negativo = persistente.</p>
+            <input
+              type="number"
+              className="mt-3 h-9 w-full rounded-md border border-zinc-700/70 bg-[#0a0a0a] px-3 text-sm text-zinc-100 outline-none"
+              value={ttlEditor.seconds}
+              onChange={(e) => setTtlEditor({ ...ttlEditor, seconds: e.target.value, error: null })}
+            />
+            {ttlEditor.error && <p className="mt-2 text-xs text-red-400">{ttlEditor.error}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800" onClick={() => setTtlEditor(null)} disabled={ttlEditor.saving}>
+                Cancelar
+              </button>
+              <button className="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50" onClick={performExpire} disabled={ttlEditor.saving}>
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {deleteConfirm && (
+        <Modal onClose={() => setDeleteConfirm(false)}>
+          <div className="w-full max-w-md rounded-md border border-zinc-800 bg-zinc-950 p-5 shadow-xl">
+            <h2 className="text-sm font-medium text-zinc-100">¿Eliminar clave?</h2>
+            <p className="mt-2 break-all rounded bg-zinc-900 px-2 py-1 font-mono text-[11px] text-zinc-300">{key}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800" onClick={() => setDeleteConfirm(false)}>
+                Cancelar
+              </button>
+              <button className="rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500" onClick={performDelete}>
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

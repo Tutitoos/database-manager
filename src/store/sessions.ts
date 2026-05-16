@@ -1,4 +1,5 @@
-import { create } from "zustand";
+import { Store } from "@tanstack/store";
+import { useStore } from "@tanstack/react-store";
 import { invoke } from "@tauri-apps/api/core";
 import type { Connection } from "@/lib/types";
 
@@ -65,62 +66,122 @@ function sessionTypeFor(pluginId: string): Session["type"] {
   return "sql";
 }
 
-interface SessionsStore {
+interface SessionsState {
   sessions: Record<number, Session>;
   loaded: boolean;
-  addSession: (connection: Connection) => void;
-  removeSession: (connectionId: number) => void;
-  updateSession: (connectionId: number, patch: Partial<Session>) => void;
-  hydrate: (sessions: Record<number, Session>) => void;
 }
 
-export const useSessionsStore = create<SessionsStore>((set) => ({
+const sessionsStore = new Store<SessionsState>({
   sessions: {},
   loaded: false,
+});
 
-  addSession(connection) {
-    set((state) => {
-      if (state.sessions[connection.id]) return state;
-      const type = sessionTypeFor(connection.plugin_id);
-      let session: Session;
-      if (type === "document") {
-        session = { type, connection, expandedDbs: [], collectionsPerDb: {}, collectionFilters: {}, collectionSearch: "", activeDb: "", activeCollection: "", activeView: "" };
-      } else if (type === "redis") {
-        session = { type, connection, keySearch: "", typeFilter: "all", viewMode: "tree", pubsubChannels: [], pubsubActiveChannel: null, activeDb: "", activeKey: "", activeView: "" };
-      } else {
-        session = { type, connection, expandedDbs: [], tablesPerDb: {}, tableFilters: {}, tableSearch: "", activeDb: "", activeTable: "", activeView: "" };
-      }
-      return { sessions: { ...state.sessions, [connection.id]: session } };
-    });
-  },
+function addSession(connection: Connection) {
+  sessionsStore.setState((state) => {
+    if (state.sessions[connection.id]) return state;
+    const type = sessionTypeFor(connection.plugin_id);
+    let session: Session;
+    if (type === "document") {
+      session = {
+        type,
+        connection,
+        expandedDbs: [],
+        collectionsPerDb: {},
+        collectionFilters: {},
+        collectionSearch: "",
+        activeDb: "",
+        activeCollection: "",
+        activeView: "",
+      };
+    } else if (type === "redis") {
+      session = {
+        type,
+        connection,
+        keySearch: "",
+        typeFilter: "all",
+        viewMode: "tree",
+        pubsubChannels: [],
+        pubsubActiveChannel: null,
+        activeDb: "",
+        activeKey: "",
+        activeView: "",
+      };
+    } else {
+      session = {
+        type,
+        connection,
+        expandedDbs: [],
+        tablesPerDb: {},
+        tableFilters: {},
+        tableSearch: "",
+        activeDb: "",
+        activeTable: "",
+        activeView: "",
+      };
+    }
+    return { ...state, sessions: { ...state.sessions, [connection.id]: session } };
+  });
+}
 
-  removeSession(connectionId) {
-    set((state) => {
-      const next = { ...state.sessions };
-      delete next[connectionId];
-      return { sessions: next };
-    });
-  },
+function removeSession(connectionId: number) {
+  sessionsStore.setState((state) => {
+    const next = { ...state.sessions };
+    delete next[connectionId];
+    return { ...state, sessions: next };
+  });
+}
 
-  updateSession(connectionId, patch) {
-    set((state) => {
-      const existing = state.sessions[connectionId];
-      if (!existing) return state;
-      return { sessions: { ...state.sessions, [connectionId]: { ...existing, ...patch } as Session } };
-    });
-  },
+function updateSession(connectionId: number, patch: Partial<Session>) {
+  sessionsStore.setState((state) => {
+    const existing = state.sessions[connectionId];
+    if (!existing) return state;
+    return {
+      ...state,
+      sessions: { ...state.sessions, [connectionId]: { ...existing, ...patch } as Session },
+    };
+  });
+}
 
-  hydrate(sessions) {
-    set({ sessions, loaded: true });
-  },
-}));
+function hydrate(sessions: Record<number, Session>) {
+  sessionsStore.setState((state) => ({ ...state, sessions, loaded: true }));
+}
+
+type StoreFns = {
+  sessions: Record<number, Session>;
+  loaded: boolean;
+  addSession: typeof addSession;
+  removeSession: typeof removeSession;
+  updateSession: typeof updateSession;
+  hydrate: typeof hydrate;
+};
+
+function buildSnapshot(state: SessionsState): StoreFns {
+  return {
+    sessions: state.sessions,
+    loaded: state.loaded,
+    addSession,
+    removeSession,
+    updateSession,
+    hydrate,
+  };
+}
+
+export function useSessionsStore(): StoreFns {
+  const state = useStore(sessionsStore);
+  return buildSnapshot(state);
+}
+
+useSessionsStore.getState = () => buildSnapshot(sessionsStore.state);
+useSessionsStore.subscribe = (cb: (state: StoreFns) => void) =>
+  sessionsStore.subscribe(() => cb(buildSnapshot(sessionsStore.state)));
 
 // Auto-save to SQLite with 1s debounce — only after initial hydration
 let _saveTimer: ReturnType<typeof setTimeout> | null = null;
-useSessionsStore.subscribe((state) => {
+sessionsStore.subscribe(() => {
+  const state = sessionsStore.state;
   if (!state.loaded) return;
   if (_saveTimer) clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => {
-    invoke("save_sessions", { data: JSON.stringify(state.sessions) }).catch(() => {});
+    invoke("save_sessions", { data: JSON.stringify(state.sessions) }).catch(() => undefined);
   }, 1000);
 });

@@ -25,10 +25,12 @@ import {
   XCircle,
   Zap
 } from "lucide-react";
-import { useNavigate } from "react-router";
+import { Link } from "@tanstack/react-router";
+import { useNavigate } from "@/lib/router-compat";
 import { useEffect, useMemo, useState } from "react";
 import { useSessionsStore, sessionRoute } from "@/store/sessions";
 import { IconButton } from "@/components/icon-button";
+import { Modal } from "@/components/modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +55,7 @@ import {
 import { hoverSurface, mutedText, panel, sectionBorder, softText, surface } from "@/lib/styles";
 import type {
   Connection,
+  ConnectionGroup,
   ConnectionInput,
   ConnectionUpdater,
   ModalTabId,
@@ -63,10 +66,36 @@ import type {
   ValidationMode
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { passphraseStatus } from "@/lib/auth";
+import { triggerSync } from "@/lib/sync";
+import { useDebounced } from "@/lib/use-debounce";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy, rectSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { Folder, FolderPlus, FolderOpen, GripVertical, Inbox, Layers, MoreHorizontal } from "lucide-react";
+
+type CredentialView = {
+  id: number;
+  name: string;
+  username: string;
+  created_at: string;
+  updated_at: string;
+};
 
 export default function ConnectionsPage() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
+  const [groups, setGroups] = useState<ConnectionGroup[]>([]);
+  const [credentials, setCredentials] = useState<CredentialView[]>([]);
+  const [activeGroupId, setActiveGroupId] = useState<number | null | "__all__">("__all__");
   const [query, setQuery] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Connection | null>(null);
@@ -76,12 +105,46 @@ export default function ConnectionsPage() {
   const [statusOk, setStatusOk] = useState<boolean>(false);
 
   async function refresh() {
-    const [nextConnections, nextPlugins] = await Promise.all([
+    const [nextConnections, nextPlugins, nextGroups] = await Promise.all([
       invoke<Connection[]>("list_connections"),
-      invoke<PluginInfo[]>("list_plugins")
+      invoke<PluginInfo[]>("list_plugins"),
+      invoke<ConnectionGroup[]>("list_groups"),
     ]);
     setConnections(nextConnections);
     setPlugins(nextPlugins);
+    setGroups(nextGroups);
+    try {
+      const creds = await invoke<CredentialView[]>("list_credentials_view");
+      setCredentials(creds);
+    } catch {
+      setCredentials([]);
+    }
+  }
+
+  async function createFolder(name: string) {
+    if (!name.trim()) return;
+    await invoke("create_group", { name: name.trim(), parentId: null });
+    await refresh();
+    triggerSync();
+  }
+
+  async function renameFolder(id: number, name: string) {
+    await invoke("update_group", { id, name });
+    await refresh();
+    triggerSync();
+  }
+
+  async function deleteFolder(id: number) {
+    await invoke("delete_group", { id, reassignTo: null });
+    if (activeGroupId === id) setActiveGroupId("__all__");
+    await refresh();
+    triggerSync();
+  }
+
+  async function reorderInGroup(ids: number[]) {
+    await invoke("reorder_connections", { ids });
+    await refresh();
+    triggerSync();
   }
 
   useEffect(() => {
@@ -97,9 +160,14 @@ export default function ConnectionsPage() {
 
   const enabledPlugins = plugins.filter((plugin) => plugin.enabled);
   const pluginMap = useMemo(() => new Map(plugins.map((plugin) => [plugin.id, plugin])), [plugins]);
+  const debouncedQuery = useDebounced(query, 180);
   const visibleConnections = connections.filter((connection) => {
+    if (activeGroupId !== "__all__") {
+      const gid = connection.group_id ?? null;
+      if (gid !== activeGroupId) return false;
+    }
     const text = `${connection.name} ${connection.plugin_id} ${connection.host} ${connection.database}`.toLowerCase();
-    return text.includes(query.toLowerCase());
+    return text.includes(debouncedQuery.toLowerCase());
   });
 
   function openCreate() {
@@ -132,7 +200,8 @@ export default function ConnectionsPage() {
       ssl_mode: connection.ssl_mode,
       settings_json: connection.settings_json,
       group_id: connection.group_id,
-      enabled: connection.enabled
+      enabled: connection.enabled,
+      credential_id: connection.credential_id ?? null
     });
     setStatus("");
     setDialogOpen(true);
@@ -149,6 +218,7 @@ export default function ConnectionsPage() {
       }
       setDialogOpen(false);
       await refresh();
+      triggerSync();
     } catch (error) {
       setStatus(String(error));
     } finally {
@@ -174,33 +244,87 @@ export default function ConnectionsPage() {
   async function deleteConnection(id: number) {
     await invoke("delete_connection", { id });
     await refresh();
+    triggerSync();
   }
 
   async function duplicateConnection(connection: Connection) {
-    const { id: _id, created_at: _created, updated_at: _updated, ...input } = connection;
+    const { id: _id, position: _pos, created_at: _created, updated_at: _updated, ...input } = connection;
     await invoke("create_connection", { input: { ...input, name: `${connection.name} copia` } });
     await refresh();
+    triggerSync();
+  }
+
+  const migrationCandidates = useMemo(
+    () => connections.filter((c) => c.password && c.password.length > 0 && (c.credential_id === null || c.credential_id === undefined)),
+    [connections],
+  );
+
+  async function migrateAllToCredentials() {
+    setBusy(true);
+    setStatus("");
+    try {
+      const ps = await passphraseStatus();
+      if (!ps.configured) {
+        throw new Error("Configura la passphrase en Ajustes → Mi cuenta antes de migrar.");
+      }
+      if (!ps.unlocked) {
+        throw new Error("Desbloquea el vault en Ajustes → Mi cuenta antes de migrar.");
+      }
+      for (const c of migrationCandidates) {
+        const cred = await invoke<{ id: number }>("create_credential", {
+          name: `${c.name} (auto)`,
+          username: c.username,
+          password: c.password,
+        });
+        await invoke("attach_credential_to_connection", {
+          connectionId: c.id,
+          credentialId: cred.id,
+        });
+      }
+      await refresh();
+      triggerSync();
+      setStatus(`${migrationCandidates.length} migradas.`);
+      setStatusOk(true);
+    } catch (e) {
+      setStatus(String(e));
+      setStatusOk(false);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <>
       <ConnectionsView
         connections={visibleConnections}
+        allConnections={connections}
         total={connections.length}
         query={query}
         setQuery={setQuery}
         pluginMap={pluginMap}
+        groups={groups}
+        activeGroupId={activeGroupId}
+        setActiveGroupId={setActiveGroupId}
+        migrationCount={migrationCandidates.length}
+        onMigrateAll={migrateAllToCredentials}
+        migrationBusy={busy}
         onCreate={openCreate}
         onEdit={openEdit}
         onDelete={deleteConnection}
         onDuplicate={duplicateConnection}
         onTest={testConnection}
+        onCreateFolder={createFolder}
+        onRenameFolder={renameFolder}
+        onDeleteFolder={deleteFolder}
+        onReorder={reorderInGroup}
       />
 
       <ConnectionDialog
         open={dialogOpen}
         form={form}
         plugins={enabledPlugins}
+        groups={groups}
+        credentials={credentials}
         busy={busy}
         status={status}
         statusOk={statusOk}
@@ -229,20 +353,60 @@ export default function ConnectionsPage() {
 
 function ConnectionsView(props: {
   connections: Connection[];
+  allConnections: Connection[];
   total: number;
   query: string;
   setQuery: (query: string) => void;
   pluginMap: Map<string, PluginInfo>;
+  groups: ConnectionGroup[];
+  activeGroupId: number | null | "__all__";
+  setActiveGroupId: (id: number | null | "__all__") => void;
+  migrationCount: number;
+  migrationBusy: boolean;
+  onMigrateAll: () => Promise<void>;
   onCreate: () => void;
   onEdit: (connection: Connection) => void;
   onDelete: (id: number) => void;
   onDuplicate: (connection: Connection) => void;
   onTest: (connection: Connection) => void;
+  onCreateFolder: (name: string) => Promise<void>;
+  onRenameFolder: (id: number, name: string) => Promise<void>;
+  onDeleteFolder: (id: number) => Promise<void>;
+  onReorder: (ids: number[]) => Promise<void>;
 }) {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const navigate = useNavigate();
   const { sessions, addSession, removeSession } = useSessionsStore();
   const [testResults, setTestResults] = useState<Record<number, { ms: number | null; loading: boolean; ok: boolean }>>({});
+  const [newFolderName, setNewFolderName] = useState("");
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [deletingFolder, setDeletingFolder] = useState<ConnectionGroup | null>(null);
+  const [deletingConnection, setDeletingConnection] = useState<Connection | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const dndDisabled = props.activeGroupId === "__all__";
+  const orderedIds = useMemo(() => props.connections.map((c) => c.id), [props.connections]);
+  const { countByGroup, countNoGroup } = useMemo(() => {
+    const byGroup = new Map<number, number>();
+    let noGroup = 0;
+    for (const c of props.allConnections) {
+      if (c.group_id == null) noGroup += 1;
+      else byGroup.set(c.group_id, (byGroup.get(c.group_id) ?? 0) + 1);
+    }
+    return { countByGroup: byGroup, countNoGroup: noGroup };
+  }, [props.allConnections]);
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const fromIdx = orderedIds.indexOf(Number(active.id));
+    const toIdx = orderedIds.indexOf(Number(over.id));
+    if (fromIdx < 0 || toIdx < 0) return;
+    const newOrder = arrayMove(orderedIds, fromIdx, toIdx);
+    props.onReorder(newOrder).catch(() => undefined);
+  }
 
   function connectTo(connection: Connection) {
     const existing = sessions[connection.id];
@@ -291,7 +455,41 @@ function ConnectionsView(props: {
         </IconButton>
       </div>
 
+      {props.migrationCount > 0 && (
+        <div className={cn("flex items-center gap-3 border-b border-amber-900/40 bg-amber-950/30 px-5 py-2 text-xs text-amber-200", panel)}>
+          <span>
+            {props.migrationCount} conexion{props.migrationCount === 1 ? "" : "es"} con contraseña en texto plano. Mígra a credenciales cifradas.
+          </span>
+          <button
+            disabled={props.migrationBusy}
+            onClick={() => props.onMigrateAll()}
+            className="ml-auto rounded border border-amber-700 bg-amber-900/40 px-2 py-0.5 text-[11px] font-medium text-amber-100 hover:bg-amber-900/70 disabled:opacity-50"
+          >
+            {props.migrationBusy ? "Migrando…" : "Migrar todas"}
+          </button>
+        </div>
+      )}
+
+      <FolderBar
+        groups={props.groups}
+        activeGroupId={props.activeGroupId}
+        setActiveGroupId={props.setActiveGroupId}
+        countAll={props.total}
+        countByGroup={countByGroup}
+        countNoGroup={countNoGroup}
+        onCreate={props.onCreateFolder}
+        onRename={props.onRenameFolder}
+        onDelete={(g) => setDeletingFolder(g)}
+        creatingFolder={creatingFolder}
+        setCreatingFolder={setCreatingFolder}
+        newFolderName={newFolderName}
+        setNewFolderName={setNewFolderName}
+        dndDisabled={dndDisabled}
+      />
+
       {viewMode === "grid" && (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={orderedIds} strategy={rectSortingStrategy}>
         <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 content-start gap-3 overflow-x-hidden overflow-y-auto p-5 lg:grid-cols-2 xl:grid-cols-3">
           {props.connections.length === 0 && (
             <div className={cn("col-span-full flex min-h-64 flex-col items-center justify-center rounded-xl p-8 text-center border-2 border-dashed border-zinc-800/60 bg-zinc-900/20 backdrop-blur-sm")}>
@@ -305,7 +503,7 @@ function ConnectionsView(props: {
           {props.connections.map((connection) => {
             const plugin = props.pluginMap.get(connection.plugin_id);
             return (
-              <article key={connection.id} className={cn("rounded-xl p-5", surface, hoverSurface)}>
+              <SortableArticle key={connection.id} id={connection.id} disabled={dndDisabled} className={cn("rounded-xl p-5", surface, hoverSurface)}>
                 <div className="flex gap-4">
                   <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-white/10 shadow-inner">
                     <ProviderIcon providerId={connection.plugin_id} className="block h-full w-full object-cover" />
@@ -372,18 +570,22 @@ function ConnectionsView(props: {
                     <Button variant="ghost" size="icon" title="Duplicar" onClick={() => props.onDuplicate(connection)}>
                       <Copy className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" title="Eliminar" onClick={() => props.onDelete(connection.id)}>
+                    <Button variant="ghost" size="icon" title="Eliminar" onClick={() => setDeletingConnection(connection)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
-              </article>
+              </SortableArticle>
             );
           })}
         </div>
+        </SortableContext>
+        </DndContext>
       )}
 
       {viewMode === "list" && (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={orderedIds} strategy={verticalListSortingStrategy}>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto p-5">
           {props.connections.length === 0 && (
             <div className={cn("flex min-h-64 flex-col items-center justify-center rounded-xl p-8 text-center border-2 border-dashed border-zinc-800/60 bg-zinc-900/20 backdrop-blur-sm")}>
@@ -397,7 +599,7 @@ function ConnectionsView(props: {
           {props.connections.map((connection) => {
             const plugin = props.pluginMap.get(connection.plugin_id);
             return (
-              <div key={connection.id} className={cn("flex items-center gap-4 rounded-xl px-4 py-3", surface, hoverSurface)}>
+              <SortableRow key={connection.id} id={connection.id} disabled={dndDisabled} className={cn("flex items-center gap-4 rounded-xl px-4 py-3", surface, hoverSurface)}>
                 <div className="h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-white/10 shadow-inner">
                   <ProviderIcon providerId={connection.plugin_id} className="block h-full w-full object-cover" />
                 </div>
@@ -424,14 +626,317 @@ function ConnectionsView(props: {
                   <Button variant="ghost" size="icon" title="Duplicar" onClick={() => props.onDuplicate(connection)}>
                     <Copy className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" title="Eliminar" onClick={() => props.onDelete(connection.id)}>
+                  <Button variant="ghost" size="icon" title="Eliminar" onClick={() => setDeletingConnection(connection)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
-              </div>
+              </SortableRow>
             );
           })}
         </div>
+        </SortableContext>
+        </DndContext>
+      )}
+
+      {deletingFolder && (
+        <Modal onClose={() => setDeletingFolder(null)}>
+          <div className="w-full max-w-md rounded-md border border-zinc-800 bg-zinc-950 p-5 shadow-xl">
+            <h2 className="text-sm font-medium text-zinc-100">¿Eliminar carpeta?</h2>
+            <p className="mt-2 break-all rounded bg-zinc-900 px-2 py-1 font-mono text-[11px] text-zinc-300">{deletingFolder.name}</p>
+            <p className="mt-2 text-xs text-zinc-400">Las conexiones dentro se moverán a "Sin carpeta".</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setDeletingFolder(null)}>Cancelar</Button>
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={async () => {
+                  await props.onDeleteFolder(deletingFolder.id);
+                  setDeletingFolder(null);
+                }}
+              >
+                Eliminar
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {deletingConnection && (
+        <Modal onClose={() => setDeletingConnection(null)}>
+          <div className="w-full max-w-md rounded-md border border-zinc-800 bg-zinc-950 p-5 shadow-xl">
+            <h2 className="text-sm font-medium text-zinc-100">¿Eliminar conexión?</h2>
+            <p className="mt-2 break-all rounded bg-zinc-900 px-2 py-1 font-mono text-[11px] text-zinc-300">
+              {deletingConnection.name} · {deletingConnection.host}:{deletingConnection.port ?? "-"}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setDeletingConnection(null)}>Cancelar</Button>
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={async () => {
+                  await props.onDelete(deletingConnection.id);
+                  setDeletingConnection(null);
+                }}
+              >
+                Eliminar
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function SortableArticle({ id, disabled, className, children }: { id: number; disabled?: boolean; className?: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+    boxShadow: isDragging ? "0 24px 60px rgba(0,0,0,.55)" : undefined,
+  };
+  return (
+    <article ref={setNodeRef} style={style} className={cn("group relative", className, isDragging && "ring-2 ring-blue-500/60")}>
+      {!disabled && (
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          aria-label="Arrastrar"
+          title="Arrastrar para reordenar"
+          className="absolute left-1 top-1/2 z-10 -translate-y-1/2 rounded-md p-1 text-zinc-600 opacity-40 transition-opacity hover:bg-zinc-800/70 hover:text-zinc-200 hover:opacity-100 group-hover:opacity-80 cursor-grab active:cursor-grabbing touch-none"
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      )}
+      {children}
+    </article>
+  );
+}
+
+function SortableRow({ id, disabled, className, children }: { id: number; disabled?: boolean; className?: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+    boxShadow: isDragging ? "0 16px 40px rgba(0,0,0,.5)" : undefined,
+  };
+  return (
+    <div ref={setNodeRef} style={style} className={cn("group", className, isDragging && "ring-2 ring-blue-500/60")}>
+      {!disabled && (
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          aria-label="Arrastrar"
+          title="Arrastrar para reordenar"
+          className="cursor-grab text-zinc-600 hover:text-zinc-300 active:cursor-grabbing touch-none"
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      )}
+      {children}
+    </div>
+  );
+}
+
+function FolderBar({
+  groups,
+  activeGroupId,
+  setActiveGroupId,
+  countAll,
+  countByGroup,
+  countNoGroup,
+  onCreate,
+  onRename,
+  onDelete,
+  creatingFolder,
+  setCreatingFolder,
+  newFolderName,
+  setNewFolderName,
+  dndDisabled,
+}: {
+  groups: ConnectionGroup[];
+  activeGroupId: number | null | "__all__";
+  setActiveGroupId: (id: number | null | "__all__") => void;
+  countAll: number;
+  countByGroup: Map<number, number>;
+  countNoGroup: number;
+  onCreate: (name: string) => Promise<void>;
+  onRename: (id: number, name: string) => Promise<void>;
+  onDelete: (g: ConnectionGroup) => void;
+  creatingFolder: boolean;
+  setCreatingFolder: (v: boolean) => void;
+  newFolderName: string;
+  setNewFolderName: (v: string) => void;
+  dndDisabled: boolean;
+}) {
+  return (
+    <div className={cn("border-b px-5 py-2.5", panel, sectionBorder)}>
+      <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
+        <FolderTab
+          active={activeGroupId === "__all__"}
+          icon={<Layers className="h-3.5 w-3.5" />}
+          label="Todas"
+          count={countAll}
+          onClick={() => setActiveGroupId("__all__")}
+        />
+        <FolderTab
+          active={activeGroupId === null}
+          icon={<Inbox className="h-3.5 w-3.5" />}
+          label="Sin carpeta"
+          count={countNoGroup}
+          onClick={() => setActiveGroupId(null)}
+        />
+        <span className="mx-1 h-5 w-px shrink-0 bg-zinc-800/70" />
+        {groups.map((g) => (
+          <FolderTab
+            key={g.id}
+            active={activeGroupId === g.id}
+            icon={<Folder className="h-3.5 w-3.5" />}
+            label={g.name}
+            count={countByGroup.get(g.id) ?? 0}
+            onClick={() => setActiveGroupId(g.id)}
+            onRename={async () => {
+              const next = window.prompt("Nuevo nombre", g.name);
+              if (next && next.trim() && next.trim() !== g.name) await onRename(g.id, next.trim());
+            }}
+            onDelete={() => onDelete(g)}
+          />
+        ))}
+        {creatingFolder ? (
+          <div className="flex items-center gap-1">
+            <Input
+              autoFocus
+              className="h-8 w-44 text-xs"
+              placeholder="Nombre de la carpeta…"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyDown={async (e) => {
+                if (e.key === "Enter") {
+                  await onCreate(newFolderName);
+                  setNewFolderName("");
+                  setCreatingFolder(false);
+                }
+                if (e.key === "Escape") {
+                  setNewFolderName("");
+                  setCreatingFolder(false);
+                }
+              }}
+              onBlur={async () => {
+                if (newFolderName.trim()) await onCreate(newFolderName);
+                setNewFolderName("");
+                setCreatingFolder(false);
+              }}
+            />
+          </div>
+        ) : (
+          <button
+            onClick={() => setCreatingFolder(true)}
+            className="ml-auto flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-dashed border-zinc-700/60 px-2.5 text-[11px] text-zinc-400 transition-colors hover:border-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-200"
+            title="Crear carpeta"
+          >
+            <FolderPlus className="h-3.5 w-3.5" />
+            Nueva carpeta
+          </button>
+        )}
+      </div>
+      {dndDisabled && activeGroupId === "__all__" && (
+        <p className="mt-2 text-[10.5px] text-zinc-500">
+          <GripVertical className="mr-0.5 inline h-3 w-3 -translate-y-px" />
+          Filtra por carpeta para arrastrar y reordenar.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function FolderTab({
+  active,
+  icon,
+  label,
+  count,
+  onClick,
+  onRename,
+  onDelete,
+}: {
+  active: boolean;
+  icon: React.ReactNode;
+  label: string;
+  count: number;
+  onClick: () => void;
+  onRename?: () => void;
+  onDelete?: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  return (
+    <div className="group/tab relative shrink-0">
+      <button
+        onClick={onClick}
+        className={cn(
+          "flex h-8 items-center gap-2 rounded-md border px-3 text-[12px] font-medium transition-colors",
+          active
+            ? "border-blue-500/40 bg-blue-500/10 text-blue-200"
+            : "border-zinc-800/70 bg-zinc-950/50 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900/60 hover:text-zinc-200",
+        )}
+      >
+        <span className={cn(active ? "text-blue-300" : "text-zinc-500")}>{icon}</span>
+        <span className="max-w-[160px] truncate">{label}</span>
+        <span
+          className={cn(
+            "ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold",
+            active ? "bg-blue-500/25 text-blue-200" : "bg-zinc-800 text-zinc-400",
+          )}
+        >
+          {count}
+        </span>
+        {onRename && (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen((x) => !x);
+            }}
+            className="ml-0.5 rounded p-0.5 text-zinc-500 opacity-0 transition-opacity hover:bg-zinc-800 hover:text-zinc-200 group-hover/tab:opacity-100"
+            title="Más"
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </span>
+        )}
+      </button>
+      {menuOpen && onRename && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
+          <div className="absolute right-0 top-full z-40 mt-1 w-36 overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 shadow-xl">
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onRename();
+              }}
+              className="block w-full px-3 py-1.5 text-left text-[11px] text-zinc-200 hover:bg-zinc-900"
+            >
+              Renombrar
+            </button>
+            {onDelete && (
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  onDelete();
+                }}
+                className="block w-full px-3 py-1.5 text-left text-[11px] text-red-300 hover:bg-zinc-900"
+              >
+                Eliminar
+              </button>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
@@ -441,6 +946,8 @@ function ConnectionDialog(props: {
   open: boolean;
   form: ConnectionInput;
   plugins: PluginInfo[];
+  groups: ConnectionGroup[];
+  credentials: CredentialView[];
   busy: boolean;
   status: string;
   statusOk: boolean;
@@ -790,23 +1297,45 @@ function ConnectionDialog(props: {
 
               <div className="modal-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 py-5">
                 {visibleTab === "general" && (
-                  <ProviderGeneralFields
-                    form={props.form}
-                    provider={provider}
-                    settings={settings}
-                    connectionString={connectionString}
-                    validation={visibleValidation}
-                    onConnectionStringChange={handleConnectionStringChange}
-                    update={update}
-                    updateSetting={updateSetting}
-                    touch={touch}
-                  />
+                  <>
+                    <ProviderGeneralFields
+                      form={props.form}
+                      provider={provider}
+                      settings={settings}
+                      connectionString={connectionString}
+                      validation={visibleValidation}
+                      onConnectionStringChange={handleConnectionStringChange}
+                      update={update}
+                      updateSetting={updateSetting}
+                      touch={touch}
+                    />
+                    <div className="mx-auto mt-4 w-full max-w-190">
+                      <FormSection title="Carpeta" description="Agrupa esta conexión dentro de una carpeta para organizar tus proyectos.">
+                        <select
+                          className="h-9 w-full rounded-md border border-zinc-700/70 bg-[#0a0a0a] px-3 text-sm text-zinc-100 outline-none hover:border-zinc-600 focus:border-zinc-500"
+                          value={props.form.group_id === null || props.form.group_id === undefined ? "" : String(props.form.group_id)}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            update("group_id", v === "" ? null : Number(v));
+                          }}
+                        >
+                          <option value="">Sin carpeta</option>
+                          {props.groups.map((g) => (
+                            <option key={g.id} value={g.id}>
+                              {g.name}
+                            </option>
+                          ))}
+                        </select>
+                      </FormSection>
+                    </div>
+                  </>
                 )}
                 {visibleTab === "auth" && (
                   <ProviderAuthFields
                     form={props.form}
                     provider={provider}
                     settings={settings}
+                    credentials={props.credentials}
                     update={update}
                     updateSetting={updateSetting}
                   />
@@ -947,19 +1476,63 @@ function ProviderGeneralFields({
   );
 }
 
+function CredentialPickerField({
+  form,
+  credentials,
+  update,
+}: {
+  form: ConnectionInput;
+  credentials: CredentialView[];
+  update: ConnectionUpdater;
+}) {
+  const selectedId = form.credential_id ?? null;
+  return (
+    <FormSection
+      title="Credencial guardada"
+      description="Reutiliza un usuario/contraseña guardado. Si seleccionas uno, los campos de abajo se ignoran al conectar."
+    >
+      <select
+        className="h-9 w-full rounded-md border border-zinc-700/70 bg-[#0a0a0a] px-3 text-sm text-zinc-100 outline-none hover:border-zinc-600 focus:border-zinc-500"
+        value={selectedId === null ? "" : String(selectedId)}
+        onChange={(e) => {
+          const v = e.target.value;
+          update("credential_id", v === "" ? null : Number(v));
+        }}
+      >
+        <option value="">— Introducir manualmente —</option>
+        {credentials.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name} ({c.username})
+          </option>
+        ))}
+      </select>
+      <p className="mt-1 text-[11px] text-zinc-500">
+        ¿No ves credenciales? Créalas en{" "}
+        <Link to="/settings/credentials" className="underline">
+          Ajustes → Credenciales
+        </Link>
+        .
+      </p>
+    </FormSection>
+  );
+}
+
 function ProviderAuthFields({
-  form, provider, settings, update, updateSetting
+  form, provider, settings, credentials, update, updateSetting
 }: {
   form: ConnectionInput; provider: ProviderUi; settings: Record<string, unknown>;
+  credentials: CredentialView[];
   update: ConnectionUpdater; updateSetting: SettingUpdater;
 }) {
+  const hasCredential = form.credential_id !== null && form.credential_id !== undefined;
   if (provider.id === "redis") {
     return (
       <div className="mx-auto grid w-full max-w-190 gap-5">
+        <CredentialPickerField form={form} credentials={credentials} update={update} />
         <FormSection title="Credenciales" description="Usuario opcional (Redis 6+ ACL). Contraseña opcional según configuración del servidor.">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <ModalField label="Usuario (opcional)" value={form.username} onChange={(value) => update("username", value)} placeholder="Ingresa el nombre de usuario" />
-            <ModalField label="Contraseña (opcional)" type="password" value={form.password} onChange={(value) => update("password", value)} placeholder="Ingresa la contraseña" trailing={<Eye className="h-3.5 w-3.5" />} />
+            <ModalField label="Usuario (opcional)" value={form.username} onChange={(value) => update("username", value)} placeholder={hasCredential ? "(usando credencial)" : "Ingresa el nombre de usuario"} />
+            <ModalField label="Contraseña (opcional)" type="password" value={form.password} onChange={(value) => update("password", value)} placeholder={hasCredential ? "(usando credencial)" : "Ingresa la contraseña"} trailing={<Eye className="h-3.5 w-3.5" />} />
           </div>
         </FormSection>
       </div>
@@ -968,10 +1541,11 @@ function ProviderAuthFields({
   if (provider.id === "mongodb") {
     return (
       <div className="mx-auto grid w-full max-w-190 gap-5">
+        <CredentialPickerField form={form} credentials={credentials} update={update} />
         <FormSection title="Credenciales">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <ModalField label="Usuario" value={form.username} onChange={(value) => update("username", value)} placeholder="Ingresa el nombre de usuario" />
-            <ModalField label="Contraseña" type="password" value={form.password} onChange={(value) => update("password", value)} placeholder="Ingresa la contraseña" trailing={<Eye className="h-3.5 w-3.5" />} />
+            <ModalField label="Usuario" value={form.username} onChange={(value) => update("username", value)} placeholder={hasCredential ? "(usando credencial)" : "Ingresa el nombre de usuario"} />
+            <ModalField label="Contraseña" type="password" value={form.password} onChange={(value) => update("password", value)} placeholder={hasCredential ? "(usando credencial)" : "Ingresa la contraseña"} trailing={<Eye className="h-3.5 w-3.5" />} />
           </div>
         </FormSection>
         <FormSection title="Autenticación MongoDB">
@@ -990,10 +1564,11 @@ function ProviderAuthFields({
   }
   return (
     <div className="mx-auto grid w-full max-w-190 gap-5">
+      <CredentialPickerField form={form} credentials={credentials} update={update} />
       <FormSection title="Credenciales">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <ModalField label="Usuario" value={form.username} onChange={(value) => update("username", value)} placeholder="Ingresa el nombre de usuario" />
-          <ModalField label="Contraseña" type="password" value={form.password} onChange={(value) => update("password", value)} placeholder="Ingresa la contraseña" trailing={<Eye className="h-3.5 w-3.5" />} />
+          <ModalField label="Usuario" value={form.username} onChange={(value) => update("username", value)} placeholder={hasCredential ? "(usando credencial)" : "Ingresa el nombre de usuario"} />
+          <ModalField label="Contraseña" type="password" value={form.password} onChange={(value) => update("password", value)} placeholder={hasCredential ? "(usando credencial)" : "Ingresa la contraseña"} trailing={<Eye className="h-3.5 w-3.5" />} />
         </div>
       </FormSection>
     </div>

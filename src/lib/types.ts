@@ -35,11 +35,43 @@ export type Connection = {
   settings_json: string;
   group_id?: number | null;
   enabled: boolean;
+  position: number;
+  credential_id?: number | null;
   created_at: string;
   updated_at: string;
 };
 
-export type ConnectionInput = Omit<Connection, "id" | "created_at" | "updated_at">;
+export type ConnectionInput = Omit<Connection, "id" | "position" | "created_at" | "updated_at">;
+
+export type ConnectionGroup = {
+  id: number;
+  name: string;
+  parent_id?: number | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Credential = {
+  id: number;
+  name: string;
+  username: string;
+  encrypted_password: string;
+  encrypted_meta: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AppUser = {
+  user_id: string;
+  email: string;
+  name?: string | null;
+  avatar_url?: string | null;
+  linked_providers: string;
+  master_key_enc_blob?: string | null;
+  session_token_ref?: string | null;
+  last_synced_at?: string | null;
+};
 export type ModalTabId = "general" | "auth" | "advanced" | "databases" | "ssl" | "ssh";
 export type ProviderIconName = "postgresql" | "mongodb" | "redis" | "database";
 export type ValidationMode = "save" | "test";

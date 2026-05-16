@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Boxes, Plug, Settings, X } from "lucide-react";
-import { Link, Outlet, useLocation, useNavigate, useSearchParams } from "react-router";
+import { Link, Outlet } from "@tanstack/react-router";
+import { useLocation, useNavigate, useSearchParams } from "@/lib/router-compat";
 import { useEffect } from "react";
 import { IconButton } from "@/components/icon-button";
 import { ProviderIcon } from "@/lib/providers";
