@@ -44,16 +44,6 @@ jobs:
           targets: ${{ matrix.rust_targets }}
 
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-          cache-dependency-path: |
-            plugins/redis/go.sum
-            plugins/postgresql/go.sum
-            plugins/mongodb/go.sum
 
       - name: Install Linux system deps
         if: matrix.os == 'ubuntu-22.04'
@@ -69,23 +59,17 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           for plugin in postgresql mongodb redis; do
-            cd plugins/$plugin
-            GOARCH=amd64 GOOS=darwin go build -o ${plugin}-plugin-amd64 .
-            GOARCH=arm64 GOOS=darwin go build -o ${plugin}-plugin-arm64 .
-            lipo -create -output ${plugin}-plugin ${plugin}-plugin-amd64 ${plugin}-plugin-arm64
-            rm ${plugin}-plugin-amd64 ${plugin}-plugin-arm64
-            cd ../..
+            cargo build --release --target aarch64-apple-darwin -p dbm-${plugin}-plugin
+            cargo build --release --target x86_64-apple-darwin  -p dbm-${plugin}-plugin
+            lipo -create -output plugins/${plugin}/${plugin}-plugin \
+              target/aarch64-apple-darwin/release/${plugin}-plugin \
+              target/x86_64-apple-darwin/release/${plugin}-plugin
           done
 
       - name: Build plugins (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
-        run: |
-          for plugin in postgresql mongodb redis; do
-            cd plugins/$plugin
-            go build -o ${plugin}-plugin.exe .
-            cd ../..
-          done
+        run: sh scripts/build-plugins.sh
 
       - name: Build plugins (Linux)
         if: matrix.os == 'ubuntu-22.04'
