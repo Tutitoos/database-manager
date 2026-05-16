@@ -165,6 +165,37 @@ func dispatch(req Request) Response {
 			return fail(req.ID, err)
 		}
 		return ok(req.ID, result)
+	case "update_row":
+		var env struct {
+			Params   ConnectionParams `json:"params"`
+			Database string           `json:"database"`
+			Table    string           `json:"table"`
+			PkColumn string           `json:"pk_column"`
+			PkValue  any              `json:"pk_value"`
+			Values   map[string]any   `json:"values"`
+		}
+		if err := json.Unmarshal(req.Params, &env); err != nil {
+			return fail(req.ID, err)
+		}
+		if err := updateRow(env.Params, env.Database, env.Table, env.PkColumn, env.PkValue, env.Values); err != nil {
+			return fail(req.ID, err)
+		}
+		return ok(req.ID, map[string]bool{"ok": true})
+	case "delete_row":
+		var env struct {
+			Params   ConnectionParams `json:"params"`
+			Database string           `json:"database"`
+			Table    string           `json:"table"`
+			PkColumn string           `json:"pk_column"`
+			PkValue  any              `json:"pk_value"`
+		}
+		if err := json.Unmarshal(req.Params, &env); err != nil {
+			return fail(req.ID, err)
+		}
+		if err := deleteRow(env.Params, env.Database, env.Table, env.PkColumn, env.PkValue); err != nil {
+			return fail(req.ID, err)
+		}
+		return ok(req.ID, map[string]bool{"ok": true})
 	case "get_schemas":
 		return ok(req.ID, []string{"public"})
 	case "get_tables", "get_columns":
@@ -863,6 +894,98 @@ func failOrOK(id any, err error) Response {
 		return fail(id, err)
 	}
 	return ok(id, true)
+}
+
+func splitSchemaTable(table string) (string, string) {
+	schema := "public"
+	name := table
+	if idx := strings.LastIndex(table, "."); idx >= 0 {
+		schema = table[:idx]
+		name = table[idx+1:]
+	}
+	return schema, name
+}
+
+func quoteIdent(s string) string {
+	return "\"" + strings.ReplaceAll(s, "\"", "\"\"") + "\""
+}
+
+func updateRow(params ConnectionParams, database, table, pkColumn string, pkValue any, values map[string]any) error {
+	if pkColumn == "" {
+		return fmt.Errorf("primary key column required")
+	}
+	if pkValue == nil {
+		return fmt.Errorf("primary key value required")
+	}
+	if len(values) == 0 {
+		return fmt.Errorf("no columns to update")
+	}
+	schema, tableName := splitSchemaTable(table)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	conn, err := connect(ctx, params, database)
+	if err != nil {
+		return err
+	}
+	defer conn.Close(ctx)
+	sets := make([]string, 0, len(values))
+	args := make([]any, 0, len(values)+1)
+	i := 1
+	for col, val := range values {
+		if col == pkColumn {
+			continue
+		}
+		sets = append(sets, fmt.Sprintf("%s = $%d", quoteIdent(col), i))
+		args = append(args, val)
+		i++
+	}
+	if len(sets) == 0 {
+		return fmt.Errorf("no columns to update")
+	}
+	args = append(args, pkValue)
+	stmt := fmt.Sprintf(
+		"UPDATE %s.%s SET %s WHERE %s = $%d",
+		quoteIdent(schema), quoteIdent(tableName),
+		strings.Join(sets, ", "),
+		quoteIdent(pkColumn), i,
+	)
+	tag, err := conn.Exec(ctx, stmt, args...)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("row not found")
+	}
+	return nil
+}
+
+func deleteRow(params ConnectionParams, database, table, pkColumn string, pkValue any) error {
+	if pkColumn == "" {
+		return fmt.Errorf("primary key column required")
+	}
+	if pkValue == nil {
+		return fmt.Errorf("primary key value required")
+	}
+	schema, tableName := splitSchemaTable(table)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	conn, err := connect(ctx, params, database)
+	if err != nil {
+		return err
+	}
+	defer conn.Close(ctx)
+	stmt := fmt.Sprintf(
+		"DELETE FROM %s.%s WHERE %s = $1",
+		quoteIdent(schema), quoteIdent(tableName), quoteIdent(pkColumn),
+	)
+	tag, err := conn.Exec(ctx, stmt, pkValue)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("row not found")
+	}
+	return nil
 }
 
 func ok(id any, result any) Response {

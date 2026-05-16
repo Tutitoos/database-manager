@@ -1,13 +1,27 @@
 
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronLeft, ChevronRight, Loader2, RefreshCw, Table, X, Zap } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, Loader2, Pencil, RefreshCw, Table, Trash2, X, Zap } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useSearchParams } from "@/lib/router-compat";
 import { useSessionsStore, type SqlSession } from "@/store/sessions";
 import { mutedText, panel, sectionBorder, surface } from "@/lib/styles";
 import type { Connection, TableResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AutocompleteInput, getWordAtPos, type GetSuggestions, type SuggestionItem, type SuggestionResult } from "@/components/autocomplete-input";
+import { Modal } from "@/components/modal";
+import { CodeEditor } from "@/components/code-editor";
+import { QueryTimings, type TimingEntry } from "@/components/query-timings";
+import {
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type ColumnSizingState,
+  type SortingState,
+  type VisibilityState,
+} from "@tanstack/react-table";
+import { ArrowDown, ArrowUp, ArrowUpDown, Eye } from "lucide-react";
 
 const PAGE_SIZE = 100;
 
@@ -85,6 +99,8 @@ function SqlPage() {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [result, setResult] = useState<TableResult | null>(null);
   const [prevQueryMs, setPrevQueryMs] = useState<number | null>(null);
+  const [renderMs, setRenderMs] = useState<number | null>(null);
+  const [timingHistory, setTimingHistory] = useState<TimingEntry[]>([]);
   const [explainOpen, setExplainOpen] = useState(false);
   const [explainData, setExplainData] = useState<ExplainResult | null>(null);
   const [explainLoading, setExplainLoading] = useState(false);
@@ -101,6 +117,119 @@ function SqlPage() {
   const [filterInput, setFilterInput] = useState(storedFilter);
   const [appliedFilter, setAppliedFilter] = useState(storedFilter);
   const [filterFocused, setFilterFocused] = useState(false);
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
+  const [colMenuOpen, setColMenuOpen] = useState(false);
+  type SqlRow = (string | number | boolean | null)[];
+  const tableColumns = useMemo<ColumnDef<SqlRow>[]>(() => {
+    if (!result) return [];
+    return result.columns.map<ColumnDef<SqlRow>>((col, idx) => ({
+      id: col,
+      header: col,
+      accessorFn: (row) => row[idx],
+      size: 180,
+      minSize: 80,
+      enableSorting: true,
+    }));
+  }, [result?.columns]);
+  const tableInstance = useReactTable<SqlRow>({
+    data: result?.rows ?? [],
+    columns: tableColumns,
+    state: { sorting, columnVisibility, columnSizing },
+    onSortingChange: setSorting,
+    onColumnVisibilityChange: setColumnVisibility,
+    onColumnSizingChange: setColumnSizing,
+    columnResizeMode: "onChange",
+    enableColumnResizing: true,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
+
+  const [rowEditor, setRowEditor] = useState<{
+    pkValue: string | number;
+    json: string;
+    saving: boolean;
+    error: string | null;
+  } | null>(null);
+  const [rowDelete, setRowDelete] = useState<{ pkValue: string | number } | null>(null);
+  const [actionStatus, setActionStatus] = useState<string | null>(null);
+
+  function rowToRecord(row: (string | number | boolean | null)[]): Record<string, unknown> {
+    const cols = result?.columns ?? [];
+    const out: Record<string, unknown> = {};
+    cols.forEach((c, i) => {
+      out[c] = row[i] ?? null;
+    });
+    return out;
+  }
+
+  function openRowEdit(row: (string | number | boolean | null)[]) {
+    if (!result?.pk_column) return;
+    const obj = rowToRecord(row);
+    const pkColIdx = result.columns.indexOf(result.pk_column);
+    const pkValue = row[pkColIdx] as string | number;
+    setRowEditor({
+      pkValue,
+      json: JSON.stringify(obj, null, 2),
+      saving: false,
+      error: null,
+    });
+  }
+
+  function copyRowJson(row: (string | number | boolean | null)[]) {
+    navigator.clipboard.writeText(JSON.stringify(rowToRecord(row), null, 2)).catch(() => undefined);
+    setActionStatus("Fila copiada");
+    setTimeout(() => setActionStatus(null), 1500);
+  }
+
+  async function performRowDelete() {
+    if (!connection || !rowDelete || !result?.pk_column) return;
+    try {
+      await invoke("delete_row", {
+        input: connection,
+        database: db,
+        table,
+        pkColumn: result.pk_column,
+        pkValue: rowDelete.pkValue,
+      });
+      setRowDelete(null);
+      setActionStatus("Fila eliminada");
+      setTimeout(() => setActionStatus(null), 1500);
+      retry();
+    } catch (e) {
+      setRowDelete(null);
+      setError(String(e));
+    }
+  }
+
+  async function performRowSave() {
+    if (!connection || !rowEditor || !result?.pk_column) return;
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(rowEditor.json);
+    } catch {
+      setRowEditor({ ...rowEditor, error: "JSON inválido" });
+      return;
+    }
+    setRowEditor({ ...rowEditor, saving: true, error: null });
+    try {
+      await invoke("update_row", {
+        input: connection,
+        database: db,
+        table,
+        pkColumn: result.pk_column,
+        pkValue: rowEditor.pkValue,
+        values: parsed,
+      });
+      setRowEditor(null);
+      setActionStatus("Fila actualizada");
+      setTimeout(() => setActionStatus(null), 1500);
+      retry();
+    } catch (e) {
+      setRowEditor({ ...rowEditor, saving: false, error: String(e) });
+    }
+  }
 
   useEffect(() => {
     if (connectionId && db && table) {
@@ -205,6 +334,7 @@ function SqlPage() {
     const gen = ++requestGenRef.current;
     setLoading(true);
     setError(null);
+    const t0 = performance.now();
     invoke<TableResult>("get_table_data", {
       input: connection,
       database: db,
@@ -216,8 +346,19 @@ function SqlPage() {
     })
       .then((res) => {
         if (gen !== requestGenRef.current) return;
+        const totalMs = performance.now() - t0;
+        const queryMs = res.query_ms ?? 0;
+        const rMs = Math.max(0, totalMs - queryMs);
         setPrevQueryMs(result?.query_ms ?? null);
         setResult(res);
+        setRenderMs(rMs);
+        setTimingHistory((prev) => {
+          const next = [
+            ...prev,
+            { queryMs, renderMs: rMs, totalMs, at: Date.now(), label: `${table} · pg ${stackIdx + 1}` },
+          ];
+          return next.slice(-20);
+        });
       })
       .catch((e: unknown) => {
         if (gen !== requestGenRef.current) return;
@@ -375,17 +516,31 @@ function SqlPage() {
 
         {/* Column chips */}
         {columnSuggestions.length > 0 && (
-          <div className="flex items-center gap-1.5 overflow-x-auto px-3 pb-2 scrollbar-none">
-            <span className="shrink-0 text-[10px] text-zinc-700">Columnas:</span>
-            {columnSuggestions.map(({ label }) => (
-              <button
-                key={label}
-                onClick={() => insertColumn(label)}
-                className="group/chip shrink-0 rounded-md border border-zinc-800/80 bg-zinc-900/60 px-2 py-0.5 font-mono text-[10px] text-zinc-500 transition-all hover:border-zinc-600 hover:bg-zinc-800 hover:text-zinc-300"
-              >
-                {label}
-              </button>
-            ))}
+          <div className="flex items-center gap-1 overflow-x-auto px-3 pb-2 scrollbar-none">
+            <span className="shrink-0 pr-1 text-[10px] uppercase tracking-wider text-zinc-600">Columnas</span>
+            <span className="mx-1 h-3 w-px shrink-0 bg-zinc-800" />
+            {columnSuggestions.map(({ label }) => {
+              const meta = colMeta.get(label);
+              return (
+                <button
+                  key={label}
+                  onClick={() => insertColumn(label)}
+                  title={label + (meta?.primary ? " · PK" : meta?.unique ? " · UQ" : meta?.indexed ? " · IDX" : "")}
+                  className="group/chip flex shrink-0 items-center gap-1 rounded-full border border-zinc-800/70 bg-zinc-900/40 py-0.5 pl-2 pr-1 transition-all hover:border-zinc-600 hover:bg-zinc-800/70"
+                >
+                  <span className="font-mono text-[10.5px] text-zinc-300 transition-colors group-hover/chip:text-zinc-100">
+                    {label}
+                  </span>
+                  {meta?.primary ? (
+                    <ColTag accent="blue">PK</ColTag>
+                  ) : meta?.unique ? (
+                    <ColTag accent="purple">UQ</ColTag>
+                  ) : meta?.indexed ? (
+                    <ColTag accent="zinc">IDX</ColTag>
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -401,16 +556,11 @@ function SqlPage() {
           </span>
         )}
         {result?.query_ms != null && !loading && (
-          <div className="flex items-center gap-1.5">
-            {prevQueryMs != null && prevQueryMs !== result.query_ms && (
-              <span className="text-[10px] text-zinc-600 line-through">
-                {prevQueryMs >= 1000 ? `${(prevQueryMs / 1000).toFixed(2)}s` : `${prevQueryMs}ms`}
-              </span>
-            )}
-            <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
-              {result.query_ms >= 1000 ? `${(result.query_ms / 1000).toFixed(2)}s` : `${result.query_ms}ms`}
-            </span>
-          </div>
+          <QueryTimings
+            queryMs={result.query_ms}
+            renderMs={renderMs}
+            history={timingHistory}
+          />
         )}
         <div className="ml-auto flex items-center gap-1.5">
           {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-500" />}
@@ -521,61 +671,154 @@ function SqlPage() {
           </div>
         )}
         {result && result.columns.length > 0 && (
-          <table className="w-full border-collapse text-xs">
-            <thead className="sticky top-0 z-10">
-              <tr>
-                {result.columns.map((col) => {
-                  const meta = colMeta.get(col);
+          <div className="relative">
+            <div className="absolute right-2 top-2 z-20">
+              <button
+                type="button"
+                onClick={() => setColMenuOpen((v) => !v)}
+                className="rounded-md border border-zinc-800/80 bg-zinc-900/80 p-1 text-zinc-400 backdrop-blur hover:border-zinc-600 hover:text-zinc-200"
+                title="Mostrar/ocultar columnas"
+              >
+                <Eye className="h-3.5 w-3.5" />
+              </button>
+              {colMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setColMenuOpen(false)} />
+                  <div className="absolute right-0 top-full z-40 mt-1 max-h-72 w-56 overflow-auto rounded-md border border-zinc-800 bg-zinc-950 p-2 shadow-2xl">
+                    <p className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">Columnas</p>
+                    {tableInstance.getAllLeafColumns().map((c) => (
+                      <label
+                        key={c.id}
+                        className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[11px] text-zinc-300 hover:bg-zinc-900"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={c.getIsVisible()}
+                          onChange={c.getToggleVisibilityHandler()}
+                          className="h-3 w-3 accent-blue-500"
+                        />
+                        <span className="truncate font-mono">{c.id}</span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+            <table className="border-collapse text-xs" style={{ width: tableInstance.getTotalSize() }}>
+              <thead className="sticky top-0 z-10">
+                {tableInstance.getHeaderGroups().map((hg) => (
+                  <tr key={hg.id}>
+                    {hg.headers.map((h) => {
+                      const meta = colMeta.get(h.column.id);
+                      const sortDir = h.column.getIsSorted();
+                      return (
+                        <th
+                          key={h.id}
+                          colSpan={h.colSpan}
+                          style={{ width: h.getSize() }}
+                          className={cn(
+                            "group/h relative border-b border-r px-3 py-2 text-left font-medium whitespace-nowrap text-zinc-400 select-none",
+                            sectionBorder,
+                            panel,
+                          )}
+                        >
+                          <div
+                            className="flex cursor-pointer items-center gap-1.5"
+                            onClick={h.column.getToggleSortingHandler()}
+                          >
+                            {meta?.primary && (
+                              <span className="rounded px-1 py-px text-[8px] font-bold uppercase tracking-wider bg-blue-950 text-blue-300 border border-blue-800/60">PK</span>
+                            )}
+                            {!meta?.primary && meta?.unique && (
+                              <span className="rounded px-1 py-px text-[8px] font-bold uppercase tracking-wider bg-purple-950 text-purple-300 border border-purple-800/60">UQ</span>
+                            )}
+                            {!meta?.primary && !meta?.unique && meta?.indexed && (
+                              <span className="rounded px-1 py-px text-[8px] font-bold uppercase tracking-wider bg-zinc-800 text-zinc-400 border border-zinc-700/60">IDX</span>
+                            )}
+                            <span className="truncate">{flexRender(h.column.columnDef.header, h.getContext())}</span>
+                            {sortDir === "asc" ? (
+                              <ArrowUp className="h-3 w-3 text-blue-400" />
+                            ) : sortDir === "desc" ? (
+                              <ArrowDown className="h-3 w-3 text-blue-400" />
+                            ) : (
+                              <ArrowUpDown className="h-3 w-3 text-zinc-700 opacity-0 group-hover/h:opacity-100" />
+                            )}
+                          </div>
+                          {h.column.getCanResize() && (
+                            <div
+                              onMouseDown={h.getResizeHandler()}
+                              onTouchStart={h.getResizeHandler()}
+                              className={cn(
+                                "absolute right-0 top-0 h-full w-1.5 cursor-col-resize select-none touch-none",
+                                h.column.getIsResizing() ? "bg-blue-500/60" : "hover:bg-zinc-700",
+                              )}
+                            />
+                          )}
+                        </th>
+                      );
+                    })}
+                    <th className={cn("sticky right-0 z-10 w-10 border-b px-2 py-2 text-right whitespace-nowrap text-zinc-500", sectionBorder, panel)}>·</th>
+                  </tr>
+                ))}
+              </thead>
+              <tbody>
+                {tableInstance.getRowModel().rows.map((tableRow) => {
+                  const row = tableRow.original;
                   return (
-                    <th
-                      key={col}
-                      className={cn(
-                        "border-b border-r px-3 py-2 text-left font-medium whitespace-nowrap text-zinc-400",
-                        sectionBorder,
-                        panel
-                      )}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        {meta?.primary && (
-                          <span className="rounded px-1 py-px text-[8px] font-bold uppercase tracking-wider bg-blue-950 text-blue-300 border border-blue-800/60">PK</span>
-                        )}
-                        {!meta?.primary && meta?.unique && (
-                          <span className="rounded px-1 py-px text-[8px] font-bold uppercase tracking-wider bg-purple-950 text-purple-300 border border-purple-800/60">UQ</span>
-                        )}
-                        {!meta?.primary && !meta?.unique && meta?.indexed && (
-                          <span className="rounded px-1 py-px text-[8px] font-bold uppercase tracking-wider bg-zinc-800 text-zinc-400 border border-zinc-700/60">IDX</span>
-                        )}
-                        <span>{col}</span>
-                      </div>
-                    </th>
+                    <tr key={tableRow.id} className="group border-b border-zinc-800/40 transition-colors hover:bg-zinc-900/50">
+                      {tableRow.getVisibleCells().map((cellCtx) => {
+                        const cell = cellCtx.getValue() as string | number | boolean | null;
+                        return (
+                          <td
+                            key={cellCtx.id}
+                            style={{ width: cellCtx.column.getSize() }}
+                            className={cn(
+                              "border-r border-zinc-800/40 px-3 py-1.5",
+                              typeof cell === "number" ? "text-right font-mono text-blue-300/80" : "text-zinc-300",
+                            )}
+                          >
+                            {cell === null ? (
+                              <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-600">null</span>
+                            ) : (
+                              <span className="block max-w-70 truncate font-mono" title={String(cell)}>
+                                {String(cell)}
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td className="sticky right-0 bg-zinc-950/95 px-2 py-1 text-right">
+                        <div className="flex items-center justify-end gap-0.5 rounded-md border border-transparent p-0.5 opacity-0 transition-all group-hover:border-zinc-800/70 group-hover:bg-zinc-900/70 group-hover:opacity-100">
+                          <SqlRowBtn title="Copiar fila JSON" onClick={() => copyRowJson(row)}>
+                            <Copy className="h-3 w-3" />
+                          </SqlRowBtn>
+                          <SqlRowBtn
+                            disabled={!result.pk_column}
+                            title={result.pk_column ? "Editar fila" : "Sin PK no editable"}
+                            onClick={() => openRowEdit(row)}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </SqlRowBtn>
+                          <SqlRowBtn
+                            disabled={!result.pk_column}
+                            title={result.pk_column ? "Eliminar fila" : "Sin PK no eliminable"}
+                            danger
+                            onClick={() => {
+                              if (!result.pk_column) return;
+                              const pkIdx = result.columns.indexOf(result.pk_column);
+                              setRowDelete({ pkValue: row[pkIdx] as string | number });
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </SqlRowBtn>
+                        </div>
+                      </td>
+                    </tr>
                   );
                 })}
-              </tr>
-            </thead>
-            <tbody>
-              {result.rows.map((row, i) => (
-                <tr key={i} className="border-b border-zinc-800/40 transition-colors hover:bg-zinc-900/50">
-                  {row.map((cell, j) => (
-                    <td
-                      key={j}
-                      className={cn(
-                        "border-r border-zinc-800/40 px-3 py-1.5",
-                        typeof cell === "number" ? "text-right font-mono text-blue-300/80" : "text-zinc-300"
-                      )}
-                    >
-                      {cell === null ? (
-                        <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-600">null</span>
-                      ) : (
-                        <span className="block max-w-70 truncate font-mono" title={String(cell)}>
-                          {String(cell)}
-                        </span>
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         )}
         {!loading && result && result.rows.length === 0 && (
           <div className={cn("p-8 text-center text-xs", mutedText)}>Sin datos</div>
@@ -620,7 +863,115 @@ function SqlPage() {
           <ChevronRight className="h-3.5 w-3.5" />
         </button>
       </div>
+
+      {rowEditor && (
+        <Modal onClose={() => !rowEditor.saving && setRowEditor(null)}>
+          <div className="flex max-h-[80vh] w-full max-w-3xl flex-col rounded-md border border-zinc-800 bg-zinc-950 shadow-xl">
+            <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+              <h2 className="text-sm font-medium text-zinc-100">
+                Editar fila — PK {String(rowEditor.pkValue)}
+              </h2>
+              <button className="rounded p-1 text-zinc-500 hover:bg-zinc-800" onClick={() => setRowEditor(null)}>
+                ✕
+              </button>
+            </div>
+            <div className="min-h-[50vh] flex-1 overflow-auto bg-zinc-950">
+              <CodeEditor
+                lang="json"
+                value={rowEditor.json}
+                onChange={(v) => setRowEditor({ ...rowEditor, json: v, error: null })}
+                minHeight="50vh"
+              />
+            </div>
+            {rowEditor.error && (
+              <div className="border-t border-red-900/40 bg-red-950/30 px-4 py-2 text-xs text-red-300">{rowEditor.error}</div>
+            )}
+            <div className="flex justify-end gap-2 border-t border-zinc-800 px-4 py-3">
+              <button
+                className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                onClick={() => setRowEditor(null)}
+                disabled={rowEditor.saving}
+              >
+                Cancelar
+              </button>
+              <button
+                className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                onClick={performRowSave}
+                disabled={rowEditor.saving}
+              >
+                {rowEditor.saving ? "Guardando…" : "Guardar"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {rowDelete && (
+        <Modal onClose={() => setRowDelete(null)}>
+          <div className="w-full max-w-md rounded-md border border-zinc-800 bg-zinc-950 p-5 shadow-xl">
+            <h2 className="text-sm font-medium text-zinc-100">¿Eliminar fila?</h2>
+            <p className="mt-2 break-all rounded bg-zinc-900 px-2 py-1 font-mono text-[11px] text-zinc-300">PK: {String(rowDelete.pkValue)}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800" onClick={() => setRowDelete(null)}>
+                Cancelar
+              </button>
+              <button className="rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500" onClick={performRowDelete}>
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {actionStatus && (
+        <div className="fixed bottom-5 right-5 rounded-md border border-emerald-900/40 bg-emerald-950/40 px-3 py-2 text-xs text-emerald-300 shadow-xl">
+          {actionStatus}
+        </div>
+      )}
     </div>
+  );
+}
+
+function ColTag({ accent, children }: { accent: "blue" | "purple" | "zinc"; children: React.ReactNode }) {
+  const cls =
+    accent === "blue"
+      ? "bg-blue-500/15 text-blue-300 ring-blue-500/30"
+      : accent === "purple"
+        ? "bg-purple-500/15 text-purple-300 ring-purple-500/30"
+        : "bg-zinc-700/40 text-zinc-300 ring-zinc-600/40";
+  return (
+    <span className={cn("inline-flex h-4 items-center rounded-full px-1.5 text-[9px] font-semibold uppercase tracking-wider ring-1 ring-inset", cls)}>
+      {children}
+    </span>
+  );
+}
+
+function SqlRowBtn({
+  children,
+  onClick,
+  title,
+  disabled,
+  danger,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  title?: string;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      title={title}
+      className={cn(
+        "rounded p-1 text-zinc-400 transition-colors disabled:cursor-not-allowed disabled:opacity-30",
+        !disabled && (danger ? "hover:bg-red-950/60 hover:text-red-300" : "hover:bg-zinc-800 hover:text-zinc-100"),
+      )}
+    >
+      {children}
+    </button>
   );
 }
 

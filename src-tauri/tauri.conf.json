@@ -31,5 +31,12 @@
       "icons/icon.ico"
     ],
     "resources": ["../plugins/**/*"]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["database-manager"]
+      }
+    }
   }
 }

@@ -18,7 +18,8 @@ export const emptyConnection: ConnectionInput = {
   ssl_mode: "disable",
   settings_json: "{}",
   group_id: null,
-  enabled: true
+  enabled: true,
+  credential_id: null
 };
 
 export const PROVIDER_UI: Record<string, ProviderUi> = {

@@ -1,0 +1,14 @@
+services:
+  dbm-server:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    image: dbm-server:latest
+    container_name: dbm-server
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./data:/data

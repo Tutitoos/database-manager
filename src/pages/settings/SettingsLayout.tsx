@@ -1,5 +1,6 @@
-import { Plug, Settings } from "lucide-react";
-import { Link, Outlet, useLocation } from "react-router";
+import { KeyRound, Plug, Settings, UserCircle2 } from "lucide-react";
+import { Link, Outlet } from "@tanstack/react-router";
+import { useLocation } from "@/lib/router-compat";
 import { SideItem } from "@/components/side-item";
 import { panel, sectionBorder } from "@/lib/styles";
 import { cn } from "@/lib/utils";
@@ -15,6 +16,20 @@ export default function SettingsLayout() {
             active={pathname === "/settings" || pathname === "/settings/general"}
             icon={<Settings className="h-4 w-4" />}
             label="General"
+          />
+        </Link>
+        <Link to="/settings/account">
+          <SideItem
+            active={pathname.startsWith("/settings/account")}
+            icon={<UserCircle2 className="h-4 w-4" />}
+            label="Mi cuenta"
+          />
+        </Link>
+        <Link to="/settings/credentials">
+          <SideItem
+            active={pathname.startsWith("/settings/credentials")}
+            icon={<KeyRound className="h-4 w-4" />}
+            label="Credenciales"
           />
         </Link>
         <Link to="/settings/plugins">

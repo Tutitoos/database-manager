@@ -1,13 +1,17 @@
 
 import { invoke } from "@tauri-apps/api/core";
-import { Check, ChevronLeft, ChevronRight, FileText, Loader2, Pencil, RefreshCw, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Copy, FileText, Loader2, Pencil, RefreshCw, Trash2, X } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useSearchParams } from "@/lib/router-compat";
 import { useSessionsStore, type DocumentSession } from "@/store/sessions";
 import { mutedText, sectionBorder, surface } from "@/lib/styles";
 import type { Connection, DocumentResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AutocompleteInput, getWordAtPos, type GetSuggestions, type SuggestionItem, type SuggestionResult } from "@/components/autocomplete-input";
+import { Modal } from "@/components/modal";
+import { CodeEditor } from "@/components/code-editor";
+import { QueryTimings, type TimingEntry } from "@/components/query-timings";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 const PAGE_SIZE = 50;
 
@@ -116,10 +120,87 @@ function FieldRow({ fieldKey, raw, depth = 0 }: { fieldKey: string; raw: unknown
   );
 }
 
-function DocumentCard({ doc }: { doc: Record<string, unknown> }) {
+const TYPE_BADGE: Record<string, { fg: string; bg: string; ring: string; short: string }> = {
+  string:   { fg: "text-green-300",  bg: "bg-green-500/15",  ring: "ring-green-500/30",  short: "str" },
+  number:   { fg: "text-blue-300",   bg: "bg-blue-500/15",   ring: "ring-blue-500/30",   short: "num" },
+  boolean:  { fg: "text-sky-300",    bg: "bg-sky-500/15",    ring: "ring-sky-500/30",    short: "bool" },
+  objectid: { fg: "text-red-300",    bg: "bg-red-500/15",    ring: "ring-red-500/30",    short: "oid" },
+  date:     { fg: "text-cyan-300",   bg: "bg-cyan-500/15",   ring: "ring-cyan-500/30",   short: "date" },
+  object:   { fg: "text-violet-300", bg: "bg-violet-500/15", ring: "ring-violet-500/30", short: "obj" },
+  array:    { fg: "text-amber-300",  bg: "bg-amber-500/15",  ring: "ring-amber-500/30",  short: "arr" },
+  null:     { fg: "text-zinc-400",   bg: "bg-zinc-500/15",   ring: "ring-zinc-500/30",   short: "null" },
+};
+
+function TypeBadge({ kind }: { kind: string }) {
+  const k = TYPE_BADGE[kind] ?? TYPE_BADGE.string;
+  return (
+    <span
+      className={cn(
+        "inline-flex h-4 items-center rounded-full px-1.5 text-[9px] font-semibold uppercase tracking-wider ring-1 ring-inset",
+        k.fg,
+        k.bg,
+        k.ring,
+      )}
+    >
+      {k.short}
+    </span>
+  );
+}
+
+function ActionIconBtn({
+  children,
+  onClick,
+  title,
+  disabled,
+  danger,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  title?: string;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      title={title}
+      className={cn(
+        "rounded p-1 text-zinc-400 transition-colors disabled:cursor-not-allowed disabled:opacity-30",
+        !disabled && (danger ? "hover:bg-red-950/60 hover:text-red-300" : "hover:bg-zinc-800 hover:text-zinc-100"),
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function extractDocumentId(id: unknown): string | null {
+  if (id === undefined || id === null) return null;
+  if (typeof id === "string") return id;
+  if (typeof id === "number") return String(id);
+  if (typeof id === "object") {
+    const o = id as Record<string, unknown>;
+    if (typeof o.$oid === "string") return o.$oid;
+    if (o.$numberLong !== undefined) return String(o.$numberLong);
+  }
+  return null;
+}
+
+function DocumentCard({
+  doc,
+  onEdit,
+  onDelete,
+}: {
+  doc: Record<string, unknown>;
+  onEdit?: (id: string, doc: Record<string, unknown>) => void;
+  onDelete?: (id: string) => void;
+}) {
   const [collapsed, setCollapsed] = useState(false);
   const [copied, setCopied] = useState(false);
   const id = doc._id;
+  const docId = extractDocumentId(id);
   const rest = Object.entries(doc).filter(([k]) => k !== "_id");
 
   function copyDoc() {
@@ -143,22 +224,25 @@ function DocumentCard({ doc }: { doc: Record<string, unknown> }) {
             </div>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-0.5">
-          <button className="rounded p-1 text-zinc-600 transition-colors hover:bg-zinc-800 hover:text-zinc-300">
+        <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-transparent bg-zinc-900/0 p-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-hover:border-zinc-800/70 group-hover:bg-zinc-900/60">
+          <ActionIconBtn
+            disabled={!docId || !onEdit}
+            onClick={() => docId && onEdit?.(docId, doc)}
+            title={docId ? "Editar documento" : "Sin _id editable"}
+          >
             <Pencil className="h-3 w-3" />
-          </button>
-          <button onClick={copyDoc} className="rounded p-1 transition-colors hover:bg-zinc-800" title="Copiar JSON">
-            {copied
-              ? <Check className="h-3 w-3 text-green-400" />
-              : <svg viewBox="0 0 16 16" className="h-3 w-3 text-zinc-600 hover:text-zinc-300" fill="currentColor">
-                  <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/>
-                  <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/>
-                </svg>
-            }
-          </button>
-          <button className="rounded p-1 text-zinc-600 transition-colors hover:bg-zinc-800 hover:text-red-400">
+          </ActionIconBtn>
+          <ActionIconBtn onClick={copyDoc} title="Copiar JSON">
+            {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+          </ActionIconBtn>
+          <ActionIconBtn
+            disabled={!docId || !onDelete}
+            onClick={() => docId && onDelete?.(docId)}
+            title={docId ? "Eliminar documento" : "Sin _id eliminable"}
+            danger
+          >
             <Trash2 className="h-3 w-3" />
-          </button>
+          </ActionIconBtn>
         </div>
       </div>
       {!collapsed && rest.length > 0 && (
@@ -281,6 +365,8 @@ function DocumentPage() {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [result, setResult] = useState<DocumentResult | null>(null);
   const [prevQueryMs, setPrevQueryMs] = useState<number | null>(null);
+  const [renderMs, setRenderMs] = useState<number | null>(null);
+  const [timingHistory, setTimingHistory] = useState<TimingEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -300,6 +386,70 @@ function DocumentPage() {
   const [appliedFilter, setAppliedFilter] = useState(storedFilter);
   const [filterError, setFilterError] = useState<string | null>(null);
   const [filterFocused, setFilterFocused] = useState(false);
+  const [editorState, setEditorState] = useState<{ id: string; json: string; error: string | null; saving: boolean } | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: result?.documents.length ?? 0,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 92,
+    overscan: 6,
+    measureElement: (el) => el.getBoundingClientRect().height,
+  });
+
+  function openDocumentEditor(id: string, doc: Record<string, unknown>) {
+    setEditorState({
+      id,
+      json: JSON.stringify(doc, null, 2),
+      error: null,
+      saving: false,
+    });
+  }
+
+  function confirmDeleteDocument(id: string) {
+    setDeletingId(id);
+  }
+
+  async function performDelete() {
+    if (!connection || !deletingId) return;
+    try {
+      await invoke("delete_document", {
+        input: connection,
+        database: db,
+        collection,
+        documentId: deletingId,
+      });
+      setDeletingId(null);
+      setFetchKey((k) => k + 1);
+    } catch (e) {
+      setError(String(e));
+      setDeletingId(null);
+    }
+  }
+
+  async function performEditSave() {
+    if (!connection || !editorState) return;
+    try {
+      JSON.parse(editorState.json);
+    } catch (e) {
+      setEditorState({ ...editorState, error: "JSON inválido" });
+      return;
+    }
+    setEditorState({ ...editorState, error: null, saving: true });
+    try {
+      await invoke("update_document", {
+        input: connection,
+        database: db,
+        collection,
+        documentId: editorState.id,
+        updateJson: editorState.json,
+      });
+      setEditorState(null);
+      setFetchKey((k) => k + 1);
+    } catch (e) {
+      setEditorState({ ...editorState, error: String(e), saving: false });
+    }
+  }
 
   useEffect(() => {
     if (connectionId && db && collection) {
@@ -346,6 +496,7 @@ function DocumentPage() {
     const gen = ++requestGenRef.current;
     setLoading(true);
     setError(null);
+    const t0 = performance.now();
     invoke<DocumentResult>("get_documents", {
       input: connection,
       database: db,
@@ -357,8 +508,19 @@ function DocumentPage() {
     })
       .then((res) => {
         if (gen !== requestGenRef.current) return;
+        const totalMs = performance.now() - t0;
+        const queryMs = res.query_ms ?? 0;
+        const rMs = Math.max(0, totalMs - queryMs);
         setPrevQueryMs(result?.query_ms ?? null);
         setResult(res);
+        setRenderMs(rMs);
+        setTimingHistory((prev) => {
+          const next = [
+            ...prev,
+            { queryMs, renderMs: rMs, totalMs, at: Date.now(), label: `${collection} · pg ${stackIdx + 1}` },
+          ];
+          return next.slice(-20);
+        });
       })
       .catch((e: unknown) => {
         if (gen !== requestGenRef.current) return;
@@ -492,16 +654,20 @@ function DocumentPage() {
 
         {/* Field chips */}
         {fieldSuggestions.length > 0 && (
-          <div className="flex items-center gap-1.5 overflow-x-auto px-3 pb-2 scrollbar-none">
-            <span className="shrink-0 text-[10px] text-zinc-700">Campos:</span>
-            {fieldSuggestions.map(({ label, hint, color }) => (
+          <div className="flex items-center gap-1 overflow-x-auto px-3 pb-2 scrollbar-none">
+            <span className="shrink-0 pr-1 text-[10px] uppercase tracking-wider text-zinc-600">Campos</span>
+            <span className="mx-1 h-3 w-px shrink-0 bg-zinc-800" />
+            {fieldSuggestions.map(({ label, hint }) => (
               <button
                 key={label}
                 onClick={() => insertField(label)}
-                className="group/chip flex shrink-0 items-center gap-1 rounded-md border border-zinc-800/80 bg-zinc-900/60 px-2 py-0.5 transition-all hover:border-zinc-600 hover:bg-zinc-800"
+                title={`${label} · ${hint ?? "?"}`}
+                className="group/chip flex shrink-0 items-center gap-1.5 rounded-full border border-zinc-800/70 bg-zinc-900/40 py-0.5 pl-2 pr-1 transition-all hover:border-zinc-600 hover:bg-zinc-800/70"
               >
-                <span className="font-mono text-[10px] text-zinc-500 transition-colors group-hover/chip:text-zinc-300">{label}</span>
-                {hint && <span className={cn("text-[9px]", color)}>{hint}</span>}
+                <span className="font-mono text-[10.5px] text-zinc-300 transition-colors group-hover/chip:text-zinc-100">
+                  {label}
+                </span>
+                {hint && <TypeBadge kind={hint} />}
               </button>
             ))}
           </div>
@@ -523,16 +689,7 @@ function DocumentPage() {
           </span>
         )}
         {result?.query_ms != null && !loading && (
-          <div className="flex items-center gap-1.5">
-            {prevQueryMs != null && prevQueryMs !== result.query_ms && (
-              <span className="text-[10px] text-zinc-600 line-through">
-                {prevQueryMs >= 1000 ? `${(prevQueryMs / 1000).toFixed(2)}s` : `${prevQueryMs}ms`}
-              </span>
-            )}
-            <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
-              {result.query_ms >= 1000 ? `${(result.query_ms / 1000).toFixed(2)}s` : `${result.query_ms}ms`}
-            </span>
-          </div>
+          <QueryTimings queryMs={result.query_ms} renderMs={renderMs} history={timingHistory} />
         )}
         <div className="ml-auto flex items-center gap-1.5">
           {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-500" />}
@@ -547,9 +704,9 @@ function DocumentPage() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-1.5 overflow-auto p-3">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto p-3">
         {error && (
-          <div className="flex items-center gap-3 p-2 text-xs text-red-400">
+          <div className="mb-2 flex items-center gap-3 p-2 text-xs text-red-400">
             <span>{error}</span>
             <button
               onClick={retry}
@@ -559,9 +716,36 @@ function DocumentPage() {
             </button>
           </div>
         )}
-        {result?.documents.map((doc, i) => (
-          <DocumentCard key={i} doc={doc} />
-        ))}
+        {result && result.documents.length > 0 && (
+          <div
+            style={{ height: virtualizer.getTotalSize(), position: "relative", width: "100%" }}
+          >
+            {virtualizer.getVirtualItems().map((v) => {
+              const doc = result.documents[v.index];
+              return (
+                <div
+                  key={v.key}
+                  data-index={v.index}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${v.start}px)`,
+                    paddingBottom: 6,
+                  }}
+                >
+                  <DocumentCard
+                    doc={doc}
+                    onEdit={connection ? (id, current) => openDocumentEditor(id, current) : undefined}
+                    onDelete={connection ? (id) => confirmDeleteDocument(id) : undefined}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
         {!loading && result && result.documents.length === 0 && (
           <div className={cn("p-8 text-center text-xs", mutedText)}>Sin documentos</div>
         )}
@@ -599,6 +783,73 @@ function DocumentPage() {
           <ChevronRight className="h-3.5 w-3.5" />
         </button>
       </div>
+
+      {editorState && (
+        <Modal onClose={() => !editorState.saving && setEditorState(null)}>
+          <div className="flex max-h-[80vh] w-full max-w-3xl flex-col rounded-md border border-zinc-800 bg-zinc-950 shadow-xl">
+            <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+              <h2 className="text-sm font-medium text-zinc-100">Editar documento</h2>
+              <button
+                className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+                onClick={() => setEditorState(null)}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="min-h-[50vh] flex-1 overflow-auto bg-zinc-950">
+              <CodeEditor
+                lang="json"
+                value={editorState.json}
+                onChange={(v) => setEditorState({ ...editorState, json: v, error: null })}
+                minHeight="50vh"
+              />
+            </div>
+            {editorState.error && (
+              <div className="border-t border-red-900/40 bg-red-950/30 px-4 py-2 text-xs text-red-300">{editorState.error}</div>
+            )}
+            <div className="flex justify-end gap-2 border-t border-zinc-800 px-4 py-3">
+              <button
+                className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                onClick={() => setEditorState(null)}
+                disabled={editorState.saving}
+              >
+                Cancelar
+              </button>
+              <button
+                className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                onClick={performEditSave}
+                disabled={editorState.saving}
+              >
+                {editorState.saving ? "Guardando…" : "Guardar"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {deletingId && (
+        <Modal onClose={() => setDeletingId(null)}>
+          <div className="w-full max-w-md rounded-md border border-zinc-800 bg-zinc-950 p-5 shadow-xl">
+            <h2 className="text-sm font-medium text-zinc-100">¿Eliminar documento?</h2>
+            <p className="mt-2 text-xs text-zinc-400">Esta acción no se puede deshacer.</p>
+            <p className="mt-2 break-all rounded bg-zinc-900 px-2 py-1 font-mono text-[11px] text-zinc-300">_id: {deletingId}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                onClick={() => setDeletingId(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                className="rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500"
+                onClick={performDelete}
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

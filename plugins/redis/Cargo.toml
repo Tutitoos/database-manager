@@ -1,0 +1,19 @@
+[package]
+name = "dbm-redis-plugin"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "redis-plugin"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+anyhow = { workspace = true }
+async-trait = "0.1"
+dbm-plugin-rpc = { path = "../common-rpc" }
+redis = { version = "0.27", default-features = false, features = ["tokio-comp", "aio", "streams"] }
+futures = "0.3"

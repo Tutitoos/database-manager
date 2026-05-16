@@ -110,6 +110,35 @@ func dispatch(req Request) Response {
 			return fail(req.ID, err)
 		}
 		return ok(req.ID, result)
+	case "update_document":
+		var env struct {
+			Params     ConnectionParams `json:"params"`
+			Database   string           `json:"database"`
+			Collection string           `json:"collection"`
+			DocumentID string           `json:"document_id"`
+			Update     string           `json:"update"`
+		}
+		if err := json.Unmarshal(req.Params, &env); err != nil {
+			return fail(req.ID, err)
+		}
+		if err := updateDocument(env.Params, env.Database, env.Collection, env.DocumentID, env.Update); err != nil {
+			return fail(req.ID, err)
+		}
+		return ok(req.ID, map[string]bool{"ok": true})
+	case "delete_document":
+		var env struct {
+			Params     ConnectionParams `json:"params"`
+			Database   string           `json:"database"`
+			Collection string           `json:"collection"`
+			DocumentID string           `json:"document_id"`
+		}
+		if err := json.Unmarshal(req.Params, &env); err != nil {
+			return fail(req.ID, err)
+		}
+		if err := deleteDocument(env.Params, env.Database, env.Collection, env.DocumentID); err != nil {
+			return fail(req.ID, err)
+		}
+		return ok(req.ID, map[string]bool{"ok": true})
 	case "get_schemas":
 		return ok(req.ID, []string{})
 	case "get_tables", "get_columns":
@@ -333,6 +362,73 @@ func getDocuments(params ConnectionParams, database, collection string, limit, o
 	}
 
 	return result, nil
+}
+
+func parseDocumentID(raw string) (any, error) {
+	if oid, err := primitive.ObjectIDFromHex(raw); err == nil {
+		return oid, nil
+	}
+	return raw, nil
+}
+
+func updateDocument(params ConnectionParams, database, collection, documentID, update string) error {
+	if documentID == "" {
+		return fmt.Errorf("document_id is required")
+	}
+	if update == "" {
+		return fmt.Errorf("update body is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(buildURI(params)))
+	if err != nil {
+		return err
+	}
+	defer client.Disconnect(ctx)
+	id, err := parseDocumentID(documentID)
+	if err != nil {
+		return err
+	}
+	var doc bson.M
+	if err := bson.UnmarshalExtJSON([]byte(update), true, &doc); err != nil {
+		return fmt.Errorf("invalid update JSON: %w", err)
+	}
+	delete(doc, "_id")
+	col := client.Database(database).Collection(collection)
+	res, err := col.ReplaceOne(ctx, bson.M{"_id": id}, doc)
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("document not found")
+	}
+	return nil
+}
+
+func deleteDocument(params ConnectionParams, database, collection, documentID string) error {
+	if documentID == "" {
+		return fmt.Errorf("document_id is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(buildURI(params)))
+	if err != nil {
+		return err
+	}
+	defer client.Disconnect(ctx)
+	id, err := parseDocumentID(documentID)
+	if err != nil {
+		return err
+	}
+	col := client.Database(database).Collection(collection)
+	res, err := col.DeleteOne(ctx, bson.M{"_id": id})
+	if err != nil {
+		return err
+	}
+	if res.DeletedCount == 0 {
+		return fmt.Errorf("document not found")
+	}
+	return nil
 }
 
 func getMetrics(params ConnectionParams, database string) (map[string]any, error) {

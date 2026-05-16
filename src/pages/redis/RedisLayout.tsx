@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowLeft, BarChart2, Database, Folder, List, Loader2, Radio, RefreshCw, Search, X } from "lucide-react";
 import { AutocompleteInput, type GetSuggestions, type SuggestionItem } from "@/components/autocomplete-input";
-import { Link, Outlet, useNavigate, useSearchParams } from "react-router";
+import { Link, Outlet } from "@tanstack/react-router";
+import { useNavigate, useSearchParams } from "@/lib/router-compat";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MetricsPanel } from "@/components/metrics-panel";
 import RedisPubSubPage from "./RedisPubSubPage";

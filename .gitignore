@@ -9,3 +9,15 @@ src-tauri/target
 plugins/*/*-plugin
 plugins/*/*.exe
 tsconfig.tsbuildinfo
+
+# Local env (secrets)
+.env
+.env.local
+.env.*.local
+server/.env
+server/.env.local
+server/data/
+
+# Bun lockfile (project uses pnpm)
+bun.lock
+bun.lockb
