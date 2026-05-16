@@ -21,3 +21,4 @@ server/data/
 # Bun lockfile (project uses pnpm)
 bun.lock
 bun.lockb
+.claude/worktrees/
