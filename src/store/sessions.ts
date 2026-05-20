@@ -3,6 +3,12 @@ import { useStore } from "@tanstack/react-store";
 import { invoke } from "@tauri-apps/api/core";
 import type { Connection } from "@/lib/types";
 
+export interface SqlScript {
+  id: string;
+  name: string;
+  sql: string;
+}
+
 export interface SqlSession {
   type: "sql";
   connection: Connection;
@@ -13,7 +19,12 @@ export interface SqlSession {
   activeDb: string;
   activeTable: string;
   activeView: string;
+  /** @deprecated Use `queryScripts` + `activeScriptId`. Kept so older
+   *  sessions don't lose their draft on first read; the migration in
+   *  `hydrate()` lifts it into a script tab. */
   queryDraft: string;
+  queryScripts: SqlScript[];
+  activeScriptId: string;
   queryHistory: QueryHistoryEntry[];
 }
 
@@ -118,6 +129,8 @@ function addSession(connection: Connection) {
         activeView: "",
       };
     } else {
+      const initialScriptId = `s-${Date.now().toString(36)}`;
+      const initialSql = "-- Escribe tu consulta SQL aquí. Cmd/Ctrl+Enter para ejecutar.\n";
       session = {
         type,
         connection,
@@ -128,7 +141,9 @@ function addSession(connection: Connection) {
         activeDb: "",
         activeTable: "",
         activeView: "",
-        queryDraft: "-- Escribe tu consulta SQL aquí. Cmd/Ctrl+Enter para ejecutar.\n",
+        queryDraft: initialSql,
+        queryScripts: [{ id: initialScriptId, name: "Script 1", sql: initialSql }],
+        activeScriptId: initialScriptId,
         queryHistory: [],
       };
     }
@@ -162,9 +177,21 @@ function hydrate(sessions: Record<number, Session>) {
   for (const [id, raw] of Object.entries(sessions)) {
     let s = raw as Session;
     if (s.type === "sql") {
+      const draft = s.queryDraft ?? "-- Escribe tu consulta SQL aquí. Cmd/Ctrl+Enter para ejecutar.\n";
+      let scripts = s.queryScripts;
+      let activeId = s.activeScriptId;
+      if (!Array.isArray(scripts) || scripts.length === 0) {
+        const sid = `s-${Date.now().toString(36)}-${id}`;
+        scripts = [{ id: sid, name: "Script 1", sql: draft }];
+        activeId = sid;
+      } else if (!activeId || !scripts.find((sc) => sc.id === activeId)) {
+        activeId = scripts[0].id;
+      }
       s = {
         ...s,
-        queryDraft: s.queryDraft ?? "-- Escribe tu consulta SQL aquí. Cmd/Ctrl+Enter para ejecutar.\n",
+        queryDraft: draft,
+        queryScripts: scripts,
+        activeScriptId: activeId,
         queryHistory: s.queryHistory ?? [],
       };
     }

@@ -3,13 +3,18 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
+  ChevronDown,
   Copy,
   Download,
+  FileCode2,
   History,
   Loader2,
+  Pencil,
   Play,
+  Plus,
   Sparkles,
   Square,
+  X,
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -19,12 +24,13 @@ import { format as formatSql } from "sql-formatter";
 import { CodeEditor } from "@/components/code-editor";
 import { Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
+import { Dropdown, DropdownItem, DropdownSeparator } from "@/components/ui/dropdown";
 import { mutedText, panel, sectionBorder } from "@/lib/styles";
 import { getSchema, type SchemaMap } from "@/lib/schema-cache";
 import { saveCsv, saveJson } from "@/lib/save-file";
 import type { Connection } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { useSessionsStore, type QueryHistoryEntry, type SqlSession } from "@/store/sessions";
+import { useSessionsStore, type QueryHistoryEntry, type SqlScript, type SqlSession } from "@/store/sessions";
 
 type ExecCell = string | number | boolean | null;
 
@@ -42,6 +48,35 @@ type ExecResult = {
 
 const MUTATION_RE =
   /^\s*(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE|REINDEX|VACUUM|MERGE)\b/i;
+
+/** Boilerplate snippets seeded by the "+" → template menu in the tabs bar.
+ *  Each one is meant to be a starting point a user immediately edits — never
+ *  runnable as-is (placeholders use `table_name` / `col` so accidental
+ *  ⌘+Enter on a fresh tab errors loudly instead of hitting random tables). */
+const SQL_TEMPLATES = {
+  blank: "",
+  select: "SELECT *\nFROM table_name\nWHERE 1 = 1\nLIMIT 100;\n",
+  insert: "INSERT INTO table_name (col1, col2)\nVALUES (val1, val2);\n",
+  update: "UPDATE table_name\nSET col1 = val1\nWHERE 1 = 0;\n",
+  delete: "DELETE FROM table_name\nWHERE 1 = 0;\n",
+  create_table:
+    "CREATE TABLE table_name (\n  id          BIGSERIAL PRIMARY KEY,\n  name        TEXT NOT NULL,\n  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()\n);\n",
+  alter_table: "ALTER TABLE table_name\n  ADD COLUMN col_name TEXT NOT NULL DEFAULT '';\n",
+  drop_table: "DROP TABLE IF EXISTS table_name;\n",
+  cte: "WITH cte_name AS (\n  SELECT *\n  FROM table_name\n)\nSELECT * FROM cte_name;\n",
+} as const;
+
+const TEMPLATE_LABELS: Record<keyof typeof SQL_TEMPLATES, string> = {
+  blank: "En blanco",
+  select: "SELECT",
+  insert: "INSERT",
+  update: "UPDATE",
+  delete: "DELETE",
+  create_table: "CREATE TABLE",
+  alter_table: "ALTER TABLE",
+  drop_table: "DROP TABLE",
+  cte: "WITH (CTE)",
+};
 
 function firstStmt(sql: string): string {
   // Frontend mirror of the plugin's split — gives the user a stable preview in
@@ -99,7 +134,82 @@ export default function SqlQueriesPage({
   const { sessions, updateSession } = useSessionsStore();
   const stored = sessions[connection.id] as SqlSession | undefined;
 
-  const [draft, setDraft] = useState(stored?.queryDraft ?? "");
+  // Multi-tab scripts: each tab has an id/name/sql; `activeScriptId` picks
+  // which one the editor surface is bound to. Falls back to a single tab
+  // built from the legacy queryDraft string if a session predates this.
+  const scripts: SqlScript[] = stored?.queryScripts ?? [
+    { id: "default", name: "Script 1", sql: stored?.queryDraft ?? "" },
+  ];
+  const activeScriptId = stored?.activeScriptId ?? scripts[0]?.id ?? "default";
+  const activeScript = scripts.find((s) => s.id === activeScriptId) ?? scripts[0];
+  const draft = activeScript?.sql ?? "";
+  function setDraft(next: string | ((prev: string) => string)) {
+    const value = typeof next === "function" ? (next as (p: string) => string)(draft) : next;
+    if (!stored) return;
+    const updated = scripts.map((s) => (s.id === activeScript.id ? { ...s, sql: value } : s));
+    updateSession(connection.id, { queryScripts: updated, queryDraft: value });
+  }
+
+  function makeScriptId() {
+    return `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  }
+
+  function nextScriptName(): string {
+    let n = scripts.length + 1;
+    const taken = new Set(scripts.map((s) => s.name));
+    while (taken.has(`Script ${n}`)) n++;
+    return `Script ${n}`;
+  }
+
+  function newScript(template: keyof typeof SQL_TEMPLATES = "blank") {
+    if (!stored) return;
+    const id = makeScriptId();
+    const sql = SQL_TEMPLATES[template];
+    const name = template === "blank" ? nextScriptName() : `${TEMPLATE_LABELS[template]} ${scripts.length + 1}`;
+    updateSession(connection.id, {
+      queryScripts: [...scripts, { id, name, sql }],
+      activeScriptId: id,
+      queryDraft: sql,
+    });
+  }
+
+  function switchScript(id: string) {
+    if (!stored || id === activeScript.id) return;
+    const target = scripts.find((s) => s.id === id);
+    if (!target) return;
+    updateSession(connection.id, { activeScriptId: id, queryDraft: target.sql });
+  }
+
+  function closeScript(id: string) {
+    if (!stored) return;
+    if (scripts.length === 1) {
+      // Don't allow closing the last script — clear it instead so the editor
+      // stays mounted on a known tab.
+      const cleared = scripts.map((s) => ({ ...s, sql: "" }));
+      updateSession(connection.id, { queryScripts: cleared, queryDraft: "" });
+      return;
+    }
+    const idx = scripts.findIndex((s) => s.id === id);
+    const remaining = scripts.filter((s) => s.id !== id);
+    const nextActive = id === activeScript.id
+      ? remaining[Math.max(0, idx - 1)].id
+      : activeScript.id;
+    const nextDraft = remaining.find((s) => s.id === nextActive)?.sql ?? "";
+    updateSession(connection.id, {
+      queryScripts: remaining,
+      activeScriptId: nextActive,
+      queryDraft: nextDraft,
+    });
+  }
+
+  function renameScript(id: string, name: string) {
+    if (!stored) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    updateSession(connection.id, {
+      queryScripts: scripts.map((s) => (s.id === id ? { ...s, name: trimmed } : s)),
+    });
+  }
   const [running, setRunning] = useState(false);
   const [currentQueryId, setCurrentQueryId] = useState<string | null>(null);
   const [result, setResult] = useState<ExecResult | null>(null);
@@ -126,12 +236,8 @@ export default function SqlQueriesPage({
   const runRef = useRef<() => void>(() => undefined);
   const cancelRef = useRef<() => void>(() => undefined);
 
-  // Persist draft to session (debounced via the store's auto-save).
-  useEffect(() => {
-    if (!stored) return;
-    if (stored.queryDraft === draft) return;
-    updateSession(connection.id, { queryDraft: draft });
-  }, [draft, connection.id, stored, updateSession]);
+  // Draft persistence now happens inside `setDraft` (writes the current
+  // tab back to `queryScripts`), so the old draft-watcher effect is gone.
 
   // Sidebar click-to-insert: insert at editor cursor if mounted, else append.
   useEffect(() => {
@@ -317,6 +423,67 @@ export default function SqlQueriesPage({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {/* Tabs */}
+      <div className={cn("flex shrink-0 items-stretch gap-1 border-b bg-surface/40 px-2 pt-1.5", sectionBorder)}>
+        <div className="flex flex-1 items-center gap-0.5 overflow-x-auto">
+          {scripts.map((s) => (
+            <ScriptTab
+              key={s.id}
+              script={s}
+              active={s.id === activeScript.id}
+              canClose={scripts.length > 1}
+              onSelect={() => switchScript(s.id)}
+              onClose={() => closeScript(s.id)}
+              onRename={(name) => renameScript(s.id, name)}
+            />
+          ))}
+        </div>
+        <Dropdown
+          align="end"
+          trigger={
+            <span
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-border-subtle bg-surface px-2 text-caption text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
+              title="Nuevo script"
+            >
+              <Plus className="h-3 w-3" />
+              <ChevronDown className="h-3 w-3" />
+            </span>
+          }
+          className="w-[14rem]"
+        >
+          {(close) => (
+            <>
+              <DropdownItem
+                icon={<Plus className="h-3.5 w-3.5" />}
+                onClick={() => { newScript("blank"); close(); }}
+              >
+                En blanco
+              </DropdownItem>
+              <DropdownSeparator />
+              {(["select", "insert", "update", "delete"] as const).map((k) => (
+                <DropdownItem
+                  key={k}
+                  icon={<FileCode2 className="h-3.5 w-3.5" />}
+                  onClick={() => { newScript(k); close(); }}
+                >
+                  {TEMPLATE_LABELS[k]}
+                </DropdownItem>
+              ))}
+              <DropdownSeparator />
+              {(["create_table", "alter_table", "drop_table", "cte"] as const).map((k) => (
+                <DropdownItem
+                  key={k}
+                  icon={<FileCode2 className="h-3.5 w-3.5" />}
+                  onClick={() => { newScript(k); close(); }}
+                >
+                  {TEMPLATE_LABELS[k]}
+                </DropdownItem>
+              ))}
+            </>
+          )}
+        </Dropdown>
+      </div>
+
       {/* Editor (40%) */}
       <div className={cn("flex-[2] min-h-0 overflow-hidden border-b", sectionBorder)}>
         <CodeEditor
@@ -776,6 +943,94 @@ function HistoryPanel({
           </button>
         ))
       )}
+    </div>
+  );
+}
+
+function ScriptTab({
+  script,
+  active,
+  canClose,
+  onSelect,
+  onClose,
+  onRename,
+}: {
+  script: SqlScript;
+  active: boolean;
+  canClose: boolean;
+  onSelect: () => void;
+  onClose: () => void;
+  onRename: (name: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(script.name);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  function commit() {
+    setEditing(false);
+    if (draft !== script.name) onRename(draft);
+  }
+
+  return (
+    <div
+      className={cn(
+        "group inline-flex h-7 shrink-0 items-center gap-1 rounded-t-md border border-b-0 px-2 text-caption transition-colors",
+        active
+          ? "border-border-subtle bg-surface text-text"
+          : "border-transparent text-text-muted hover:bg-surface-hover hover:text-text",
+      )}
+    >
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") {
+              setDraft(script.name);
+              setEditing(false);
+            }
+          }}
+          className="h-5 w-28 rounded border border-border-subtle bg-surface-elevated px-1 text-caption text-text outline-none focus:border-accent"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={onSelect}
+          onDoubleClick={() => setEditing(true)}
+          className="max-w-[12rem] truncate font-mono"
+          title="Doble click para renombrar"
+        >
+          {script.name}
+        </button>
+      )}
+      {!editing && (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="opacity-0 group-hover:opacity-100 hover:text-text"
+          title="Renombrar"
+        >
+          <Pencil className="h-3 w-3" />
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onClose}
+        title={canClose ? "Cerrar" : "Vaciar"}
+        className="rounded p-0.5 text-text-faint opacity-60 hover:bg-surface-hover hover:text-text hover:opacity-100"
+      >
+        <X className="h-3 w-3" />
+      </button>
     </div>
   );
 }
