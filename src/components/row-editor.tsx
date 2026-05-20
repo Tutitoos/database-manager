@@ -1,7 +1,7 @@
 import { Code2, Copy, Rows3, RotateCcw, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/modal";
 import { CodeEditor } from "@/components/code-editor";
 import { pushToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
@@ -14,7 +14,6 @@ export interface ColumnMeta {
   indexed: boolean;
 }
 
-/** Plugin-supplied column shape (postgres today, others schemaless). */
 export interface ColumnInfo {
   name: string;
   type?: string;
@@ -41,21 +40,43 @@ interface Props {
   onSave: (values: Record<string, RowValue>) => void;
 }
 
+/* ────────────────────────────  TYPE TAXONOMY  ────────────────────────────── *
+ * Each DB type is mapped to a "kind" so the UI can recolor the field card and
+ * pick the right input control without sprinkling type checks all over.       */
+type Kind = "number" | "boolean" | "text" | "json" | "date" | "uuid" | "bytea" | "unknown";
+
+const KIND_BY_TYPE: Record<string, Kind> = {
+  smallint: "number", integer: "number", bigint: "number",
+  int2: "number", int4: "number", int8: "number",
+  numeric: "number", decimal: "number", real: "number",
+  "double precision": "number", float4: "number", float8: "number",
+  smallserial: "number", serial: "number", bigserial: "number",
+  boolean: "boolean", bool: "boolean",
+  text: "text", varchar: "text", char: "text", character: "text", citext: "text", name: "text",
+  json: "json", jsonb: "json",
+  date: "date", time: "date", timestamp: "date", timestamptz: "date",
+  "timestamp without time zone": "date", "timestamp with time zone": "date",
+  uuid: "uuid",
+  bytea: "bytea",
+};
+
+function kindOf(type?: string): Kind {
+  if (!type) return "unknown";
+  return KIND_BY_TYPE[type.toLowerCase()] ?? "unknown";
+}
+
+const KIND_STYLE: Record<Kind, { border: string; chip: string; dot: string; label: string }> = {
+  number:  { border: "border-l-sky-500/70",     chip: "bg-sky-500/15 text-sky-300",     dot: "bg-sky-400",     label: "número" },
+  boolean: { border: "border-l-violet-500/70",  chip: "bg-violet-500/15 text-violet-300", dot: "bg-violet-400", label: "booleano" },
+  text:    { border: "border-l-emerald-500/70", chip: "bg-emerald-500/15 text-emerald-300", dot: "bg-emerald-400", label: "texto" },
+  json:    { border: "border-l-rose-500/70",    chip: "bg-rose-500/15 text-rose-300",   dot: "bg-rose-400",    label: "json" },
+  date:    { border: "border-l-amber-500/70",   chip: "bg-amber-500/15 text-amber-300", dot: "bg-amber-400",   label: "fecha" },
+  uuid:    { border: "border-l-cyan-500/70",    chip: "bg-cyan-500/15 text-cyan-300",   dot: "bg-cyan-400",    label: "uuid" },
+  bytea:   { border: "border-l-slate-500/70",   chip: "bg-slate-500/20 text-slate-300", dot: "bg-slate-400",   label: "binario" },
+  unknown: { border: "border-l-border-subtle",  chip: "bg-surface text-text-muted",     dot: "bg-text-faint",  label: "tipo" },
+};
+
 const AUTO_TIMESTAMP_RE = /(^|_)at$|^(created|updated|inserted|deleted)_at$/i;
-
-const NUMERIC_TYPES = new Set([
-  "smallint", "integer", "bigint", "int2", "int4", "int8",
-  "numeric", "decimal", "real", "double precision", "float4", "float8",
-  "smallserial", "serial", "bigserial",
-]);
-const BOOLEAN_TYPES = new Set(["boolean", "bool"]);
-const JSON_TYPES = new Set(["json", "jsonb"]);
-const LONG_TEXT_TYPES = new Set(["text", "varchar", "bytea", "xml"]);
-
-function isNumeric(t?: string) { return !!t && NUMERIC_TYPES.has(t.toLowerCase()); }
-function isBoolean(t?: string) { return !!t && BOOLEAN_TYPES.has(t.toLowerCase()); }
-function isJsonish(t?: string) { return !!t && JSON_TYPES.has(t.toLowerCase()); }
-function isLongText(t?: string) { return !!t && LONG_TEXT_TYPES.has(t.toLowerCase()); }
 
 export function RowEditor({
   mode,
@@ -78,10 +99,10 @@ export function RowEditor({
     return map;
   }, [columnsInfo]);
 
-  const editable = useMemo(() => {
-    if (!isInsert) return columns;
-    return columns.filter((c) => !(pkColumn && c === pkColumn));
-  }, [columns, isInsert, pkColumn]);
+  const editable = useMemo(
+    () => (isInsert ? columns.filter((c) => !(pkColumn && c === pkColumn)) : columns),
+    [columns, isInsert, pkColumn],
+  );
 
   const buildInitial = useMemo(() => {
     return (): { values: Record<string, RowValue>; nulls: Record<string, boolean> } => {
@@ -100,7 +121,7 @@ export function RowEditor({
         const autoTs = AUTO_TIMESTAMP_RE.test(c);
         const preNull = nullable || hasDefault || autoTs;
         nulls[c] = preNull;
-        values[c] = preNull ? null : defaultEmpty(info?.type);
+        values[c] = preNull ? null : defaultEmpty(kindOf(info?.type));
       }
       return { values, nulls };
     };
@@ -123,9 +144,10 @@ export function RowEditor({
   function toggleNull(col: string) {
     const next = !nulls[col];
     setNulls((p) => ({ ...p, [col]: next }));
-    setValues((p) => ({ ...p, [col]: next ? null : defaultEmpty(infoByName.get(col)?.type) }));
+    setValues((p) => ({ ...p, [col]: next ? null : defaultEmpty(kindOf(infoByName.get(col)?.type)) }));
     setValidation((v) => ({ ...v, [col]: "" }));
   }
+
   function switchTo(next: "form" | "json") {
     if (next === view) return;
     if (next === "json") {
@@ -153,6 +175,7 @@ export function RowEditor({
     const errs: Record<string, string> = {};
     for (const c of editable) {
       const info = infoByName.get(c);
+      const k = kindOf(info?.type);
       const isNull = nulls[c];
       const nullable = info?.nullable !== false;
       const hasDefault = info?.default != null;
@@ -162,16 +185,11 @@ export function RowEditor({
       }
       if (isNull) continue;
       const v = values[c];
-      const type = info?.type;
-      if (isNumeric(type) && typeof v === "string" && v.trim() === "") {
-        errs[c] = "Número requerido";
-        continue;
+      if (k === "number" && typeof v === "string") {
+        if (v.trim() === "") errs[c] = "Número requerido";
+        else if (Number.isNaN(Number(v))) errs[c] = "Número inválido";
       }
-      if (isNumeric(type) && typeof v === "string" && Number.isNaN(Number(v))) {
-        errs[c] = "Número inválido";
-        continue;
-      }
-      if (isJsonish(type) && typeof v === "string" && v.trim() !== "") {
+      if (k === "json" && typeof v === "string" && v.trim() !== "") {
         try { JSON.parse(v); } catch { errs[c] = "JSON inválido"; }
       }
     }
@@ -182,9 +200,8 @@ export function RowEditor({
     const out: Record<string, RowValue> = {};
     for (const c of editable) {
       if (nulls[c]) { out[c] = null; continue; }
-      const info = infoByName.get(c);
       const v = values[c];
-      if (isNumeric(info?.type) && typeof v === "string") {
+      if (kindOf(infoByName.get(c)?.type) === "number" && typeof v === "string") {
         const n = Number(v);
         out[c] = Number.isFinite(n) ? n : v;
       } else {
@@ -232,40 +249,39 @@ export function RowEditor({
         e.preventDefault();
         saveRef.current();
       }
-      if (e.key === "Escape" && !saving) {
-        e.preventDefault();
-        onCancel();
-      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel, saving]);
+  }, []);
 
-  const title = isInsert ? "Insertar fila" : `Editar fila — PK ${String(pkValue)}`;
+  const title = isInsert ? "Insertar fila" : "Editar fila";
   const hasMetadata = columnsInfo.length > 0;
 
-  return createPortal(
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[100] flex justify-center">
-      <div
-        className={cn(
-          "pointer-events-auto flex w-full max-w-[1400px] flex-col rounded-t-xl border border-b-0 border-border-subtle bg-surface-overlay shadow-2xl",
-          "animate-in slide-in-from-bottom duration-200",
-        )}
-        style={{ maxHeight: "min(60vh, 720px)" }}
-      >
+  return (
+    <Modal onClose={() => !saving && onCancel()}>
+      <div className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-border-subtle bg-surface-overlay shadow-2xl">
         {/* Header */}
-        <header className="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-2.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <h2 className="text-h3 font-medium text-text">{title}</h2>
-            <span className="text-caption truncate font-mono text-text-faint">{table}</span>
+        <header className="flex items-center justify-between gap-3 border-b border-border-subtle px-6 py-4">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <h2 className="text-h2 font-semibold text-text">{title}</h2>
+            <div className="text-caption flex items-center gap-1.5 text-text-muted">
+              <span className="font-mono text-text">{table}</span>
+              {!isInsert && pkValue !== undefined && (
+                <>
+                  <span className="text-text-faint">·</span>
+                  <span>PK</span>
+                  <span className="font-mono text-text">{String(pkValue)}</span>
+                </>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1.5">
             <div className="flex overflow-hidden rounded-md border border-border-subtle bg-surface text-caption">
               <button
                 type="button"
                 onClick={() => switchTo("form")}
                 className={cn(
-                  "inline-flex items-center gap-1 px-2 py-1 transition-colors",
+                  "inline-flex items-center gap-1 px-2.5 py-1.5 transition-colors",
                   view === "form" ? "bg-accent-soft text-accent" : "text-text-muted hover:bg-surface-hover",
                 )}
               >
@@ -275,118 +291,142 @@ export function RowEditor({
                 type="button"
                 onClick={() => switchTo("json")}
                 className={cn(
-                  "inline-flex items-center gap-1 px-2 py-1 transition-colors",
+                  "inline-flex items-center gap-1 px-2.5 py-1.5 transition-colors",
                   view === "json" ? "bg-accent-soft text-accent" : "text-text-muted hover:bg-surface-hover",
                 )}
               >
                 <Code2 className="h-3 w-3" /> JSON
               </button>
             </div>
-            <button type="button" onClick={copyAsSql} title="Copiar como INSERT SQL" className="rounded p-1 text-text-faint hover:bg-surface-hover hover:text-text">
-              <Copy className="h-3.5 w-3.5" />
-            </button>
-            <button type="button" onClick={handleReset} title="Restablecer" className="rounded p-1 text-text-faint hover:bg-surface-hover hover:text-text">
-              <RotateCcw className="h-3.5 w-3.5" />
-            </button>
-            <button className="rounded p-1 text-text-faint hover:bg-surface-hover hover:text-text" onClick={onCancel} disabled={saving}>
-              <X className="h-3.5 w-3.5" />
-            </button>
+            <IconBtn title="Copiar como INSERT SQL" onClick={copyAsSql}><Copy className="h-3.5 w-3.5" /></IconBtn>
+            <IconBtn title="Restablecer" onClick={handleReset}><RotateCcw className="h-3.5 w-3.5" /></IconBtn>
+            <IconBtn title="Cerrar" onClick={onCancel} disabled={saving}><X className="h-3.5 w-3.5" /></IconBtn>
           </div>
         </header>
 
         {/* Body */}
         {view === "form" ? (
-          <div className="flex-1 overflow-auto">
-            <div className="grid grid-cols-1 gap-x-4 gap-y-2 px-4 py-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="flex-1 overflow-auto px-6 py-5">
+            <div className="flex flex-col gap-3">
               {editable.map((col) => {
                 const meta = colMeta.get(col);
                 const info = infoByName.get(col);
+                const k = kindOf(info?.type);
+                const style = KIND_STYLE[k];
                 const isNull = nulls[col];
                 const required = info?.nullable === false && info?.default == null;
                 const value = values[col];
                 const err = validation[col];
-                const fullWidth = isJsonish(info?.type) || isLongText(info?.type) || (typeof value === "string" && (value.length > 80 || value.includes("\n")));
                 return (
                   <div
                     key={col}
-                    className={cn("flex flex-col gap-1", fullWidth && "sm:col-span-2 lg:col-span-3 xl:col-span-4")}
+                    className={cn(
+                      "group relative rounded-lg border border-border-subtle bg-surface-elevated transition-colors",
+                      "border-l-4",
+                      style.border,
+                      err && "border-danger/60 border-l-danger",
+                    )}
                   >
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-caption inline-flex min-w-0 items-center gap-1.5 truncate">
-                        <span className="truncate font-mono text-text">{col}</span>
-                        {info?.type && (
-                          <span className="text-tiny shrink-0 font-mono text-text-faint">{info.type}</span>
-                        )}
-                        {meta?.primary && (
-                          <span className="text-tiny shrink-0 rounded-sm bg-accent-soft px-1 font-semibold uppercase tracking-wider text-accent">PK</span>
-                        )}
-                        {meta?.unique && !meta.primary && (
-                          <span className="text-tiny shrink-0 rounded-sm bg-surface px-1 font-semibold uppercase tracking-wider text-text-muted">UQ</span>
-                        )}
-                        {required && (
-                          <span className="text-tiny shrink-0 font-semibold text-danger" title="NOT NULL">*</span>
-                        )}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => toggleNull(col)}
-                        className={cn(
-                          "text-tiny shrink-0 rounded-sm px-1.5 py-0.5 font-semibold uppercase tracking-wider transition-colors",
-                          isNull
-                            ? "bg-accent-soft text-accent"
-                            : "bg-surface text-text-faint hover:bg-surface-hover hover:text-text-muted",
-                        )}
-                        title={isNull ? "Quitar NULL" : "Marcar NULL"}
-                      >
-                        NULL
-                      </button>
+                    <div className="flex flex-wrap items-center gap-2 px-4 pb-2 pt-3">
+                      <span className="font-mono text-body font-medium text-text">{col}</span>
+                      {info?.type ? (
+                        <span className={cn("text-tiny rounded-md px-1.5 py-0.5 font-mono font-semibold uppercase tracking-wide", style.chip)}>
+                          {info.type}
+                        </span>
+                      ) : (
+                        <span className="text-tiny rounded-md bg-surface px-1.5 py-0.5 font-mono uppercase tracking-wide text-text-faint">
+                          {style.label}
+                        </span>
+                      )}
+                      {meta?.primary && (
+                        <span className="text-tiny rounded-md bg-accent-soft px-1.5 py-0.5 font-semibold uppercase tracking-wide text-accent">
+                          PK
+                        </span>
+                      )}
+                      {meta?.unique && !meta.primary && (
+                        <span className="text-tiny rounded-md bg-surface px-1.5 py-0.5 font-semibold uppercase tracking-wide text-text-muted">
+                          UQ
+                        </span>
+                      )}
+                      {required && (
+                        <span className="text-tiny inline-flex items-center gap-1 rounded-md bg-danger-soft px-1.5 py-0.5 font-semibold uppercase tracking-wide text-danger">
+                          NOT NULL
+                        </span>
+                      )}
+                      {info?.default != null && (
+                        <span className="text-tiny truncate font-mono text-text-faint" title={`default: ${info.default}`}>
+                          default {info.default.length > 24 ? info.default.slice(0, 24) + "…" : info.default}
+                        </span>
+                      )}
+                      <div className="ml-auto">
+                        <button
+                          type="button"
+                          onClick={() => toggleNull(col)}
+                          className={cn(
+                            "text-tiny inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 font-semibold uppercase tracking-wider transition-colors",
+                            isNull
+                              ? "bg-accent text-white"
+                              : "bg-surface text-text-faint hover:bg-surface-hover hover:text-text-muted",
+                          )}
+                          title={isNull ? "Quitar NULL" : "Marcar NULL"}
+                        >
+                          <span className={cn("h-1.5 w-1.5 rounded-full", isNull ? "bg-white" : "bg-text-faint")} />
+                          NULL
+                        </button>
+                      </div>
                     </div>
-                    <FieldInput
-                      type={info?.type}
-                      value={value}
-                      onChange={(v) => setValue(col, v)}
-                      disabled={!!isNull}
-                      invalid={!!err}
-                      placeholder={isNull ? "NULL" : info?.default != null ? `default: ${info.default}` : ""}
-                    />
-                    {err && <p className="text-tiny text-danger">{err}</p>}
+                    <div className="px-4 pb-3">
+                      <FieldInput
+                        kind={k}
+                        value={value}
+                        onChange={(v) => setValue(col, v)}
+                        disabled={!!isNull}
+                        invalid={!!err}
+                        placeholder={
+                          isNull ? "NULL" : info?.default != null ? `default: ${info.default}` : ""
+                        }
+                      />
+                      {err && <p className="text-caption mt-1.5 text-danger">{err}</p>}
+                    </div>
                   </div>
                 );
               })}
               {editable.length === 0 && (
-                <p className="text-body p-2 text-text-muted">Esta tabla no tiene columnas editables.</p>
+                <p className="text-body p-4 text-text-muted">Esta tabla no tiene columnas editables.</p>
               )}
             </div>
             {(isInsert && pkColumn) || (!hasMetadata && editable.length > 0) ? (
-              <div className="border-t border-border-subtle bg-surface-elevated px-4 py-1.5 text-caption text-text-faint">
+              <div className="mt-4 rounded-md border border-border-subtle bg-surface px-3 py-2 text-caption text-text-muted">
                 {isInsert && pkColumn && (
-                  <span>PK <span className="font-mono text-text-muted">{pkColumn}</span> la asigna la base de datos.</span>
+                  <p>
+                    La columna <span className="font-mono text-text">{pkColumn}</span> la asigna la base de datos.
+                  </p>
                 )}
                 {!hasMetadata && editable.length > 0 && (
-                  <span className="ml-2">Sin metadatos del plugin — validación parcial.</span>
+                  <p>Sin metadatos del plugin — la validación NOT NULL no está disponible.</p>
                 )}
               </div>
             ) : null}
           </div>
         ) : (
-          <div className="min-h-[260px] flex-1 overflow-auto bg-surface">
+          <div className="min-h-[360px] flex-1 overflow-auto bg-surface">
             <CodeEditor
               lang="json"
               value={jsonDraft}
               onChange={(v) => { setJsonDraft(v); setJsonError(null); }}
-              minHeight="260px"
+              minHeight="360px"
             />
           </div>
         )}
 
         {(error || jsonError) && (
-          <div className="border-t border-danger/40 bg-danger-soft px-4 py-2 text-body text-danger">
+          <div className="border-t border-danger/40 bg-danger-soft px-6 py-2.5 text-body text-danger">
             {error ?? jsonError}
           </div>
         )}
 
         {/* Footer */}
-        <footer className="flex items-center justify-between gap-2 border-t border-border-subtle px-4 py-2.5">
+        <footer className="flex items-center justify-between gap-2 border-t border-border-subtle px-6 py-4">
           <span className="text-caption text-text-faint">
             <kbd className="rounded border border-border-subtle bg-surface px-1.5 py-0.5 font-mono">⌘S</kbd> guardar ·
             <kbd className="ml-1 rounded border border-border-subtle bg-surface px-1.5 py-0.5 font-mono">Esc</kbd> cerrar
@@ -399,42 +439,71 @@ export function RowEditor({
           </div>
         </footer>
       </div>
-    </div>,
-    document.body,
+    </Modal>
+  );
+}
+
+function IconBtn({
+  children,
+  onClick,
+  title,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  title: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      disabled={disabled}
+      className="rounded-md p-1.5 text-text-faint transition-colors hover:bg-surface-hover hover:text-text disabled:opacity-50"
+    >
+      {children}
+    </button>
   );
 }
 
 function FieldInput({
-  type,
+  kind,
   value,
   onChange,
   disabled,
   invalid,
   placeholder,
 }: {
-  type?: string;
+  kind: Kind;
   value: RowValue;
   onChange: (v: RowValue) => void;
   disabled: boolean;
   invalid: boolean;
   placeholder?: string;
 }) {
-  if (isBoolean(type) || typeof value === "boolean") {
+  if (kind === "boolean" || typeof value === "boolean") {
     const v = typeof value === "boolean" ? value : value === "true";
     return (
-      <label className="text-body inline-flex h-7 items-center gap-2 rounded border border-border-subtle bg-surface px-2">
-        <input
-          type="checkbox"
-          checked={v}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onChange(!v)}
           disabled={disabled}
-          onChange={(e) => onChange(e.target.checked)}
-          className="h-3.5 w-3.5 accent-accent"
-        />
-        <span className="text-text-muted">{disabled ? "—" : v ? "true" : "false"}</span>
-      </label>
+          className={cn(
+            "text-caption inline-flex h-8 items-center gap-2 rounded-md border px-3 font-semibold transition-colors disabled:opacity-40",
+            v
+              ? "border-violet-500/40 bg-violet-500/15 text-violet-200"
+              : "border-border-subtle bg-surface text-text-muted hover:bg-surface-hover",
+          )}
+        >
+          <span className={cn("h-2 w-2 rounded-full", v ? "bg-violet-400" : "bg-text-faint")} />
+          {disabled ? "—" : v ? "TRUE" : "FALSE"}
+        </button>
+      </div>
     );
   }
-  if (isNumeric(type)) {
+  if (kind === "number") {
     return (
       <input
         type="number"
@@ -447,11 +516,12 @@ function FieldInput({
     );
   }
   const str = value == null ? "" : String(value);
-  if (isJsonish(type) || isLongText(type) || str.length > 80 || str.includes("\n")) {
+  const multi = kind === "json" || kind === "text" || kind === "bytea" || str.length > 80 || str.includes("\n");
+  if (multi) {
     return (
       <textarea
         value={str}
-        rows={Math.min(6, Math.max(2, str.split("\n").length))}
+        rows={Math.min(8, Math.max(3, str.split("\n").length + 1))}
         disabled={disabled}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
@@ -473,14 +543,13 @@ function FieldInput({
 
 function inputCls(invalid: boolean) {
   return cn(
-    "text-body-mono h-7 w-full rounded border bg-surface px-2 text-text outline-none transition-colors",
+    "text-body-mono w-full rounded-md border bg-surface px-3 py-2 text-text outline-none transition-colors",
     invalid ? "border-danger focus:border-danger" : "border-border-subtle focus:border-accent",
   );
 }
 
-function defaultEmpty(type: string | undefined): RowValue {
-  if (isBoolean(type)) return false;
-  if (isNumeric(type)) return "";
+function defaultEmpty(k: Kind): RowValue {
+  if (k === "boolean") return false;
   return "";
 }
 
