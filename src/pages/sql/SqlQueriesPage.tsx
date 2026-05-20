@@ -926,13 +926,14 @@ function HistoryPanel({
   onPick: (sql: string) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       className="absolute right-0 top-full z-30 mt-1 max-h-96 w-[420px] overflow-auto rounded-md border border-border-subtle bg-surface-overlay shadow-xl"
       onMouseLeave={onClose}
     >
       {entries.length === 0 ? (
-        <p className="text-body p-3 text-text-faint">Sin historial.</p>
+        <p className="text-body p-3 text-text-faint">{t("queryTimings.noHistory")}</p>
       ) : (
         entries.map((e, i) => (
           <button

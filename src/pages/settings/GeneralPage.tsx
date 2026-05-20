@@ -1,5 +1,6 @@
 import { Download, Loader2, RotateCcw, Settings, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Modal } from "@/components/modal";
@@ -18,6 +19,7 @@ import {
 } from "@/store/settings";
 
 export default function GeneralPage() {
+  const { t } = useTranslation();
   const s = useSettings();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
@@ -88,10 +90,10 @@ export default function GeneralPage() {
     const res = await saveTextFile(json, {
       defaultPath: "database-manager-settings.json",
       filters: [{ name: "JSON", extensions: ["json"] }],
-      title: "Exportar configuración",
+      title: t("generalSettings.exportConfig"),
     });
     if (!res.saved) return;
-    pushToast({ level: "success", title: "Exportado", body: res.path ?? "Configuración guardada como JSON." });
+    pushToast({ level: "success", title: t("generalSettings.toasts.exported"), body: res.path ?? t("generalSettings.toasts.exportedBody") });
   }
 
   async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -100,9 +102,9 @@ export default function GeneralPage() {
     try {
       const text = await f.text();
       await importSettingsJson(text);
-      pushToast({ level: "success", title: "Importado", body: "Configuración aplicada." });
+      pushToast({ level: "success", title: t("generalSettings.toasts.imported"), body: t("generalSettings.toasts.importedBody") });
     } catch (err) {
-      pushToast({ level: "danger", title: "Importar falló", body: String(err) });
+      pushToast({ level: "danger", title: t("generalSettings.toasts.importFailed"), body: String(err) });
     } finally {
       e.target.value = "";
     }
@@ -111,13 +113,13 @@ export default function GeneralPage() {
   async function handleClearCache() {
     const keys = ["app:queryHistory", "app:recentTables", "app:sessionsCache"];
     for (const k of keys) localStorage.removeItem(k);
-    pushToast({ level: "info", title: "Cache borrada", body: "Se limpiaron datos locales temporales." });
+    pushToast({ level: "info", title: t("generalSettings.toasts.cacheCleared"), body: t("generalSettings.toasts.cacheClearedBody") });
   }
 
   async function handleReset() {
     await resetSettings();
     setResetOpen(false);
-    pushToast({ level: "info", title: "Restablecido", body: "Configuración restaurada a defaults." });
+    pushToast({ level: "info", title: t("generalSettings.toasts.resetDone"), body: t("generalSettings.toasts.resetDoneBody") });
   }
 
   return (
@@ -127,50 +129,50 @@ export default function GeneralPage() {
           <Settings strokeWidth={1.5} className="h-4 w-4" />
         </div>
         <div>
-          <h1 className="text-h1 text-text">General</h1>
-          <p className="text-caption text-text-muted">Configuración global, versión de la app y mantenimiento.</p>
+          <h1 className="text-h1 text-text">{t("generalSettings.title")}</h1>
+          <p className="text-caption text-text-muted">{t("generalSettings.subtitle")}</p>
         </div>
       </header>
 
-      <SettingsCard title="Versión">
+      <SettingsCard title={t("generalSettings.version")}>
         <SettingsRow
-          label="Versión instalada"
-          description={`Database Manager · v${version || "…"}${latest ? ` · disponible v${latest.version}` : ""}`}
+          label={t("generalSettings.installedVersion")}
+          description={`Database Manager · v${version || "…"}${latest ? t("generalSettings.availableSuffix", { version: latest.version }) : ""}`}
           control={
             <div className="flex items-center gap-2">
               <Button variant="secondary" size="sm" onClick={handleCheckUpdate} disabled={checking}>
                 {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                Comprobar
+                {t("generalSettings.check")}
               </Button>
               {(latest || nativeUpdate) && (
                 <Button variant="primary" size="sm" onClick={handleInstall} disabled={installing}>
                   {installing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                  Actualizar
+                  {t("generalSettings.update")}
                 </Button>
               )}
             </div>
           }
         />
         <SettingsRow
-          label="Avisar cuando haya actualizaciones"
-          description="Muestra un toast al arrancar si hay una versión nueva."
+          label={t("generalSettings.notifyOnUpdate")}
+          description={t("generalSettings.notifyOnUpdateDescription")}
           control={<Switch checked={s.notifyUpdates} onCheckedChange={(v) => setSetting("notifyUpdates", v)} />}
         />
       </SettingsCard>
 
-      <SettingsCard title="Mantenimiento">
+      <SettingsCard title={t("generalSettings.maintenance")}>
         <SettingsRow
-          label="Exportar configuración"
-          description="Descarga un JSON con todas las preferencias."
+          label={t("generalSettings.exportConfig")}
+          description={t("generalSettings.exportConfigDescription")}
           control={
             <Button variant="secondary" size="sm" onClick={handleExport}>
-              <Download className="h-3.5 w-3.5" /> Exportar
+              <Download className="h-3.5 w-3.5" /> {t("generalSettings.export")}
             </Button>
           }
         />
         <SettingsRow
-          label="Importar configuración"
-          description="Reemplaza las preferencias actuales con un JSON guardado."
+          label={t("generalSettings.importConfig")}
+          description={t("generalSettings.importConfigDescription")}
           control={
             <>
               <input
@@ -181,26 +183,26 @@ export default function GeneralPage() {
                 onChange={handleImportFile}
               />
               <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()}>
-                <Upload className="h-3.5 w-3.5" /> Importar
+                <Upload className="h-3.5 w-3.5" /> {t("generalSettings.import")}
               </Button>
             </>
           }
         />
         <SettingsRow
-          label="Limpiar cache local"
-          description="Borra historial de queries, tablas recientes y cache de sesión."
+          label={t("generalSettings.clearCache")}
+          description={t("generalSettings.clearCacheDescription")}
           control={
             <Button variant="secondary" size="sm" onClick={handleClearCache}>
-              <Trash2 className="h-3.5 w-3.5" /> Limpiar
+              <Trash2 className="h-3.5 w-3.5" /> {t("generalSettings.clear")}
             </Button>
           }
         />
         <SettingsRow
-          label="Restablecer ajustes"
-          description="Vuelve a la configuración por defecto. No afecta tus conexiones."
+          label={t("generalSettings.resetSettings")}
+          description={t("generalSettings.resetSettingsDescription")}
           control={
             <Button variant="danger" size="sm" onClick={() => setResetOpen(true)}>
-              <RotateCcw className="h-3.5 w-3.5" /> Restablecer
+              <RotateCcw className="h-3.5 w-3.5" /> {t("generalSettings.reset")}
             </Button>
           }
         />
@@ -209,13 +211,13 @@ export default function GeneralPage() {
       {resetOpen && (
         <Modal onClose={() => setResetOpen(false)}>
           <div className="w-full max-w-md rounded-lg border border-border-subtle bg-surface-overlay p-5">
-            <h2 className="text-h2 text-text">¿Restablecer ajustes?</h2>
+            <h2 className="text-h2 text-text">{t("generalSettings.resetConfirmTitle")}</h2>
             <p className="text-body mt-2 text-text-muted">
-              Todas tus preferencias volverán al valor por defecto. Tus conexiones y credenciales se conservan.
+              {t("generalSettings.resetConfirmBody")}
             </p>
             <div className="mt-4 flex justify-end gap-2">
-              <Button variant="secondary" size="sm" onClick={() => setResetOpen(false)}>Cancelar</Button>
-              <Button variant="danger" size="sm" onClick={handleReset}>Restablecer</Button>
+              <Button variant="secondary" size="sm" onClick={() => setResetOpen(false)}>{t("common.cancel")}</Button>
+              <Button variant="danger" size="sm" onClick={handleReset}>{t("generalSettings.reset")}</Button>
             </div>
           </div>
         </Modal>

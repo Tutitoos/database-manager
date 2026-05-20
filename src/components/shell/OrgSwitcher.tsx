@@ -127,7 +127,8 @@ export function OrgSwitcher() {
 }
 
 function OrgChip({ org }: { org?: OrgRecord }) {
-  if (!org) return <span className="text-text-faint">Sin organización</span>;
+  const { t } = useTranslation();
+  if (!org) return <span className="text-text-faint">{t("shell.noOrganization", { defaultValue: "Sin organización" })}</span>;
   return (
     <>
       <OrgAvatar org={org} />

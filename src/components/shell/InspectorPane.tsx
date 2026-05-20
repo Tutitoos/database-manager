@@ -16,7 +16,7 @@ export function InspectorPane() {
     >
       <header className="flex h-9 shrink-0 items-center border-b border-border-subtle bg-surface-sunken px-3">
         <span className="text-[10px] font-semibold uppercase tracking-[.12em] text-text-faint">
-          Inspector
+          {t("inspector.title")}
         </span>
       </header>
       <div className="flex-1 overflow-y-auto p-3 text-body">

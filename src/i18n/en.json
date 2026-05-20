@@ -122,6 +122,66 @@
       "folderDescription": "Group this connection inside a folder to organize your projects."
     }
   },
+  "generalSettings": {
+    "title": "General",
+    "subtitle": "Global configuration, app version and maintenance.",
+    "version": "Version",
+    "installedVersion": "Installed version",
+    "check": "Check",
+    "update": "Update",
+    "notifyOnUpdate": "Notify when updates are available",
+    "notifyOnUpdateDescription": "Shows a toast on launch if a new version is available.",
+    "maintenance": "Maintenance",
+    "exportConfig": "Export configuration",
+    "exportConfigDescription": "Downloads a JSON with all preferences.",
+    "export": "Export",
+    "importConfig": "Import configuration",
+    "importConfigDescription": "Replaces current preferences with a saved JSON.",
+    "import": "Import",
+    "clearCache": "Clear local cache",
+    "clearCacheDescription": "Removes query history, recent tables and session cache.",
+    "clear": "Clear",
+    "resetSettings": "Reset settings",
+    "resetSettingsDescription": "Restores default configuration. Doesn't affect your connections.",
+    "reset": "Reset",
+    "resetConfirmTitle": "Reset settings?",
+    "resetConfirmBody": "All your preferences will go back to default. Your connections and credentials are preserved.",
+    "availableSuffix": " · v{{version}} available",
+    "toasts": {
+      "exported": "Exported",
+      "exportedBody": "Configuration saved as JSON.",
+      "imported": "Imported",
+      "importedBody": "Configuration applied.",
+      "importFailed": "Import failed",
+      "cacheCleared": "Cache cleared",
+      "cacheClearedBody": "Temporary local data wiped.",
+      "resetDone": "Reset",
+      "resetDoneBody": "Configuration restored to defaults."
+    }
+  },
+  "dashboard": {
+    "title": "Home",
+    "welcomeBack": "Welcome back",
+    "stats": {
+      "totalConnections": "Total connections",
+      "currentlyOpen": "Currently open",
+      "online": "Online",
+      "byProvider": "By provider"
+    },
+    "activeWorkspace": "Active workspace",
+    "viewAllConnections": "View all connections",
+    "quickActions": "Quick actions",
+    "newConnectionTitle": "New connection",
+    "newConnectionDescription": "Connect to PostgreSQL, MongoDB or Redis.",
+    "importConnectionsTitle": "Import connections",
+    "importConnectionsDescription": "Load a previously saved JSON file.",
+    "exportConnectionsTitle": "Export connections",
+    "exportConnectionsDescription": "Download current connections as JSON."
+  },
+  "statusBarMisc": {
+    "noConnection": "No active connection",
+    "offline": "Offline"
+  },
   "settingsLayout": {
     "general": "General",
     "appearance": "Appearance",
@@ -414,6 +474,7 @@
     "noConnection": "No active connection"
   },
   "inspector": {
+    "title": "Inspector",
     "empty": "Select a table, query or connection to see details here."
   },
   "login": {
@@ -478,6 +539,8 @@
     "rescan": "Rescan",
     "select": "Select a plugin to see details.",
     "empty": "No plugins installed.",
+    "signatureVerified": "Signature verified",
+    "signatureInvalid": "Invalid signature",
     "noMatches": "No plugins match \"{{query}}\".",
     "detail": {
       "version": "Version",
@@ -759,7 +822,8 @@
       "start": "Start",
       "stop": "Stop",
       "restart": "Restart",
-      "viewLogs": "View logs"
+      "viewLogs": "View logs",
+      "hideLogs": "Hide logs"
     },
     "logs": {
       "title": "Logs (last 200 lines)",
@@ -784,7 +848,13 @@
       "tokenWarnTitle": "Token not rotated",
       "tokenWarnBody": "Autostart uses the current token. Restart the server to reflect changes.",
       "uploadOk": "Plugin uploaded",
-      "uploadFail": "Upload failed"
+      "uploadFail": "Upload failed",
+      "logsCopied": "Logs copied"
+    },
+    "errors": {
+      "portInUse": "Port in use",
+      "lastError": "Last error",
+      "portConflictHint": "Another process owns port {{port}}. Change the port or kill the process."
     }
   }
 }

@@ -749,7 +749,7 @@ function DocumentPage() {
           </div>
         )}
         {!loading && result && result.documents.length === 0 && (
-          <div className={cn("p-8 text-center text-body", mutedText)}>Sin documentos</div>
+          <div className={cn("p-8 text-center text-body", mutedText)}>{t("documentPage.noDocuments", { defaultValue: "Sin documentos" })}</div>
         )}
       </div>
 

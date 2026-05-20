@@ -299,6 +299,7 @@ function ActiveConnectionPanel({
   onSelectDb: (db: string) => void;
   onSelectTable: (db: string, table: string) => void;
 }) {
+  const { t } = useTranslation();
   const selectedDb = sidebarDb && databases.includes(sidebarDb) ? sidebarDb : databases[0] ?? "";
   const tables = activeTables[selectedDb] ?? [];
 
@@ -313,7 +314,7 @@ function ActiveConnectionPanel({
   if (databases.length === 0) {
     return (
       <div className="px-3 pt-3 pb-1.5">
-        <Empty>Cargando bases…</Empty>
+        <Empty>{t("shell.sidebar.loadingDbs", { defaultValue: "Cargando bases…" })}</Empty>
       </div>
     );
   }
@@ -351,7 +352,7 @@ function ActiveConnectionPanel({
       </div>
 
       {tables.length === 0 ? (
-        <Empty>Sin tablas.</Empty>
+        <Empty>{t("shell.sidebar.noTables", { defaultValue: "Sin tablas." })}</Empty>
       ) : (
         tables.map((tbl) => {
           const isActive = tbl === sidebarTable && selectedDb === sidebarDb;

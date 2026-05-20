@@ -246,7 +246,7 @@ export default function LocalServerPage() {
     if (!logs) return;
     try {
       await navigator.clipboard.writeText(logs);
-      pushToast({ level: "success", title: "Logs copiados" });
+      pushToast({ level: "success", title: t("localServer.toasts.logsCopied") });
     } catch (e) {
       pushToast({ level: "danger", title: String(e) });
     }
@@ -346,10 +346,10 @@ export default function LocalServerPage() {
               size="sm"
               onClick={() => (logsOpen ? setLogsOpen(false) : void tailLogs())}
               disabled={logBusy}
-              title={logsOpen ? "Ocultar logs" : t("localServer.actions.viewLogs")}
+              title={logsOpen ? t("localServer.actions.hideLogs") : t("localServer.actions.viewLogs")}
             >
               {logBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-              {logsOpen ? "Ocultar logs" : t("localServer.actions.viewLogs")}
+              {logsOpen ? t("localServer.actions.hideLogs") : t("localServer.actions.viewLogs")}
             </Button>
           </div>
         </div>
@@ -366,12 +366,12 @@ export default function LocalServerPage() {
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
             <div className="min-w-0 flex-1">
               <p className="font-medium text-amber-100">
-                {portConflict ? "Puerto en uso" : "Último error"}
+                {portConflict ? t("localServer.errors.portInUse") : t("localServer.errors.lastError")}
               </p>
               <p className="mt-0.5 break-words font-mono text-tiny text-amber-200/80">{lastError}</p>
               {portConflict && (
                 <p className="mt-1 text-tiny text-amber-200/70">
-                  Otro proceso ocupa el puerto {port}. Cambia el puerto o mata el proceso que lo retiene.
+                  {t("localServer.errors.portConflictHint", { port })}
                 </p>
               )}
             </div>

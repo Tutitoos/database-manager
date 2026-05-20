@@ -122,6 +122,66 @@
       "folderDescription": "Agrupa esta conexión dentro de una carpeta para organizar tus proyectos."
     }
   },
+  "generalSettings": {
+    "title": "General",
+    "subtitle": "Configuración global, versión de la app y mantenimiento.",
+    "version": "Versión",
+    "installedVersion": "Versión instalada",
+    "check": "Comprobar",
+    "update": "Actualizar",
+    "notifyOnUpdate": "Avisar cuando haya actualizaciones",
+    "notifyOnUpdateDescription": "Muestra un toast al arrancar si hay una versión nueva.",
+    "maintenance": "Mantenimiento",
+    "exportConfig": "Exportar configuración",
+    "exportConfigDescription": "Descarga un JSON con todas las preferencias.",
+    "export": "Exportar",
+    "importConfig": "Importar configuración",
+    "importConfigDescription": "Reemplaza las preferencias actuales con un JSON guardado.",
+    "import": "Importar",
+    "clearCache": "Limpiar cache local",
+    "clearCacheDescription": "Borra historial de queries, tablas recientes y cache de sesión.",
+    "clear": "Limpiar",
+    "resetSettings": "Restablecer ajustes",
+    "resetSettingsDescription": "Vuelve a la configuración por defecto. No afecta tus conexiones.",
+    "reset": "Restablecer",
+    "resetConfirmTitle": "¿Restablecer ajustes?",
+    "resetConfirmBody": "Todas tus preferencias volverán al valor por defecto. Tus conexiones y credenciales se conservan.",
+    "availableSuffix": " · disponible v{{version}}",
+    "toasts": {
+      "exported": "Exportado",
+      "exportedBody": "Configuración guardada como JSON.",
+      "imported": "Importado",
+      "importedBody": "Configuración aplicada.",
+      "importFailed": "Importar falló",
+      "cacheCleared": "Cache borrada",
+      "cacheClearedBody": "Se limpiaron datos locales temporales.",
+      "resetDone": "Restablecido",
+      "resetDoneBody": "Configuración restaurada a defaults."
+    }
+  },
+  "dashboard": {
+    "title": "Home",
+    "welcomeBack": "Bienvenido de nuevo",
+    "stats": {
+      "totalConnections": "Total conexiones",
+      "currentlyOpen": "Abiertas ahora",
+      "online": "Online",
+      "byProvider": "Por proveedor"
+    },
+    "activeWorkspace": "Workspace activo",
+    "viewAllConnections": "Ver todas las conexiones",
+    "quickActions": "Acciones rápidas",
+    "newConnectionTitle": "Nueva conexión",
+    "newConnectionDescription": "Conecta a PostgreSQL, MongoDB o Redis.",
+    "importConnectionsTitle": "Importar conexiones",
+    "importConnectionsDescription": "Carga un archivo JSON guardado previamente.",
+    "exportConnectionsTitle": "Exportar conexiones",
+    "exportConnectionsDescription": "Descarga las conexiones actuales como JSON."
+  },
+  "statusBarMisc": {
+    "noConnection": "Sin conexión activa",
+    "offline": "Sin conexión"
+  },
   "settingsLayout": {
     "general": "General",
     "appearance": "Apariencia",
@@ -414,7 +474,8 @@
     "noConnection": "Sin conexión activa"
   },
   "inspector": {
-    "empty": "Selecciona una tabla, query o conexión para ver detalles aquí."
+    "title": "Inspector",
+    "empty": "Selecciona una tabla, consulta o conexión para ver los detalles."
   },
   "login": {
     "title": "Iniciar sesión",
@@ -478,6 +539,8 @@
     "rescan": "Re-escanear",
     "select": "Selecciona un plugin para ver detalles.",
     "empty": "No hay plugins instalados.",
+    "signatureVerified": "Firma verificada",
+    "signatureInvalid": "Firma inválida",
     "noMatches": "No hay plugins que coincidan con \"{{query}}\".",
     "detail": {
       "version": "Versión",
@@ -759,7 +822,8 @@
       "start": "Iniciar",
       "stop": "Detener",
       "restart": "Reiniciar",
-      "viewLogs": "Ver logs"
+      "viewLogs": "Ver logs",
+      "hideLogs": "Ocultar logs"
     },
     "logs": {
       "title": "Logs (últimas 200 líneas)",
@@ -784,7 +848,13 @@
       "tokenWarnTitle": "Token no rotado",
       "tokenWarnBody": "Autostart usa el token actual. Reinicia el servidor para reflejar cambios.",
       "uploadOk": "Plugin subido",
-      "uploadFail": "Subida falló"
+      "uploadFail": "Subida falló",
+      "logsCopied": "Logs copiados"
+    },
+    "errors": {
+      "portInUse": "Puerto en uso",
+      "lastError": "Último error",
+      "portConflictHint": "Otro proceso ocupa el puerto {{port}}. Cambia el puerto o mata el proceso que lo retiene."
     }
   }
 }

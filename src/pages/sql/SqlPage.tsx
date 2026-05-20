@@ -929,7 +929,7 @@ function SqlPage() {
           </div>
         )}
         {!error && !loading && result && result.rows.length === 0 && (
-          <div className={cn("p-8 text-center text-body", mutedText)}>Sin datos</div>
+          <div className={cn("p-8 text-center text-body", mutedText)}>{t("sqlPage.noData", { defaultValue: "Sin datos" })}</div>
         )}
       </div>
 

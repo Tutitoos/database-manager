@@ -595,7 +595,7 @@ function ConnectionsView(props: {
             <p className="mt-2 break-all rounded bg-surface-elevated px-2 py-1 font-mono text-[11px] text-text">{deletingFolder.name}</p>
             <p className="mt-2 text-body text-text-muted">Las conexiones dentro se moverán a "Sin carpeta".</p>
             <div className="mt-4 flex justify-end gap-2">
-              <Button size="sm" variant="secondary" onClick={() => setDeletingFolder(null)}>Cancelar</Button>
+              <Button size="sm" variant="secondary" onClick={() => setDeletingFolder(null)}>{t("common.cancel")}</Button>
               <Button
                 size="sm"
                 variant="danger"
@@ -619,7 +619,7 @@ function ConnectionsView(props: {
               {deletingConnection.name} · {deletingConnection.host}:{deletingConnection.port ?? "-"}
             </p>
             <div className="mt-4 flex justify-end gap-2">
-              <Button size="sm" variant="secondary" onClick={() => setDeletingConnection(null)}>Cancelar</Button>
+              <Button size="sm" variant="secondary" onClick={() => setDeletingConnection(null)}>{t("common.cancel")}</Button>
               <Button
                 size="sm"
                 variant="danger"

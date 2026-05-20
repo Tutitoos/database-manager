@@ -506,12 +506,12 @@ function SyncView({
               <span className="inline-flex items-center gap-1.5">
                 {p.name}
                 {p.signature_valid === true && (
-                  <span title="Firma verificada" className="inline-flex items-center gap-0.5 rounded-sm bg-success-soft px-1 text-tiny text-success">
+                  <span title={t("plugins.signatureVerified")} className="inline-flex items-center gap-0.5 rounded-sm bg-success-soft px-1 text-tiny text-success">
                     <CheckCircle2 className="h-2.5 w-2.5" /> sig
                   </span>
                 )}
                 {p.signature_valid === false && (
-                  <span title="Firma inválida" className="inline-flex items-center gap-0.5 rounded-sm bg-danger-soft px-1 text-tiny text-danger">
+                  <span title={t("plugins.signatureInvalid")} className="inline-flex items-center gap-0.5 rounded-sm bg-danger-soft px-1 text-tiny text-danger">
                     <AlertTriangle className="h-2.5 w-2.5" /> sig!
                   </span>
                 )}
