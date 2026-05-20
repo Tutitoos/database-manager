@@ -343,6 +343,7 @@ function SqlPage() {
     setExplainData(null);
     setIndexes([]);
     setSelectedRowIdx(null);
+    setTimingHistory([]);
   }, [db, table]);
 
   useEffect(() => {
@@ -401,7 +402,7 @@ function SqlPage() {
         setTimingHistory((prev) => {
           const next = [
             ...prev,
-            { queryMs, renderMs: rMs, totalMs, at: Date.now(), label: `${table} · pg ${stackIdx + 1}` },
+            { queryMs, renderMs: rMs, totalMs, at: Date.now(), label: `Página ${stackIdx + 1}` },
           ];
           return next.slice(-20);
         });
@@ -616,7 +617,7 @@ function SqlPage() {
             <QueryTimings
               queryMs={result.query_ms}
               renderMs={renderMs}
-              history={timingHistory.filter((h) => h.label?.startsWith(`${table} · `))}
+              history={timingHistory}
             />
           </>
         )}
