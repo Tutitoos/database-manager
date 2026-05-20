@@ -501,13 +501,11 @@ function FieldInput({
   // a real value distinct from "no value chosen".
   if (kind === "boolean") {
     const v = value === true ? "true" : value === false ? "false" : "null";
-    return (
-      <div className="flex items-center gap-1.5">
-        <TriBtn active={v === "true"}  color="violet" onClick={() => onChange(true)}>TRUE</TriBtn>
-        <TriBtn active={v === "false"} color="violet" onClick={() => onChange(false)}>FALSE</TriBtn>
-        <TriBtn active={v === "null"}  color="neutral" onClick={onSetNull}>null</TriBtn>
-      </div>
-    );
+    return <BoolSegmented value={v} onChange={(next) => {
+      if (next === "true") onChange(true);
+      else if (next === "false") onChange(false);
+      else onSetNull();
+    }} />;
   }
   if (kind === "number") {
     return (
@@ -544,32 +542,48 @@ function FieldInput({
   );
 }
 
-function TriBtn({
-  active,
-  color,
-  onClick,
-  children,
+function BoolSegmented({
+  value,
+  onChange,
 }: {
-  active: boolean;
-  color: "violet" | "neutral";
-  onClick: () => void;
-  children: React.ReactNode;
+  value: "true" | "false" | "null";
+  onChange: (next: "true" | "false" | "null") => void;
 }) {
-  const activeCls =
-    color === "violet"
-      ? "border-violet-500/40 bg-violet-500/15 text-violet-200"
-      : "border-border-subtle bg-surface-hover text-text-muted";
+  const segCls = (active: boolean, tone: "true" | "false" | "null") =>
+    cn(
+      "relative inline-flex h-7 flex-1 items-center justify-center gap-1.5 px-3 text-[11px] font-medium transition-colors",
+      active
+        ? tone === "true"
+          ? "bg-emerald-500/20 text-emerald-200"
+          : tone === "false"
+          ? "bg-rose-500/20 text-rose-200"
+          : "bg-surface-hover text-text-muted"
+        : "text-text-faint hover:text-text-muted",
+    );
+  const dotCls = (active: boolean, tone: "true" | "false" | "null") =>
+    cn(
+      "h-1.5 w-1.5 rounded-full transition-colors",
+      tone === "true" ? (active ? "bg-emerald-400" : "bg-emerald-400/30") :
+      tone === "false" ? (active ? "bg-rose-400" : "bg-rose-400/30") :
+      active ? "bg-text-muted" : "bg-text-faint/40",
+    );
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "inline-flex h-5 items-center rounded-sm border px-1.5 text-[9px] font-semibold uppercase tracking-wide leading-none transition-colors",
-        active ? activeCls : "border-border-subtle bg-surface text-text-faint hover:bg-surface-hover hover:text-text-muted",
-      )}
-    >
-      {children}
-    </button>
+    <div className="inline-flex w-fit overflow-hidden rounded-md border border-border-subtle bg-surface">
+      <button type="button" onClick={() => onChange("true")} className={segCls(value === "true", "true")}>
+        <span className={dotCls(value === "true", "true")} />
+        true
+      </button>
+      <div className="w-px bg-border-subtle" />
+      <button type="button" onClick={() => onChange("false")} className={segCls(value === "false", "false")}>
+        <span className={dotCls(value === "false", "false")} />
+        false
+      </button>
+      <div className="w-px bg-border-subtle" />
+      <button type="button" onClick={() => onChange("null")} className={segCls(value === "null", "null")}>
+        <span className={dotCls(value === "null", "null")} />
+        null
+      </button>
+    </div>
   );
 }
 
