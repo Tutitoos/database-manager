@@ -62,6 +62,23 @@ function kindOf(type?: string): Kind {
   return KIND_BY_TYPE[type.toLowerCase()] ?? "unknown";
 }
 
+/** Short label for the type chip — postgres reports verbose names like
+ *  "timestamp with time zone" / "character varying" that blow up the header. */
+const TYPE_SHORT: Record<string, string> = {
+  "timestamp with time zone": "timestamptz",
+  "timestamp without time zone": "timestamp",
+  "time with time zone": "timetz",
+  "time without time zone": "time",
+  "character varying": "varchar",
+  "character": "char",
+  "double precision": "float8",
+};
+function shortType(type?: string): string {
+  if (!type) return "";
+  const lower = type.toLowerCase();
+  return TYPE_SHORT[lower] ?? lower;
+}
+
 const KIND_STYLE: Record<Kind, { border: string; chip: string }> = {
   number:  { border: "border-l-sky-500/70",     chip: "bg-sky-500/15 text-sky-300" },
   boolean: { border: "border-l-violet-500/70",  chip: "bg-violet-500/15 text-violet-300" },
@@ -262,7 +279,7 @@ export function RowEditor({
   const hasMetadata = columnsInfo.length > 0;
 
   return (
-    <Modal onClose={() => !saving && onCancel()}>
+    <Modal onClose={() => !saving && onCancel()} closeOnBackdrop={false}>
       <div className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-border-subtle bg-surface-overlay shadow-2xl">
         {/* Header */}
         <header className="flex items-center justify-between gap-3 border-b border-border-subtle px-6 py-4">
@@ -334,22 +351,25 @@ export function RowEditor({
                     <div className="flex flex-wrap items-center gap-2 px-4 pb-2 pt-3">
                       <span className="font-mono text-body font-medium text-text">{col}</span>
                       {info?.type && (
-                        <span className={cn("text-tiny rounded-md px-1.5 py-0.5 font-mono font-semibold uppercase tracking-wide", style.chip)}>
-                          {info.type}
+                        <span
+                          className={cn("text-tiny rounded px-1 py-0.5 font-mono lowercase", style.chip)}
+                          title={info.type}
+                        >
+                          {shortType(info.type)}
                         </span>
                       )}
                       {meta?.primary && (
-                        <span className="text-tiny rounded-md bg-accent-soft px-1.5 py-0.5 font-semibold uppercase tracking-wide text-accent">
-                          PK
+                        <span className="text-tiny rounded bg-accent-soft px-1 py-0.5 font-semibold uppercase tracking-wide text-accent">
+                          pk
                         </span>
                       )}
                       {meta?.unique && !meta.primary && (
-                        <span className="text-tiny rounded-md bg-surface px-1.5 py-0.5 font-semibold uppercase tracking-wide text-text-muted">
-                          UQ
+                        <span className="text-tiny rounded bg-surface px-1 py-0.5 font-semibold uppercase tracking-wide text-text-muted">
+                          uq
                         </span>
                       )}
                       {required && (
-                        <span className="text-tiny inline-flex items-center gap-1 rounded-md bg-danger-soft px-1.5 py-0.5 font-semibold uppercase tracking-wide text-danger">
+                        <span className="text-tiny rounded bg-danger-soft px-1 py-0.5 font-semibold uppercase tracking-wide text-danger">
                           required
                         </span>
                       )}

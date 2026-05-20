@@ -6,10 +6,13 @@ export function Modal({
   onClose,
   children,
   className,
+  closeOnBackdrop = true,
 }: {
   onClose?: () => void;
   children: React.ReactNode;
   className?: string;
+  /** When false, clicks on the dimmed backdrop are ignored (Esc still closes). */
+  closeOnBackdrop?: boolean;
 }) {
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -31,6 +34,7 @@ export function Modal({
         className,
       )}
       onMouseDown={(e) => {
+        if (!closeOnBackdrop) return;
         if (e.target === e.currentTarget) onClose?.();
       }}
     >
