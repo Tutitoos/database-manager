@@ -54,29 +54,29 @@ function isNested(p: ParsedValue): p is { kind: "object"; v: Record<string, unkn
 }
 
 const KIND_COLOR: Record<string, string> = {
-  null: "text-zinc-600",
+  null: "text-text-faint",
   string: "text-green-400",
   number: "text-blue-400",
   boolean: "text-blue-400",
   objectid: "text-red-400",
   date: "text-cyan-400",
-  object: "text-zinc-500",
-  array: "text-zinc-500",
+  object: "text-text-faint",
+  array: "text-text-faint",
 };
 
 const TYPE_HINT_COLOR: Record<string, string> = {
-  null: "text-zinc-600",
+  null: "text-text-faint",
   string: "text-green-600",
   number: "text-blue-600",
   boolean: "text-blue-600",
   objectid: "text-red-600",
   date: "text-cyan-600",
-  object: "text-zinc-600",
-  array: "text-zinc-600",
+  object: "text-text-faint",
+  array: "text-text-faint",
 };
 
 function InlineValue({ p }: { p: ParsedValue }) {
-  const color = KIND_COLOR[p.kind] ?? "text-zinc-300";
+  const color = KIND_COLOR[p.kind] ?? "text-text";
   switch (p.kind) {
     case "null": return <span className={color}>null</span>;
     case "string": return <span className={color}>&quot;{p.v}&quot;</span>;
@@ -103,14 +103,14 @@ function FieldRow({ fieldKey, raw, depth = 0 }: { fieldKey: string; raw: unknown
     <div style={{ paddingLeft: depth * 14 }}>
       <div className="flex items-center gap-1 py-px">
         {nested ? (
-          <button onClick={() => setOpen((x) => !x)} className="shrink-0 text-zinc-600 transition-colors hover:text-zinc-300">
+          <button onClick={() => setOpen((x) => !x)} className="shrink-0 text-text-faint transition-colors hover:text-text">
             <ChevronRight className={cn("h-3 w-3 transition-transform duration-100", open && "rotate-90")} />
           </button>
         ) : (
           <span className="w-3 shrink-0" />
         )}
-        <span className="text-zinc-200">{fieldKey}</span>
-        <span className="text-zinc-600"> : </span>
+        <span className="text-text">{fieldKey}</span>
+        <span className="text-text-faint"> : </span>
         <InlineValue p={p} />
       </div>
       {nested && open && entries.map(([k, v]) => (
@@ -128,7 +128,7 @@ const TYPE_BADGE: Record<string, { fg: string; bg: string; ring: string; short: 
   date:     { fg: "text-cyan-300",   bg: "bg-cyan-500/15",   ring: "ring-cyan-500/30",   short: "date" },
   object:   { fg: "text-violet-300", bg: "bg-violet-500/15", ring: "ring-violet-500/30", short: "obj" },
   array:    { fg: "text-amber-300",  bg: "bg-amber-500/15",  ring: "ring-amber-500/30",  short: "arr" },
-  null:     { fg: "text-zinc-400",   bg: "bg-zinc-500/15",   ring: "ring-zinc-500/30",   short: "null" },
+  null:     { fg: "text-text-muted",   bg: "bg-zinc-500/15",   ring: "ring-accent-ring",   short: "null" },
 };
 
 function TypeBadge({ kind }: { kind: string }) {
@@ -167,8 +167,8 @@ function ActionIconBtn({
       onClick={onClick}
       title={title}
       className={cn(
-        "rounded p-1 text-zinc-400 transition-colors disabled:cursor-not-allowed disabled:opacity-30",
-        !disabled && (danger ? "hover:bg-red-950/60 hover:text-red-300" : "hover:bg-zinc-800 hover:text-zinc-100"),
+        "rounded p-1 text-text-muted transition-colors disabled:cursor-not-allowed disabled:opacity-30",
+        !disabled && (danger ? "hover:bg-red-950/60 hover:text-red-300" : "hover:bg-surface-hover hover:text-text"),
       )}
     >
       {children}
@@ -210,21 +210,21 @@ function DocumentCard({
   }
 
   return (
-    <div className="group rounded border border-zinc-800 bg-zinc-950/60 font-mono text-xs">
+    <div className="group rounded border border-border-subtle bg-surface/60 font-mono text-body">
       <div className="flex items-start gap-2 px-3 py-2">
-        <button onClick={() => setCollapsed((x) => !x)} className="mt-0.5 shrink-0 text-zinc-600 transition-colors hover:text-zinc-300">
+        <button onClick={() => setCollapsed((x) => !x)} className="mt-0.5 shrink-0 text-text-faint transition-colors hover:text-text">
           <ChevronRight className={cn("h-3 w-3 transition-transform duration-100", !collapsed && "rotate-90")} />
         </button>
         <div className="min-w-0 flex-1">
           {id !== undefined && (
             <div className="flex items-center gap-1">
-              <span className="text-zinc-200">_id</span>
-              <span className="text-zinc-600"> : </span>
+              <span className="text-text">_id</span>
+              <span className="text-text-faint"> : </span>
               <InlineValue p={parse(id)} />
             </div>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-transparent bg-zinc-900/0 p-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-hover:border-zinc-800/70 group-hover:bg-zinc-900/60">
+        <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-transparent bg-surface-elevated/0 p-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-hover:border-border-subtle group-hover:bg-surface-elevated/60">
           <ActionIconBtn
             disabled={!docId || !onEdit}
             onClick={() => docId && onEdit?.(docId, doc)}
@@ -246,7 +246,7 @@ function DocumentCard({
         </div>
       </div>
       {!collapsed && rest.length > 0 && (
-        <div className="border-t border-zinc-800/50 px-3 py-2">
+        <div className="border-t border-border-subtle/50 px-3 py-2">
           {rest.map(([key, value]) => (
             <FieldRow key={key} fieldKey={key} raw={value} />
           ))}
@@ -281,7 +281,7 @@ function extractFieldSuggestions(docs: Record<string, unknown>[]): SuggestionIte
     .map(([label, kind]) => ({
       label,
       hint: kind,
-      color: TYPE_HINT_COLOR[kind] ?? "text-zinc-600",
+      color: TYPE_HINT_COLOR[kind] ?? "text-text-faint",
     }));
 }
 
@@ -586,11 +586,11 @@ function DocumentPage() {
     return (
       <div className="flex h-full flex-col items-center justify-center p-8 text-center bg-black/20 relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(59,130,246,0.05)_0%,transparent_70%)]" />
-        <div className="grid h-16 w-16 w-16 place-items-center rounded-2xl border border-white/5 bg-zinc-900/50 text-zinc-400 shadow-2xl backdrop-blur-sm relative">
+        <div className="grid h-16 w-16 w-16 place-items-center rounded-2xl border border-border-subtle bg-surface-elevated/50 text-text-muted shadow-2xl backdrop-blur-sm relative">
           <FileText className="h-8 w-8 text-blue-400/50" />
         </div>
-        <h2 className="mt-6 text-base font-medium text-white relative">Selecciona una colección</h2>
-        <p className="mt-2 max-w-sm text-sm text-zinc-500 relative">
+        <h2 className="mt-6 text-h2 font-medium text-text relative">Selecciona una colección</h2>
+        <p className="mt-2 max-w-sm text-h3 text-text-faint relative">
           Expande una base de datos en el panel izquierdo y haz clic en una colección para ver sus documentos.
         </p>
       </div>
@@ -609,8 +609,8 @@ function DocumentPage() {
             filter
           </span>
           <div className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 rounded-lg border bg-zinc-950/60 px-2.5 py-1.5 transition-colors",
-            filterFocused ? "border-zinc-600" : "border-zinc-800/80",
+            "flex min-w-0 flex-1 items-center gap-2 rounded-lg border bg-surface/60 px-2.5 py-1.5 transition-colors",
+            filterFocused ? "border-border-strong" : "border-border-subtle",
             filterError ? "border-red-500/50" : ""
           )}>
             <AutocompleteInput
@@ -619,11 +619,11 @@ function DocumentPage() {
               onSubmit={applyFilter}
               getSuggestions={getSuggestions}
               placeholder='{ "active": true, "plan_type": "server" }'
-              className="min-w-0 flex-1 bg-transparent font-mono text-xs text-zinc-300 placeholder-zinc-700 outline-none"
+              className="min-w-0 flex-1 bg-transparent font-mono text-body text-text placeholder-zinc-700 outline-none"
               onFocusChange={setFilterFocused}
             />
             {filterInput && (
-              <button onClick={() => { setFilterInput(""); setFilterError(null); }} className="shrink-0 text-zinc-600 transition-colors hover:text-zinc-400">
+              <button onClick={() => { setFilterInput(""); setFilterError(null); }} className="shrink-0 text-text-faint transition-colors hover:text-text-muted">
                 <X className="h-3 w-3" />
               </button>
             )}
@@ -639,7 +639,7 @@ function DocumentPage() {
           <button
             onClick={applyFilter}
             disabled={loading}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/80 px-3 py-1.5 text-[10px] font-medium text-zinc-300 transition-all hover:border-zinc-500 hover:bg-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-border-strong bg-surface-hover px-3 py-1.5 text-[10px] font-medium text-text transition-all hover:border-border-strong hover:bg-surface-active hover:text-text disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading && appliedFilter ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
             {loading && appliedFilter ? "Buscando" : "Aplicar"}
@@ -655,16 +655,16 @@ function DocumentPage() {
         {/* Field chips */}
         {fieldSuggestions.length > 0 && (
           <div className="flex items-center gap-1 overflow-x-auto px-3 pb-2 scrollbar-none">
-            <span className="shrink-0 pr-1 text-[10px] uppercase tracking-wider text-zinc-600">Campos</span>
-            <span className="mx-1 h-3 w-px shrink-0 bg-zinc-800" />
+            <span className="shrink-0 pr-1 text-[10px] uppercase tracking-wider text-text-faint">Campos</span>
+            <span className="mx-1 h-3 w-px shrink-0 bg-surface-hover" />
             {fieldSuggestions.map(({ label, hint }) => (
               <button
                 key={label}
                 onClick={() => insertField(label)}
                 title={`${label} · ${hint ?? "?"}`}
-                className="group/chip flex shrink-0 items-center gap-1.5 rounded-full border border-zinc-800/70 bg-zinc-900/40 py-0.5 pl-2 pr-1 transition-all hover:border-zinc-600 hover:bg-zinc-800/70"
+                className="group/chip flex shrink-0 items-center gap-1.5 rounded-full border border-border-subtle bg-surface-elevated/40 py-0.5 pl-2 pr-1 transition-all hover:border-border-strong hover:bg-surface-hover/70"
               >
-                <span className="font-mono text-[10.5px] text-zinc-300 transition-colors group-hover/chip:text-zinc-100">
+                <span className="font-mono text-[10.5px] text-text transition-colors group-hover/chip:text-text">
                   {label}
                 </span>
                 {hint && <TypeBadge kind={hint} />}
@@ -680,11 +680,11 @@ function DocumentPage() {
 
       {/* ── Breadcrumb ── */}
       <div className={cn("flex h-10 shrink-0 items-center gap-2 border-b px-4", sectionBorder)}>
-        <span className="text-xs text-zinc-500">{db}</span>
-        <span className="text-xs text-zinc-700">/</span>
-        <span className="text-xs font-medium text-zinc-200">{collection}</span>
+        <span className="text-body text-text-faint">{db}</span>
+        <span className="text-body text-text-faint">/</span>
+        <span className="text-body font-medium text-text">{collection}</span>
         {result && (
-          <span className="ml-1 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">
+          <span className="ml-1 rounded-full bg-surface-hover px-2 py-0.5 text-[10px] text-text-muted">
             {result.total.toLocaleString()} documentos
           </span>
         )}
@@ -692,12 +692,12 @@ function DocumentPage() {
           <QueryTimings queryMs={result.query_ms} renderMs={renderMs} history={timingHistory} />
         )}
         <div className="ml-auto flex items-center gap-1.5">
-          {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-500" />}
+          {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-text-faint" />}
           <button
             onClick={retry}
             disabled={loading}
             title="Actualizar"
-            className="rounded p-1 text-zinc-600 transition-colors hover:bg-zinc-800 hover:text-zinc-300 disabled:opacity-40"
+            className="rounded p-1 text-text-faint transition-colors hover:bg-surface-hover hover:text-text disabled:opacity-40"
           >
             <RefreshCw className="h-3.5 w-3.5" />
           </button>
@@ -706,7 +706,7 @@ function DocumentPage() {
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto p-3">
         {error && (
-          <div className="mb-2 flex items-center gap-3 p-2 text-xs text-red-400">
+          <div className="mb-2 flex items-center gap-3 p-2 text-body text-red-400">
             <span>{error}</span>
             <button
               onClick={retry}
@@ -747,7 +747,7 @@ function DocumentPage() {
           </div>
         )}
         {!loading && result && result.documents.length === 0 && (
-          <div className={cn("p-8 text-center text-xs", mutedText)}>Sin documentos</div>
+          <div className={cn("p-8 text-center text-body", mutedText)}>Sin documentos</div>
         )}
       </div>
 
@@ -755,7 +755,7 @@ function DocumentPage() {
         <button
           onClick={prevPage}
           disabled={stackIdx === 0 || loading}
-          className="flex items-center gap-1 rounded px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-30"
+          className="flex items-center gap-1 rounded px-2 py-1 text-body text-text-muted transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-30"
         >
           <ChevronLeft className="h-3.5 w-3.5" />
           Anterior
@@ -765,19 +765,19 @@ function DocumentPage() {
           {loading && (
             <button
               onClick={cancelRequest}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/80 px-2.5 py-1 text-[10px] text-zinc-400 transition-all hover:border-red-500/40 hover:text-red-400"
+              className="flex items-center gap-1.5 rounded-lg border border-border-strong bg-surface-hover px-2.5 py-1 text-[10px] text-text-muted transition-all hover:border-red-500/40 hover:text-red-400"
             >
               <X className="h-3 w-3" />
               Cancelar
             </button>
           )}
-          <span className="text-xs text-zinc-500">Página {pageNum}</span>
+          <span className="text-body text-text-faint">Página {pageNum}</span>
         </div>
 
         <button
           onClick={nextPage}
           disabled={!result?.next_cursor || loading}
-          className="flex items-center gap-1 rounded px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-30"
+          className="flex items-center gap-1 rounded px-2 py-1 text-body text-text-muted transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-30"
         >
           Siguiente
           <ChevronRight className="h-3.5 w-3.5" />
@@ -786,17 +786,17 @@ function DocumentPage() {
 
       {editorState && (
         <Modal onClose={() => !editorState.saving && setEditorState(null)}>
-          <div className="flex max-h-[80vh] w-full max-w-3xl flex-col rounded-md border border-zinc-800 bg-zinc-950 shadow-xl">
-            <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-              <h2 className="text-sm font-medium text-zinc-100">Editar documento</h2>
+          <div className="flex max-h-[80vh] w-full max-w-3xl flex-col rounded-md border border-border-subtle bg-surface shadow-xl">
+            <div className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
+              <h2 className="text-h3 font-medium text-text">Editar documento</h2>
               <button
-                className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+                className="rounded p-1 text-text-faint hover:bg-surface-hover hover:text-text"
                 onClick={() => setEditorState(null)}
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="min-h-[50vh] flex-1 overflow-auto bg-zinc-950">
+            <div className="min-h-[50vh] flex-1 overflow-auto bg-surface">
               <CodeEditor
                 lang="json"
                 value={editorState.json}
@@ -805,18 +805,18 @@ function DocumentPage() {
               />
             </div>
             {editorState.error && (
-              <div className="border-t border-red-900/40 bg-red-950/30 px-4 py-2 text-xs text-red-300">{editorState.error}</div>
+              <div className="border-t border-red-900/40 bg-red-950/30 px-4 py-2 text-body text-red-300">{editorState.error}</div>
             )}
-            <div className="flex justify-end gap-2 border-t border-zinc-800 px-4 py-3">
+            <div className="flex justify-end gap-2 border-t border-border-subtle px-4 py-3">
               <button
-                className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                className="rounded border border-border-strong px-3 py-1.5 text-body text-text hover:bg-surface-hover"
                 onClick={() => setEditorState(null)}
                 disabled={editorState.saving}
               >
                 Cancelar
               </button>
               <button
-                className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                className="rounded bg-emerald-600 px-3 py-1.5 text-body font-medium text-text hover:bg-emerald-500 disabled:opacity-50"
                 onClick={performEditSave}
                 disabled={editorState.saving}
               >
@@ -829,19 +829,19 @@ function DocumentPage() {
 
       {deletingId && (
         <Modal onClose={() => setDeletingId(null)}>
-          <div className="w-full max-w-md rounded-md border border-zinc-800 bg-zinc-950 p-5 shadow-xl">
-            <h2 className="text-sm font-medium text-zinc-100">¿Eliminar documento?</h2>
-            <p className="mt-2 text-xs text-zinc-400">Esta acción no se puede deshacer.</p>
-            <p className="mt-2 break-all rounded bg-zinc-900 px-2 py-1 font-mono text-[11px] text-zinc-300">_id: {deletingId}</p>
+          <div className="w-full max-w-md rounded-md border border-border-subtle bg-surface p-5 shadow-xl">
+            <h2 className="text-h3 font-medium text-text">¿Eliminar documento?</h2>
+            <p className="mt-2 text-body text-text-muted">Esta acción no se puede deshacer.</p>
+            <p className="mt-2 break-all rounded bg-surface-elevated px-2 py-1 font-mono text-[11px] text-text">_id: {deletingId}</p>
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                className="rounded border border-border-strong px-3 py-1.5 text-body text-text hover:bg-surface-hover"
                 onClick={() => setDeletingId(null)}
               >
                 Cancelar
               </button>
               <button
-                className="rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500"
+                className="rounded bg-red-600 px-3 py-1.5 text-body font-medium text-text hover:bg-red-500"
                 onClick={performDelete}
               >
                 Eliminar

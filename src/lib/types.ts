@@ -19,6 +19,7 @@ export type PluginInfo = {
   enabled: boolean;
   loaded: boolean;
   error?: string | null;
+  builtin?: boolean;
   manifest: PluginManifest;
 };
 

@@ -95,18 +95,63 @@ export function getProviderUi(pluginId: string, manifest?: PluginManifest): Prov
   };
 }
 
+import { siDiscord, siGithub, siGoogle, siMongodb, siPostgresql, siRedis } from "simple-icons";
+
+const SI_MAP: Record<string, { path: string; hex: string; title: string }> = {
+  postgresql: { path: siPostgresql.path, hex: `#${siPostgresql.hex}`, title: siPostgresql.title },
+  mongodb: { path: siMongodb.path, hex: `#${siMongodb.hex}`, title: siMongodb.title },
+  redis: { path: siRedis.path, hex: `#${siRedis.hex}`, title: siRedis.title },
+};
+
+// Microsoft logo (simple-icons doesn't export `siMicrosoft` reliably; embed
+// the four-square mark via raw SVG paths). Title-cased pseudo-icon record.
+const MS_PATH =
+  "M0 0h11v11H0zM12 0h12v11H12zM0 12h11v12H0zM12 12h12v12H12z";
+
+const PROVIDER_BRAND: Record<string, { path: string; hex: string; title: string } | "ms"> = {
+  discord: { path: siDiscord.path, hex: `#${siDiscord.hex}`, title: siDiscord.title },
+  github: { path: siGithub.path, hex: `#${siGithub.hex}`, title: siGithub.title },
+  google: { path: siGoogle.path, hex: `#${siGoogle.hex}`, title: siGoogle.title },
+  microsoft: "ms",
+};
+
+export function ProviderBrandIcon({
+  provider,
+  className,
+}: {
+  provider: string;
+  className?: string;
+}) {
+  const def = PROVIDER_BRAND[provider.toLowerCase()];
+  if (!def) return null;
+  if (def === "ms") {
+    return (
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" className={className} aria-label="Microsoft" role="img">
+        <path d={MS_PATH} fill="#F25022" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" className={className} aria-label={def.title} role="img">
+      <path fill={def.hex} d={def.path} />
+    </svg>
+  );
+}
+
 export function ProviderIcon({ providerId, className }: { providerId: string; className?: string }) {
   const icon = getProviderUi(providerId).icon;
-  if (["postgresql", "mongodb", "redis"].includes(icon)) {
-    const skillName = icon === "postgresql" ? "postgres" : icon;
+  const def = SI_MAP[icon];
+  if (def) {
     return (
-      <img
-        src={`https://skillicons.dev/icons?i=${skillName}`}
-        alt={icon}
+      <svg
+        viewBox="0 0 24 24"
+        xmlns="http://www.w3.org/2000/svg"
         className={className}
-        loading="lazy"
-        decoding="async"
-      />
+        aria-label={def.title}
+        role="img"
+      >
+        <path fill={def.hex} d={def.path} />
+      </svg>
     );
   }
   return <Database className={className} />;

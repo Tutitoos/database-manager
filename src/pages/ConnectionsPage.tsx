@@ -27,10 +27,11 @@ import {
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useNavigate } from "@/lib/router-compat";
-import { useEffect, useMemo, useState } from "react";
-import { useSessionsStore, sessionRoute } from "@/store/sessions";
-import { IconButton } from "@/components/icon-button";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { APP_EVENT, on as onBus } from "@/lib/app-bus";
+import { useSessionsStore } from "@/store/sessions";
 import { Modal } from "@/components/modal";
+import { useOpenConnection } from "@/components/connect-gate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,7 +53,7 @@ import {
   validateConnection,
   withoutConnectionStringState
 } from "@/lib/providers";
-import { hoverSurface, mutedText, panel, sectionBorder, softText, surface } from "@/lib/styles";
+import { mutedText, panel, sectionBorder, softText, surface } from "@/lib/styles";
 import type {
   Connection,
   ConnectionGroup,
@@ -66,9 +67,9 @@ import type {
   ValidationMode
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { passphraseStatus } from "@/lib/auth";
-import { triggerSync } from "@/lib/sync";
+// passphraseStatus removed — credentials live server-side now.
 import { useDebounced } from "@/lib/use-debounce";
+import { useConnectionStatus, type ConnStatus } from "@/lib/connection-status";
 import {
   DndContext,
   KeyboardSensor,
@@ -125,26 +126,22 @@ export default function ConnectionsPage() {
     if (!name.trim()) return;
     await invoke("create_group", { name: name.trim(), parentId: null });
     await refresh();
-    triggerSync();
   }
 
   async function renameFolder(id: number, name: string) {
     await invoke("update_group", { id, name });
     await refresh();
-    triggerSync();
   }
 
   async function deleteFolder(id: number) {
     await invoke("delete_group", { id, reassignTo: null });
     if (activeGroupId === id) setActiveGroupId("__all__");
     await refresh();
-    triggerSync();
   }
 
   async function reorderInGroup(ids: number[]) {
     await invoke("reorder_connections", { ids });
     await refresh();
-    triggerSync();
   }
 
   useEffect(() => {
@@ -170,7 +167,7 @@ export default function ConnectionsPage() {
     return text.includes(debouncedQuery.toLowerCase());
   });
 
-  function openCreate() {
+  const openCreate = useCallback(() => {
     const first = enabledPlugins[0]?.manifest;
     const provider = getProviderUi(first?.id ?? "postgresql", first);
     setEditing(null);
@@ -181,11 +178,17 @@ export default function ConnectionsPage() {
       database: provider.id === "redis" ? "0" : "",
       username: provider.hideUsername ? "" : "",
       ssl_mode: provider.id === "postgresql" ? "disable" : "",
-      settings_json: stringifySettings(provider.defaultSettings ?? {})
+      settings_json: stringifySettings(provider.defaultSettings ?? {}),
     });
     setStatus("");
     setDialogOpen(true);
-  }
+  }, [enabledPlugins]);
+
+  // Listen for menu / global bus "newConnection" events.
+  useEffect(() => {
+    const off = onBus(APP_EVENT.newConnection, openCreate);
+    return off;
+  }, [openCreate]);
 
   function openEdit(connection: Connection) {
     setEditing(connection);
@@ -218,8 +221,7 @@ export default function ConnectionsPage() {
       }
       setDialogOpen(false);
       await refresh();
-      triggerSync();
-    } catch (error) {
+      } catch (error) {
       setStatus(String(error));
     } finally {
       setBusy(false);
@@ -244,53 +246,12 @@ export default function ConnectionsPage() {
   async function deleteConnection(id: number) {
     await invoke("delete_connection", { id });
     await refresh();
-    triggerSync();
   }
 
   async function duplicateConnection(connection: Connection) {
     const { id: _id, position: _pos, created_at: _created, updated_at: _updated, ...input } = connection;
     await invoke("create_connection", { input: { ...input, name: `${connection.name} copia` } });
     await refresh();
-    triggerSync();
-  }
-
-  const migrationCandidates = useMemo(
-    () => connections.filter((c) => c.password && c.password.length > 0 && (c.credential_id === null || c.credential_id === undefined)),
-    [connections],
-  );
-
-  async function migrateAllToCredentials() {
-    setBusy(true);
-    setStatus("");
-    try {
-      const ps = await passphraseStatus();
-      if (!ps.configured) {
-        throw new Error("Configura la passphrase en Ajustes → Mi cuenta antes de migrar.");
-      }
-      if (!ps.unlocked) {
-        throw new Error("Desbloquea el vault en Ajustes → Mi cuenta antes de migrar.");
-      }
-      for (const c of migrationCandidates) {
-        const cred = await invoke<{ id: number }>("create_credential", {
-          name: `${c.name} (auto)`,
-          username: c.username,
-          password: c.password,
-        });
-        await invoke("attach_credential_to_connection", {
-          connectionId: c.id,
-          credentialId: cred.id,
-        });
-      }
-      await refresh();
-      triggerSync();
-      setStatus(`${migrationCandidates.length} migradas.`);
-      setStatusOk(true);
-    } catch (e) {
-      setStatus(String(e));
-      setStatusOk(false);
-    } finally {
-      setBusy(false);
-    }
   }
 
   return (
@@ -305,9 +266,6 @@ export default function ConnectionsPage() {
         groups={groups}
         activeGroupId={activeGroupId}
         setActiveGroupId={setActiveGroupId}
-        migrationCount={migrationCandidates.length}
-        onMigrateAll={migrateAllToCredentials}
-        migrationBusy={busy}
         onCreate={openCreate}
         onEdit={openEdit}
         onDelete={deleteConnection}
@@ -338,7 +296,7 @@ export default function ConnectionsPage() {
 
       {status && !dialogOpen && (
         <div className={cn(
-          "fixed bottom-5 right-5 flex max-w-md items-center gap-2 rounded-md border px-4 py-3 text-sm shadow-[0_16px_48px_rgba(0,0,0,.55)]",
+          "fixed bottom-5 right-5 flex max-w-md items-center gap-2 rounded-md border px-4 py-3 text-h3 shadow-[0_16px_48px_rgba(0,0,0,.55)]",
           statusOk
             ? "border-green-900/50 bg-green-950/30 text-green-300"
             : "border-red-900/50 bg-red-950/30 text-red-300"
@@ -361,9 +319,6 @@ function ConnectionsView(props: {
   groups: ConnectionGroup[];
   activeGroupId: number | null | "__all__";
   setActiveGroupId: (id: number | null | "__all__") => void;
-  migrationCount: number;
-  migrationBusy: boolean;
-  onMigrateAll: () => Promise<void>;
   onCreate: () => void;
   onEdit: (connection: Connection) => void;
   onDelete: (id: number) => void;
@@ -376,7 +331,8 @@ function ConnectionsView(props: {
 }) {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const navigate = useNavigate();
-  const { sessions, addSession, removeSession } = useSessionsStore();
+  const { sessions, removeSession } = useSessionsStore();
+  const openConnection = useOpenConnection();
   const [testResults, setTestResults] = useState<Record<number, { ms: number | null; loading: boolean; ok: boolean }>>({});
   const [newFolderName, setNewFolderName] = useState("");
   const [creatingFolder, setCreatingFolder] = useState(false);
@@ -408,13 +364,20 @@ function ConnectionsView(props: {
     props.onReorder(newOrder).catch(() => undefined);
   }
 
-  function connectTo(connection: Connection) {
-    const existing = sessions[connection.id];
-    addSession(connection);
-    if (existing) {
-      navigate(sessionRoute(existing));
-    } else {
-      navigate(`/connections/${getProviderViewType(connection.plugin_id)}?id=${connection.id}`);
+  async function connectTo(connection: Connection) {
+    try {
+      await openConnection(connection);
+      // Success: clear stale fail badge if any. User navigates away anyway.
+      setTestResults((prev) => {
+        const { [connection.id]: _gone, ...rest } = prev;
+        void _gone;
+        return rest;
+      });
+    } catch {
+      setTestResults((prev) => ({
+        ...prev,
+        [connection.id]: { ms: null, loading: false, ok: false },
+      }));
     }
   }
 
@@ -430,45 +393,76 @@ function ConnectionsView(props: {
   }
 
   return (
-    <div className={cn("flex min-w-0 flex-1 flex-col", panel)}>
-      <header className={cn("flex h-14 items-center justify-between border-b px-6", panel, sectionBorder)}>
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-base font-semibold tracking-[-0.01em] text-white">Conexiones</h1>
-          <span className={cn("text-xs", mutedText)}>{props.total} conexiones</span>
+    <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", panel)}>
+      {/* Header: title + inline metrics pill + primary CTA */}
+      <header className={cn("flex h-14 items-center justify-between gap-4 border-b px-5", panel, sectionBorder)}>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border-subtle bg-surface-elevated text-text">
+            <Database strokeWidth={1.5} className="h-3.5 w-3.5" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-h1 truncate text-text">Conexiones</h1>
+            <p className={cn("text-caption truncate", mutedText)}>
+              {props.total} {props.total === 1 ? "conexión configurada" : "conexiones configuradas"}
+            </p>
+          </div>
         </div>
-        <Button variant="primary" onClick={props.onCreate} className="shadow-lg shadow-blue-900/20 hover:shadow-blue-900/40 transition-all">
-          <Plus className="h-4 w-4" />
-          Agregar Conexión
+        <Button variant="primary" size="sm" onClick={props.onCreate}>
+          <Plus className="h-3.5 w-3.5" /> Nueva conexión
         </Button>
       </header>
 
-      <div className={cn("flex min-w-0 items-center gap-2 border-b px-5 py-3", panel, sectionBorder)}>
+      {/* Toolbar: search + view toggle on one row */}
+      <div className={cn("flex min-w-0 items-center gap-2 border-b px-5 py-2", panel, sectionBorder)}>
         <div className="relative min-w-0 flex-1">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
-          <Input className="pl-9" placeholder="Buscar conexiones..." value={props.query} onChange={(event) => props.setQuery(event.target.value)} />
+          <Search className="pointer-events-none absolute left-3 top-2 h-3.5 w-3.5 text-text-faint" />
+          <Input
+            className="h-8 pl-8 text-body"
+            placeholder="Buscar por nombre, host o provider…"
+            value={props.query}
+            onChange={(event) => props.setQuery(event.target.value)}
+          />
+          {props.query && (
+            <button
+              type="button"
+              onClick={() => props.setQuery("")}
+              className="absolute right-2 top-2 text-text-faint hover:text-text"
+              title="Limpiar búsqueda"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
-        <IconButton active={viewMode === "grid"} label="Vista cuadrícula" onClick={() => setViewMode("grid")}>
-          <Grid2X2 className="h-4 w-4" />
-        </IconButton>
-        <IconButton active={viewMode === "list"} label="Vista lista" onClick={() => setViewMode("list")}>
-          <List className="h-4 w-4" />
-        </IconButton>
-      </div>
-
-      {props.migrationCount > 0 && (
-        <div className={cn("flex items-center gap-3 border-b border-amber-900/40 bg-amber-950/30 px-5 py-2 text-xs text-amber-200", panel)}>
-          <span>
-            {props.migrationCount} conexion{props.migrationCount === 1 ? "" : "es"} con contraseña en texto plano. Mígra a credenciales cifradas.
-          </span>
+        <div className="flex h-8 shrink-0 items-center overflow-hidden rounded-md border border-border-subtle">
           <button
-            disabled={props.migrationBusy}
-            onClick={() => props.onMigrateAll()}
-            className="ml-auto rounded border border-amber-700 bg-amber-900/40 px-2 py-0.5 text-[11px] font-medium text-amber-100 hover:bg-amber-900/70 disabled:opacity-50"
+            type="button"
+            title="Vista cuadrícula"
+            onClick={() => setViewMode("grid")}
+            className={cn(
+              "grid h-full w-8 place-items-center transition-colors",
+              viewMode === "grid"
+                ? "bg-surface-elevated text-text"
+                : "text-text-muted hover:bg-surface-hover hover:text-text",
+            )}
           >
-            {props.migrationBusy ? "Migrando…" : "Migrar todas"}
+            <Grid2X2 className="h-3.5 w-3.5" />
+          </button>
+          <span className="h-full w-px bg-border-subtle" />
+          <button
+            type="button"
+            title="Vista lista"
+            onClick={() => setViewMode("list")}
+            className={cn(
+              "grid h-full w-8 place-items-center transition-colors",
+              viewMode === "list"
+                ? "bg-surface-elevated text-text"
+                : "text-text-muted hover:bg-surface-hover hover:text-text",
+            )}
+          >
+            <List className="h-3.5 w-3.5" />
           </button>
         </div>
-      )}
+      </div>
 
       <FolderBar
         groups={props.groups}
@@ -490,91 +484,41 @@ function ConnectionsView(props: {
       {viewMode === "grid" && (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={orderedIds} strategy={rectSortingStrategy}>
-        <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 content-start gap-3 overflow-x-hidden overflow-y-auto p-5 lg:grid-cols-2 xl:grid-cols-3">
+        <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 content-start gap-2.5 overflow-x-hidden overflow-y-auto p-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {props.connections.length === 0 && (
-            <div className={cn("col-span-full flex min-h-64 flex-col items-center justify-center rounded-xl p-8 text-center border-2 border-dashed border-zinc-800/60 bg-zinc-900/20 backdrop-blur-sm")}>
-              <div className="grid h-12 w-12 place-items-center rounded-xl border border-white/5 bg-white/5 text-zinc-400 shadow-inner">
-                <Database className="h-6 w-6" />
-              </div>
-              <h2 className="mt-5 text-sm font-semibold text-zinc-200">No hay conexiones</h2>
-              <p className={cn("mt-2 max-w-sm text-xs", mutedText)}>Crea una conexión local para PostgreSQL, MongoDB o Redis.</p>
-            </div>
+            <EmptyState onCreate={props.onCreate} hasQuery={Boolean(props.query)} />
           )}
           {props.connections.map((connection) => {
             const plugin = props.pluginMap.get(connection.plugin_id);
+            const ui = getProviderUi(connection.plugin_id, plugin?.manifest);
             return (
-              <SortableArticle key={connection.id} id={connection.id} disabled={dndDisabled} className={cn("rounded-xl p-5", surface, hoverSurface)}>
-                <div className="flex gap-4">
-                  <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-white/10 shadow-inner">
-                    <ProviderIcon providerId={connection.plugin_id} className="block h-full w-full object-cover" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-base font-semibold text-zinc-100">{connection.name}</h3>
-                    <div className="mt-1.5 flex items-center gap-2">
-                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset" style={{ color: getProviderUi(connection.plugin_id, plugin?.manifest).color, backgroundColor: `${getProviderUi(connection.plugin_id, plugin?.manifest).color}15`, borderColor: `${getProviderUi(connection.plugin_id, plugin?.manifest).color}30` }}>{plugin?.name ?? connection.plugin_id}</span>
-                    </div>
-                    <p className={cn("mt-3 truncate text-xs font-mono", softText)}>
-                      {connection.host}:{connection.port ?? "-"}
-                    </p>
-                  </div>
-                </div>
-                {(() => {
-                  const providerColor = getProviderUi(connection.plugin_id, plugin?.manifest).color;
-                  const isOpen = Boolean(sessions[connection.id]);
-                  if (!isOpen) {
-                    return (
-                      <button
-                        onClick={() => connectTo(connection)}
-                        className="mt-5 flex w-full items-center justify-center rounded-md px-3 py-1.5 text-xs font-semibold transition-all"
-                        style={{ color: "#fff", backgroundColor: providerColor, border: `1px solid ${providerColor}`, boxShadow: `0 4px 14px ${providerColor}40` }}
-                      >
-                        Conectar
-                      </button>
-                    );
-                  }
-                  return (
-                    <div className="mt-5 flex gap-2">
-                      <button
-                        onClick={() => connectTo(connection)}
-                        className="flex flex-1 items-center justify-center rounded-md px-3 py-1.5 text-xs font-semibold transition-all"
-                        style={{ color: "#fff", backgroundColor: providerColor, border: `1px solid ${providerColor}`, boxShadow: `0 4px 14px ${providerColor}40` }}
-                      >
-                        Abrir
-                      </button>
-                      <button
-                        onClick={() => removeSession(connection.id)}
-                        className="flex flex-1 items-center justify-center rounded-md px-3 py-1.5 text-xs font-semibold transition-all bg-white text-zinc-900 hover:bg-zinc-100"
-                      >
-                        Cerrar
-                      </button>
-                    </div>
-                  );
-                })()}
-                <div className="mt-2 flex items-center justify-between gap-1">
-                  <div className="flex items-center gap-1.5">
-                    {(() => {
-                      const tr = testResults[connection.id];
-                      if (!tr) return null;
-                      if (tr.loading) return <span className="text-[10px] text-zinc-500">Probando...</span>;
-                      if (tr.ok) return <span className="text-[10px] font-mono text-emerald-400">{tr.ms}ms</span>;
-                      return <span className="text-[10px] text-red-400">Sin conexión</span>;
-                    })()}
-                  </div>
-                  <div className="flex gap-1 text-zinc-500">
-                    <Button variant="ghost" size="icon" title="Probar conexión" onClick={() => testInline(connection)} disabled={testResults[connection.id]?.loading}>
-                      {testResults[connection.id]?.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-                    </Button>
-                    <Button variant="ghost" size="icon" title="Editar" onClick={() => props.onEdit(connection)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" title="Duplicar" onClick={() => props.onDuplicate(connection)}>
-                      <Copy className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" title="Eliminar" onClick={() => setDeletingConnection(connection)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
+              <SortableArticle
+                key={connection.id}
+                id={connection.id}
+                disabled={dndDisabled}
+                className={cn(
+                  "group relative flex flex-col gap-2 overflow-hidden rounded-lg border border-border-subtle bg-surface-elevated p-2.5 transition-all hover:border-border-strong hover:shadow-[0_2px_8px_rgba(0,0,0,.25)]",
+                )}
+              >
+                {/* Provider accent bar */}
+                <span
+                  aria-hidden
+                  className="absolute inset-y-0 left-0 w-[3px]"
+                  style={{ background: ui.color }}
+                />
+                <ConnectionCardBody
+                  connection={connection}
+                  pluginName={plugin?.name ?? connection.plugin_id}
+                  ui={ui}
+                  isOpen={Boolean(sessions[connection.id])}
+                  testResult={testResults[connection.id]}
+                  onConnect={() => connectTo(connection)}
+                  onClose={() => removeSession(connection.id)}
+                  onTest={() => testInline(connection)}
+                  onEdit={() => props.onEdit(connection)}
+                  onDuplicate={() => props.onDuplicate(connection)}
+                  onDelete={() => setDeletingConnection(connection)}
+                />
               </SortableArticle>
             );
           })}
@@ -588,48 +532,37 @@ function ConnectionsView(props: {
         <SortableContext items={orderedIds} strategy={verticalListSortingStrategy}>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto p-5">
           {props.connections.length === 0 && (
-            <div className={cn("flex min-h-64 flex-col items-center justify-center rounded-xl p-8 text-center border-2 border-dashed border-zinc-800/60 bg-zinc-900/20 backdrop-blur-sm")}>
-              <div className="grid h-12 w-12 place-items-center rounded-xl border border-white/5 bg-white/5 text-zinc-400 shadow-inner">
-                <Database className="h-6 w-6" />
-              </div>
-              <h2 className="mt-5 text-sm font-semibold text-zinc-200">No hay conexiones</h2>
-              <p className={cn("mt-2 max-w-sm text-xs", mutedText)}>Crea una conexión local para PostgreSQL, MongoDB o Redis.</p>
-            </div>
+            <EmptyState onCreate={props.onCreate} hasQuery={Boolean(props.query)} />
           )}
           {props.connections.map((connection) => {
             const plugin = props.pluginMap.get(connection.plugin_id);
+            const ui = getProviderUi(connection.plugin_id, plugin?.manifest);
             return (
-              <SortableRow key={connection.id} id={connection.id} disabled={dndDisabled} className={cn("flex items-center gap-4 rounded-xl px-4 py-3", surface, hoverSurface)}>
-                <div className="h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-white/10 shadow-inner">
-                  <ProviderIcon providerId={connection.plugin_id} className="block h-full w-full object-cover" />
-                </div>
-                <span className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">{connection.name}</span>
-                <span className="shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset" style={{ color: getProviderUi(connection.plugin_id, plugin?.manifest).color, backgroundColor: `${getProviderUi(connection.plugin_id, plugin?.manifest).color}15`, borderColor: `${getProviderUi(connection.plugin_id, plugin?.manifest).color}30` }}>{plugin?.name ?? connection.plugin_id}</span>
-                <span className={cn("shrink-0 text-xs font-mono w-32 truncate text-right", softText)}>{connection.host}:{connection.port ?? "-"}</span>
-                <div className="flex shrink-0 items-center gap-1 text-zinc-500">
-                  {(() => {
-                    const tr = testResults[connection.id];
-                    if (!tr) return null;
-                    if (tr.loading) return <span className="text-[10px] text-zinc-500">...</span>;
-                    if (tr.ok) return <span className="text-[10px] font-mono text-emerald-400">{tr.ms}ms</span>;
-                    return <span className="text-[10px] text-red-400">Error</span>;
-                  })()}
-                  <Button variant="ghost" size="icon" title={sessions[connection.id] ? "Abrir" : "Conectar"} className="text-blue-400 hover:text-blue-300" onClick={() => connectTo(connection)}>
-                    {sessions[connection.id] ? <ExternalLink className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
-                  </Button>
-                  <Button variant="ghost" size="icon" title="Probar conexión" onClick={() => testInline(connection)} disabled={testResults[connection.id]?.loading}>
-                    {testResults[connection.id]?.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-                  </Button>
-                  <Button variant="ghost" size="icon" title="Editar" onClick={() => props.onEdit(connection)}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" title="Duplicar" onClick={() => props.onDuplicate(connection)}>
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" title="Eliminar" onClick={() => setDeletingConnection(connection)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
+              <SortableRow
+                key={connection.id}
+                id={connection.id}
+                disabled={dndDisabled}
+                className={cn(
+                  "group relative flex items-center gap-3 overflow-hidden rounded-lg border border-border-subtle bg-surface-elevated px-4 py-2.5 transition-colors hover:border-border-strong hover:bg-surface-hover",
+                )}
+              >
+                <span
+                  aria-hidden
+                  className="absolute inset-y-0 left-0 w-[3px]"
+                  style={{ background: ui.color }}
+                />
+                <ConnectionRowBody
+                  connection={connection}
+                  pluginName={plugin?.name ?? connection.plugin_id}
+                  ui={ui}
+                  isOpen={Boolean(sessions[connection.id])}
+                  testResult={testResults[connection.id]}
+                  onConnect={() => connectTo(connection)}
+                  onTest={() => testInline(connection)}
+                  onEdit={() => props.onEdit(connection)}
+                  onDuplicate={() => props.onDuplicate(connection)}
+                  onDelete={() => setDeletingConnection(connection)}
+                />
               </SortableRow>
             );
           })}
@@ -640,10 +573,10 @@ function ConnectionsView(props: {
 
       {deletingFolder && (
         <Modal onClose={() => setDeletingFolder(null)}>
-          <div className="w-full max-w-md rounded-md border border-zinc-800 bg-zinc-950 p-5 shadow-xl">
-            <h2 className="text-sm font-medium text-zinc-100">¿Eliminar carpeta?</h2>
-            <p className="mt-2 break-all rounded bg-zinc-900 px-2 py-1 font-mono text-[11px] text-zinc-300">{deletingFolder.name}</p>
-            <p className="mt-2 text-xs text-zinc-400">Las conexiones dentro se moverán a "Sin carpeta".</p>
+          <div className="w-full max-w-md rounded-md border border-border-subtle bg-surface p-5 shadow-xl">
+            <h2 className="text-h3 font-medium text-text">¿Eliminar carpeta?</h2>
+            <p className="mt-2 break-all rounded bg-surface-elevated px-2 py-1 font-mono text-[11px] text-text">{deletingFolder.name}</p>
+            <p className="mt-2 text-body text-text-muted">Las conexiones dentro se moverán a "Sin carpeta".</p>
             <div className="mt-4 flex justify-end gap-2">
               <Button size="sm" variant="secondary" onClick={() => setDeletingFolder(null)}>Cancelar</Button>
               <Button
@@ -663,9 +596,9 @@ function ConnectionsView(props: {
 
       {deletingConnection && (
         <Modal onClose={() => setDeletingConnection(null)}>
-          <div className="w-full max-w-md rounded-md border border-zinc-800 bg-zinc-950 p-5 shadow-xl">
-            <h2 className="text-sm font-medium text-zinc-100">¿Eliminar conexión?</h2>
-            <p className="mt-2 break-all rounded bg-zinc-900 px-2 py-1 font-mono text-[11px] text-zinc-300">
+          <div className="w-full max-w-md rounded-md border border-border-subtle bg-surface p-5 shadow-xl">
+            <h2 className="text-h3 font-medium text-text">¿Eliminar conexión?</h2>
+            <p className="mt-2 break-all rounded bg-surface-elevated px-2 py-1 font-mono text-[11px] text-text">
               {deletingConnection.name} · {deletingConnection.host}:{deletingConnection.port ?? "-"}
             </p>
             <div className="mt-4 flex justify-end gap-2">
@@ -684,7 +617,265 @@ function ConnectionsView(props: {
           </div>
         </Modal>
       )}
+
     </div>
+  );
+}
+
+type TestResult = { ms: number | null; loading: boolean; ok: boolean } | undefined;
+
+function StatusDot({ status, className }: { status: ConnStatus; className?: string }) {
+  const map: Record<ConnStatus, { color: string; label: string; pulse: boolean }> = {
+    ok: { color: "bg-emerald-500", label: "Online", pulse: false },
+    fail: { color: "bg-red-500", label: "Offline", pulse: false },
+    checking: { color: "bg-amber-400", label: "Comprobando…", pulse: true },
+    unknown: { color: "bg-text-faint/60", label: "—", pulse: false },
+  };
+  const s = map[status];
+  return (
+    <span
+      title={s.label}
+      className={cn("inline-block h-1.5 w-1.5 rounded-full", s.color, s.pulse && "animate-pulse", className)}
+    />
+  );
+}
+
+function TestBadge({ result }: { result: TestResult }) {
+  if (!result) return null;
+  if (result.loading) {
+    return (
+      <span className="text-tiny inline-flex items-center gap-1 text-text-faint">
+        <Loader2 className="h-3 w-3 animate-spin" /> probando
+      </span>
+    );
+  }
+  if (result.ok) {
+    return (
+      <span className="text-tiny inline-flex items-center gap-1 font-mono text-emerald-400">
+        <Zap className="h-3 w-3" />
+        {result.ms != null && <span>{result.ms}ms</span>}
+      </span>
+    );
+  }
+  return (
+    <span className="text-tiny inline-flex items-center gap-1 text-red-400">
+      <XCircle className="h-3 w-3" /> fallo
+    </span>
+  );
+}
+
+function EmptyState({ onCreate, hasQuery }: { onCreate: () => void; hasQuery: boolean }) {
+  return (
+    <div className="col-span-full grid place-items-center rounded-xl border-2 border-dashed border-border-subtle/60 bg-surface-elevated/30 p-10 text-center">
+      <div className="grid h-12 w-12 place-items-center rounded-xl border border-border-subtle bg-surface-hover text-text-muted">
+        {hasQuery ? <Search className="h-5 w-5" /> : <Database className="h-5 w-5" />}
+      </div>
+      <h2 className="mt-4 text-h3 font-semibold text-text">
+        {hasQuery ? "Sin resultados" : "No hay conexiones"}
+      </h2>
+      <p className={cn("mt-1.5 max-w-sm text-body", mutedText)}>
+        {hasQuery
+          ? "Ajusta la búsqueda o limpia el filtro."
+          : "Crea una conexión a PostgreSQL, MongoDB, Redis u otro driver instalado."}
+      </p>
+      {!hasQuery && (
+        <Button variant="primary" size="sm" className="mt-4" onClick={onCreate}>
+          <Plus className="h-3.5 w-3.5" /> Nueva conexión
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function ConnectionCardBody({
+  connection,
+  pluginName,
+  ui,
+  isOpen,
+  testResult,
+  onConnect,
+  onClose,
+  onTest,
+  onEdit,
+  onDuplicate,
+  onDelete,
+}: {
+  connection: Connection;
+  pluginName: string;
+  ui: ProviderUi;
+  isOpen: boolean;
+  testResult: TestResult;
+  onConnect: () => void;
+  onClose: () => void;
+  onTest: () => void;
+  onEdit: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}) {
+  const status = useConnectionStatus(connection, true);
+  return (
+    <div className="flex h-full flex-col gap-3 pl-1">
+      {/* Header — icon hero + identity + status pill */}
+      <div className="flex items-start gap-3">
+        <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-md border border-border-subtle bg-surface">
+          <ProviderIcon providerId={connection.plugin_id} className="block h-full w-full object-cover" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <h3 className="text-h3 truncate font-semibold text-text">{connection.name}</h3>
+            {isOpen && (
+              <span className="text-tiny rounded-full bg-accent-soft px-1.5 py-0.5 font-medium text-accent">
+                abierta
+              </span>
+            )}
+          </div>
+          <p className="text-caption mt-0.5 font-semibold uppercase tracking-wider" style={{ color: ui.color }}>
+            {pluginName}
+          </p>
+          <p
+            className="text-body-mono mt-1 truncate text-text-muted"
+            title={`${connection.host}:${connection.port ?? "-"}`}
+          >
+            {connection.host}:{connection.port ?? "-"}
+          </p>
+        </div>
+        <StatusBadge status={status} testResult={testResult} />
+      </div>
+
+      {/* Actions toolbar — secondary always visible */}
+      <div className="mt-auto flex items-center gap-1 border-t border-border-subtle/60 pt-2">
+        <Button variant="ghost" size="icon" title="Probar conexión" onClick={onTest} disabled={testResult?.loading}>
+          {testResult?.loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+        </Button>
+        <Button variant="ghost" size="icon" title="Editar" onClick={onEdit}>
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+        <Button variant="ghost" size="icon" title="Duplicar" onClick={onDuplicate}>
+          <Copy className="h-3.5 w-3.5" />
+        </Button>
+        {isOpen && (
+          <Button variant="ghost" size="icon" title="Cerrar tab" onClick={onClose}>
+            <LogOut className="h-3.5 w-3.5" />
+          </Button>
+        )}
+        <Button variant="ghost" size="icon" title="Eliminar" onClick={onDelete}>
+          <Trash2 className="h-3.5 w-3.5 text-danger" />
+        </Button>
+      </div>
+
+      {/* Primary CTA — full width footer */}
+      <Button variant="primary" size="md" className="w-full" onClick={onConnect}>
+        {isOpen ? <ExternalLink className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
+        {isOpen ? "Abrir conexión" : "Conectar"}
+      </Button>
+    </div>
+  );
+}
+
+const STATUS_PILL =
+  "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium leading-none";
+
+function StatusPillDot({ pulse }: { pulse?: boolean }) {
+  return (
+    <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full bg-current", pulse && "animate-pulse")} />
+  );
+}
+
+function StatusBadge({ status, testResult }: { status: ConnStatus; testResult: TestResult }) {
+  if (testResult && !testResult.loading) {
+    return testResult.ok ? (
+      <span className={cn(STATUS_PILL, "bg-success-soft text-success")}>
+        <StatusPillDot />
+        {testResult.ms != null ? `${testResult.ms}ms` : "OK"}
+      </span>
+    ) : (
+      <span className={cn(STATUS_PILL, "bg-danger-soft text-danger")}>
+        <StatusPillDot />
+        Falló
+      </span>
+    );
+  }
+  const map: Record<ConnStatus, { cls: string; label: string; pulse?: boolean }> = {
+    ok: { cls: "bg-success-soft text-success", label: "Activa" },
+    fail: { cls: "bg-danger-soft text-danger", label: "Offline" },
+    checking: { cls: "bg-info-soft text-info", label: "Comprobando", pulse: true },
+    unknown: { cls: "bg-surface-sunken text-text-faint", label: "—" },
+  };
+  const s = map[status];
+  return (
+    <span className={cn(STATUS_PILL, s.cls)}>
+      <StatusPillDot pulse={s.pulse} />
+      {s.label}
+    </span>
+  );
+}
+
+function ConnectionRowBody({
+  connection,
+  pluginName,
+  ui,
+  isOpen,
+  testResult,
+  onConnect,
+  onTest,
+  onEdit,
+  onDuplicate,
+  onDelete,
+}: {
+  connection: Connection;
+  pluginName: string;
+  ui: ProviderUi;
+  isOpen: boolean;
+  testResult: TestResult;
+  onConnect: () => void;
+  onTest: () => void;
+  onEdit: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}) {
+  const status = useConnectionStatus(connection, true);
+  return (
+    <>
+      <StatusDot status={status} className="ml-1" />
+      <div className="h-7 w-7 shrink-0 overflow-hidden rounded-md border border-border-subtle">
+        <ProviderIcon providerId={connection.plugin_id} className="block h-full w-full object-cover" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="truncate text-body font-medium text-text">{connection.name}</span>
+          {isOpen && (
+            <span className="text-tiny rounded-full bg-accent-soft px-1.5 py-0.5 font-medium text-accent">
+              abierto
+            </span>
+          )}
+        </div>
+        <p className="text-tiny truncate text-text-faint">
+          <span style={{ color: ui.color }}>{pluginName}</span>
+          <span className="mx-1.5">·</span>
+          <span className="font-mono text-text-muted">{connection.host}:{connection.port ?? "-"}</span>
+        </p>
+      </div>
+      <div className="shrink-0">
+        <TestBadge result={testResult} />
+      </div>
+      <div className="flex shrink-0 items-center gap-0.5 opacity-70 transition-opacity group-hover:opacity-100">
+        <Button variant="ghost" size="icon" title={isOpen ? "Abrir" : "Conectar"} onClick={onConnect}>
+          {isOpen ? <ExternalLink className="h-3.5 w-3.5 text-accent" /> : <LogIn className="h-3.5 w-3.5 text-accent" />}
+        </Button>
+        <Button variant="ghost" size="icon" title="Probar conexión" onClick={onTest} disabled={testResult?.loading}>
+          {testResult?.loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+        </Button>
+        <Button variant="ghost" size="icon" title="Editar" onClick={onEdit}>
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+        <Button variant="ghost" size="icon" title="Duplicar" onClick={onDuplicate}>
+          <Copy className="h-3.5 w-3.5" />
+        </Button>
+        <Button variant="ghost" size="icon" title="Eliminar" onClick={onDelete}>
+          <Trash2 className="h-3.5 w-3.5 text-red-400" />
+        </Button>
+      </div>
+    </>
   );
 }
 
@@ -707,7 +898,7 @@ function SortableArticle({ id, disabled, className, children }: { id: number; di
           {...listeners}
           aria-label="Arrastrar"
           title="Arrastrar para reordenar"
-          className="absolute left-1 top-1/2 z-10 -translate-y-1/2 rounded-md p-1 text-zinc-600 opacity-40 transition-opacity hover:bg-zinc-800/70 hover:text-zinc-200 hover:opacity-100 group-hover:opacity-80 cursor-grab active:cursor-grabbing touch-none"
+          className="absolute left-1 top-1/2 z-10 -translate-y-1/2 rounded-md p-1 text-text-faint opacity-40 transition-opacity hover:bg-surface-hover/70 hover:text-text hover:opacity-100 group-hover:opacity-80 cursor-grab active:cursor-grabbing touch-none"
         >
           <GripVertical className="h-4 w-4" />
         </button>
@@ -736,7 +927,7 @@ function SortableRow({ id, disabled, className, children }: { id: number; disabl
           {...listeners}
           aria-label="Arrastrar"
           title="Arrastrar para reordenar"
-          className="cursor-grab text-zinc-600 hover:text-zinc-300 active:cursor-grabbing touch-none"
+          className="cursor-grab text-text-faint hover:text-text active:cursor-grabbing touch-none"
         >
           <GripVertical className="h-4 w-4" />
         </button>
@@ -778,7 +969,7 @@ function FolderBar({
   dndDisabled: boolean;
 }) {
   return (
-    <div className={cn("border-b px-5 py-2.5", panel, sectionBorder)}>
+    <div className={cn("border-b px-5 py-2", panel, sectionBorder)}>
       <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
         <FolderTab
           active={activeGroupId === "__all__"}
@@ -787,14 +978,19 @@ function FolderBar({
           count={countAll}
           onClick={() => setActiveGroupId("__all__")}
         />
-        <FolderTab
-          active={activeGroupId === null}
-          icon={<Inbox className="h-3.5 w-3.5" />}
-          label="Sin carpeta"
-          count={countNoGroup}
-          onClick={() => setActiveGroupId(null)}
-        />
-        <span className="mx-1 h-5 w-px shrink-0 bg-zinc-800/70" />
+        {/* Nueva carpeta sits next to the pills so the row scans as a single unit */}
+        {groups.length > 0 && (
+          <>
+            <FolderTab
+              active={activeGroupId === null}
+              icon={<Inbox className="h-3.5 w-3.5" />}
+              label="Sin carpeta"
+              count={countNoGroup}
+              onClick={() => setActiveGroupId(null)}
+            />
+            <span className="mx-1 h-5 w-px shrink-0 bg-surface-hover/70" />
+          </>
+        )}
         {groups.map((g) => (
           <FolderTab
             key={g.id}
@@ -814,7 +1010,7 @@ function FolderBar({
           <div className="flex items-center gap-1">
             <Input
               autoFocus
-              className="h-8 w-44 text-xs"
+              className="h-8 w-44 text-body"
               placeholder="Nombre de la carpeta…"
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
@@ -839,20 +1035,20 @@ function FolderBar({
         ) : (
           <button
             onClick={() => setCreatingFolder(true)}
-            className="ml-auto flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-dashed border-zinc-700/60 px-2.5 text-[11px] text-zinc-400 transition-colors hover:border-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-200"
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-dashed border-border-strong/60 px-2 text-[11px] text-text-muted transition-colors hover:border-border-strong hover:bg-surface-elevated/60 hover:text-text"
             title="Crear carpeta"
           >
             <FolderPlus className="h-3.5 w-3.5" />
-            Nueva carpeta
+            <span className="hidden sm:inline">Nueva carpeta</span>
           </button>
         )}
+        {dndDisabled && activeGroupId === "__all__" && groups.length > 0 && (
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-[10.5px] text-text-faint">
+            <GripVertical className="h-3 w-3" />
+            Filtra por carpeta para reordenar
+          </span>
+        )}
       </div>
-      {dndDisabled && activeGroupId === "__all__" && (
-        <p className="mt-2 text-[10.5px] text-zinc-500">
-          <GripVertical className="mr-0.5 inline h-3 w-3 -translate-y-px" />
-          Filtra por carpeta para arrastrar y reordenar.
-        </p>
-      )}
     </div>
   );
 }
@@ -882,16 +1078,16 @@ function FolderTab({
         className={cn(
           "flex h-8 items-center gap-2 rounded-md border px-3 text-[12px] font-medium transition-colors",
           active
-            ? "border-blue-500/40 bg-blue-500/10 text-blue-200"
-            : "border-zinc-800/70 bg-zinc-950/50 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900/60 hover:text-zinc-200",
+            ? "border-accent/40 bg-accent-soft text-text"
+            : "border-border-subtle bg-surface-sunken text-text-muted hover:border-border-strong hover:bg-surface-hover hover:text-text",
         )}
       >
-        <span className={cn(active ? "text-blue-300" : "text-zinc-500")}>{icon}</span>
+        <span className={cn(active ? "text-accent" : "text-text-faint")}>{icon}</span>
         <span className="max-w-[160px] truncate">{label}</span>
         <span
           className={cn(
             "ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold",
-            active ? "bg-blue-500/25 text-blue-200" : "bg-zinc-800 text-zinc-400",
+            active ? "bg-accent-soft text-accent" : "bg-surface-sunken text-text-muted",
           )}
         >
           {count}
@@ -904,7 +1100,7 @@ function FolderTab({
               e.stopPropagation();
               setMenuOpen((x) => !x);
             }}
-            className="ml-0.5 rounded p-0.5 text-zinc-500 opacity-0 transition-opacity hover:bg-zinc-800 hover:text-zinc-200 group-hover/tab:opacity-100"
+            className="ml-0.5 rounded p-0.5 text-text-faint opacity-0 transition-opacity hover:bg-surface-hover hover:text-text group-hover/tab:opacity-100"
             title="Más"
           >
             <MoreHorizontal className="h-3.5 w-3.5" />
@@ -914,13 +1110,13 @@ function FolderTab({
       {menuOpen && onRename && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
-          <div className="absolute right-0 top-full z-40 mt-1 w-36 overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 shadow-xl">
+          <div className="absolute right-0 top-full z-40 mt-1 w-36 overflow-hidden rounded-md border border-border-subtle bg-surface shadow-xl">
             <button
               onClick={() => {
                 setMenuOpen(false);
                 onRename();
               }}
-              className="block w-full px-3 py-1.5 text-left text-[11px] text-zinc-200 hover:bg-zinc-900"
+              className="block w-full px-3 py-1.5 text-left text-[11px] text-text hover:bg-surface-elevated"
             >
               Renombrar
             </button>
@@ -930,7 +1126,7 @@ function FolderTab({
                   setMenuOpen(false);
                   onDelete();
                 }}
-                className="block w-full px-3 py-1.5 text-left text-[11px] text-red-300 hover:bg-zinc-900"
+                className="block w-full px-3 py-1.5 text-left text-[11px] text-red-300 hover:bg-surface-elevated"
               >
                 Eliminar
               </button>
@@ -1227,27 +1423,38 @@ function ConnectionDialog(props: {
   if (!props.open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-x-hidden overflow-y-auto bg-black/45 p-4 backdrop-blur-sm sm:p-6">
-      <div className="mx-auto flex min-h-full max-w-[940px] items-center justify-center">
-        <div className={cn("w-full overflow-hidden rounded-lg shadow-[0_24px_80px_rgba(0,0,0,.72)]", surface)}>
-          <header className={cn("flex h-12 items-center border-b px-5", panel, sectionBorder)}>
-            <span className="mr-3 h-4 w-4 shrink-0 overflow-hidden rounded-md border border-white/10 shadow-inner">
+    <div className="fixed inset-0 z-50 overflow-x-hidden overflow-y-auto bg-black/45 p-3 backdrop-blur-sm sm:p-6">
+      <div className="mx-auto flex min-h-full max-w-[940px] items-start justify-center">
+        <div className={cn("flex max-h-[calc(100vh-1.5rem)] w-full flex-col overflow-hidden rounded-lg shadow-[0_24px_80px_rgba(0,0,0,.72)]", surface)}>
+          <header className={cn("flex h-14 items-center gap-3 border-b px-5", panel, sectionBorder)}>
+            <span className="h-5 w-5 shrink-0 overflow-hidden rounded-md border border-border-strong shadow-inner">
               <ProviderIcon providerId={props.form.plugin_id} className="block h-full w-full object-cover" />
             </span>
+            <h2 className="text-h2 font-semibold text-text">
+              {props.editing ? "Editar conexión" : "Nueva conexión"}
+            </h2>
+            <Badge className="border-border-strong bg-surface-elevated/80 text-text">{provider.name}</Badge>
+            <button
+              type="button"
+              onClick={() => props.onOpenChange(false)}
+              className="ml-auto text-text-muted transition hover:text-text"
+              aria-label="Cerrar"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </header>
+          <div className={cn("border-b px-5 py-3", panel, sectionBorder)}>
+            <label className="text-overline mb-1.5 block">Nombre</label>
             <Input
-              className="h-8 flex-1 border-0 bg-transparent px-0 text-sm font-medium text-zinc-100 placeholder:text-zinc-500 focus:border-0 focus:ring-0"
-              placeholder="Ingresa el nombre de tu conexión"
+              autoFocus
+              placeholder="Ej. Production · Postgres"
               value={props.form.name}
               onChange={(event) => update("name", event.target.value)}
               onBlur={() => touch("name")}
             />
-            <Badge className="mr-4 border-zinc-700/70 bg-zinc-900/80 text-zinc-200">{provider.name}</Badge>
-            <button type="button" onClick={() => props.onOpenChange(false)} className="text-zinc-400 transition hover:text-white" aria-label="Cerrar">
-              <X className="h-5 w-5" />
-            </button>
-          </header>
+          </div>
 
-          <div className="grid h-[min(560px,calc(100vh-96px))] min-h-0 grid-cols-[180px_1fr]">
+          <div className="grid min-h-0 flex-1 grid-cols-[180px_1fr]">
             <aside className={cn("border-r", panel, sectionBorder)}>
               <div className={cn("border-b px-4 py-3 text-[10px] font-medium uppercase tracking-[.08em]", sectionBorder, mutedText)}>
                 Provider
@@ -1263,14 +1470,14 @@ function ConnectionDialog(props: {
                       disabled={isLocked}
                       onClick={() => !isLocked && selectPlugin(plugin)}
                       className={cn(
-                        "flex h-9 w-full items-center gap-3 rounded-md border border-transparent px-3 text-left text-sm font-medium text-zinc-400 transition-colors",
-                        isActive && "border-zinc-700 bg-zinc-900 text-white",
+                        "flex h-9 w-full items-center gap-3 rounded-md border border-transparent px-3 text-left text-h3 font-medium text-text-muted transition-colors",
+                        isActive && "border-border-strong bg-surface-elevated text-text",
                         isLocked && !isActive && "cursor-not-allowed opacity-35",
                         isLocked && isActive && "cursor-not-allowed",
-                        !isLocked && "hover:border-zinc-700/70 hover:bg-zinc-900 hover:text-white"
+                        !isLocked && "hover:border-border-strong hover:bg-surface-elevated hover:text-text"
                       )}
                     >
-                      <span className="shrink-0 h-6 w-6 overflow-hidden rounded-md border border-white/10 shadow-inner">
+                      <span className="shrink-0 h-6 w-6 overflow-hidden rounded-md border border-border-strong shadow-inner">
                         <ProviderIcon providerId={plugin.id} className="block h-full w-full object-cover" />
                       </span>
                       <span className="truncate">{plugin.name}</span>
@@ -1312,7 +1519,7 @@ function ConnectionDialog(props: {
                     <div className="mx-auto mt-4 w-full max-w-190">
                       <FormSection title="Carpeta" description="Agrupa esta conexión dentro de una carpeta para organizar tus proyectos.">
                         <select
-                          className="h-9 w-full rounded-md border border-zinc-700/70 bg-[#0a0a0a] px-3 text-sm text-zinc-100 outline-none hover:border-zinc-600 focus:border-zinc-500"
+                          className="h-9 w-full rounded-md border border-border-strong bg-[#0a0a0a] px-3 text-h3 text-text outline-none hover:border-border-strong focus:border-border-strong"
                           value={props.form.group_id === null || props.form.group_id === undefined ? "" : String(props.form.group_id)}
                           onChange={(e) => {
                             const v = e.target.value;
@@ -1378,7 +1585,7 @@ function ConnectionDialog(props: {
               <footer className={cn("flex h-auto min-h-[52px] flex-col gap-2 items-start justify-between border-t px-5 py-3", panel, sectionBorder)}>
                 {props.status && (
                   <div className={cn(
-                    "w-full rounded-md border p-3 text-xs font-medium flex items-start gap-2 max-h-24 overflow-y-auto",
+                    "w-full rounded-md border p-3 text-body font-medium flex items-start gap-2 max-h-24 overflow-y-auto",
                     props.statusOk
                       ? "border-green-900/50 bg-green-950/30 text-green-300"
                       : "border-red-900/50 bg-red-950/30 text-red-300"
@@ -1390,20 +1597,20 @@ function ConnectionDialog(props: {
                   </div>
                 )}
                 <div className="flex w-full items-center gap-3">
-                  <Button onClick={handleTest} disabled={props.busy} className="h-9 border-zinc-700/70 bg-[#0a0a0a] text-zinc-300">
+                  <Button onClick={handleTest} disabled={props.busy} className="h-9 border-border-strong bg-[#0a0a0a] text-text">
                     {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
                     Probar
                   </Button>
                   <div className="flex-1" />
                   <div className="flex gap-2">
-                    <Button onClick={() => props.onOpenChange(false)} className="h-9 border-zinc-700/70 bg-[#0a0a0a] text-zinc-300">
+                    <Button onClick={() => props.onOpenChange(false)} className="h-9 border-border-strong bg-[#0a0a0a] text-text">
                       Cancelar
                     </Button>
                     <button
                       type="button"
                       onClick={handleSave}
                       disabled={props.busy}
-                      className="inline-flex h-9 items-center gap-2 rounded-md px-4 text-sm font-semibold text-white transition-all disabled:opacity-50"
+                      className="inline-flex h-9 items-center gap-2 rounded-md px-4 text-h3 font-semibold text-text transition-all disabled:opacity-50"
                       style={{ backgroundColor: provider.color, boxShadow: `0 4px 14px ${provider.color}40` }}
                     >
                       {props.busy && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -1492,7 +1699,7 @@ function CredentialPickerField({
       description="Reutiliza un usuario/contraseña guardado. Si seleccionas uno, los campos de abajo se ignoran al conectar."
     >
       <select
-        className="h-9 w-full rounded-md border border-zinc-700/70 bg-[#0a0a0a] px-3 text-sm text-zinc-100 outline-none hover:border-zinc-600 focus:border-zinc-500"
+        className="h-9 w-full rounded-md border border-border-strong bg-[#0a0a0a] px-3 text-h3 text-text outline-none hover:border-border-strong focus:border-border-strong"
         value={selectedId === null ? "" : String(selectedId)}
         onChange={(e) => {
           const v = e.target.value;
@@ -1506,7 +1713,7 @@ function CredentialPickerField({
           </option>
         ))}
       </select>
-      <p className="mt-1 text-[11px] text-zinc-500">
+      <p className="mt-1 text-[11px] text-text-faint">
         ¿No ves credenciales? Créalas en{" "}
         <Link to="/settings/credentials" className="underline">
           Ajustes → Credenciales
@@ -1580,7 +1787,7 @@ function ProviderAdvancedFields({ provider, settings, updateSetting }: { provide
     return (
       <div className="mx-auto grid w-full max-w-190 gap-5">
         <FormSection title="Avanzado">
-          <p className={cn("text-sm", mutedText)}>Este provider no tiene opciones avanzadas en esta versión.</p>
+          <p className={cn("text-h3", mutedText)}>Este provider no tiene opciones avanzadas en esta versión.</p>
         </FormSection>
       </div>
     );
@@ -1619,31 +1826,31 @@ function DatabaseCollectionSelector({
   return (
     <div className="mx-auto grid w-full max-w-190 gap-5">
       <FormSection title="Cargar Bases de Datos" description="Haz click en 'Cargar bases' para obtener todas las bases de datos disponibles en esta conexión.">
-        <Button onClick={onLoadDatabases} disabled={loadingDatabases} className="w-fit border-zinc-700/70 bg-[#0a0a0a] text-zinc-300 hover:bg-zinc-900">
+        <Button onClick={onLoadDatabases} disabled={loadingDatabases} className="w-fit border-border-strong bg-[#0a0a0a] text-text hover:bg-surface-elevated">
           {loadingDatabases ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Database className="h-4 w-4 mr-2" />}
           {loadingDatabases ? "Cargando..." : "Cargar bases"}
         </Button>
         {databaseLoadError && (
-          <p className="mt-2 rounded-md border border-red-900/60 bg-red-950/20 px-3 py-2 text-xs text-red-200">{databaseLoadError}</p>
+          <p className="mt-2 rounded-md border border-red-900/60 bg-red-950/20 px-3 py-2 text-body text-red-200">{databaseLoadError}</p>
         )}
       </FormSection>
 
       {loadedDatabases.length > 0 && (
         <FormSection title="Seleccionar Bases de Datos" description={`Se encontraron ${loadedDatabases.length} base(s). Selecciona las que desees explorar.`}>
-          <div className="grid gap-2 rounded-md border border-zinc-800/80 bg-[#0c0c0c] p-3">
+          <div className="grid gap-2 rounded-md border border-border-subtle bg-[#0c0c0c] p-3">
             {loadedDatabases.map((database) => (
               <label key={database} className="flex items-center gap-2 justify-between">
                 <div className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={selectedDatabases.has(database)} onChange={() => onToggleDatabase(database)} className="w-4 h-4 rounded border-zinc-600 bg-zinc-900 cursor-pointer" />
-                  <span className="text-sm text-zinc-300">{database}</span>
+                  <input type="checkbox" checked={selectedDatabases.has(database)} onChange={() => onToggleDatabase(database)} className="w-4 h-4 rounded border-border-strong bg-surface-elevated cursor-pointer" />
+                  <span className="text-h3 text-text">{database}</span>
                   {(dbsSource[database] === "saved" || collectionsSource[database] === "saved") && (
-                    <span className="ml-2 inline-flex items-center gap-1 rounded-md border border-zinc-700/80 bg-zinc-900 px-2 py-0.5 text-[10px] text-zinc-300">
+                    <span className="ml-2 inline-flex items-center gap-1 rounded-md border border-border-strong/80 bg-surface-elevated px-2 py-0.5 text-[10px] text-text">
                       <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
                       Cacheada
                     </span>
                   )}
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => onRefreshDatabase(database)} className="h-7 px-2 text-xs border-zinc-700/70 bg-transparent text-zinc-300 hover:bg-zinc-800">Actualizar</Button>
+                <Button size="sm" variant="ghost" onClick={() => onRefreshDatabase(database)} className="h-7 px-2 text-body border-border-strong bg-transparent text-text hover:bg-surface-hover">Actualizar</Button>
               </label>
             ))}
           </div>
@@ -1652,18 +1859,18 @@ function DatabaseCollectionSelector({
 
       {selectedDatabases.size > 0 && provider.id !== "redis" && (
         <FormSection title={`${collectionLabelCap} por Base de Datos`}>
-          <div className="border border-zinc-800/80 rounded-md bg-[#0c0c0c] overflow-hidden">
-            <div className="flex border-b border-zinc-800/80 overflow-x-auto px-3">
+          <div className="border border-border-subtle rounded-md bg-[#0c0c0c] overflow-hidden">
+            <div className="flex border-b border-border-subtle overflow-x-auto px-3">
               {Array.from(selectedDatabases).map((database) => (
                 <button
                   key={database}
                   onClick={() => onActiveDbTabChange(database)}
-                  className={cn("px-4 py-2 text-sm border-b-2 border-transparent whitespace-nowrap transition-colors", activeDbTab === database ? "border-blue-500 text-white" : "text-zinc-400 hover:text-zinc-200")}
+                  className={cn("px-4 py-2 text-h3 border-b-2 border-transparent whitespace-nowrap transition-colors", activeDbTab === database ? "border-blue-500 text-text" : "text-text-muted hover:text-text")}
                 >
                   <span className="inline-flex items-center gap-2">
                     <span>{database}</span>
                     {collectionsSource[database] === "saved" && (
-                      <span className="inline-flex items-center gap-1 rounded-md border border-zinc-700/80 bg-zinc-900 px-2 py-0.5 text-[10px] text-zinc-300">
+                      <span className="inline-flex items-center gap-1 rounded-md border border-border-strong/80 bg-surface-elevated px-2 py-0.5 text-[10px] text-text">
                         <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
                         Cacheada
                       </span>
@@ -1675,30 +1882,30 @@ function DatabaseCollectionSelector({
             {activeDbTab && (
               <div className="p-4">
                 {loadingCollections[activeDbTab] ? (
-                  <div className="flex items-center gap-2 text-zinc-400">
+                  <div className="flex items-center gap-2 text-text-muted">
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Cargando {collectionLabel}...
                   </div>
                 ) : collectionsError[activeDbTab] ? (
-                  <p className="text-xs text-red-400">{collectionsError[activeDbTab]}</p>
+                  <p className="text-body text-red-400">{collectionsError[activeDbTab]}</p>
                 ) : (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between mb-3">
-                      <span className="text-xs font-medium text-zinc-400">{(collectionsPerDb[activeDbTab] || []).length} {collectionLabel}</span>
+                      <span className="text-body font-medium text-text-muted">{(collectionsPerDb[activeDbTab] || []).length} {collectionLabel}</span>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => onSelectAllCollections(activeDbTab)} className="h-7 px-2 text-xs border-zinc-700/70 bg-transparent text-zinc-300 hover:bg-zinc-800">Seleccionar todas</Button>
-                        <Button size="sm" variant="ghost" onClick={() => onClearAllCollections(activeDbTab)} className="h-7 px-2 text-xs border-zinc-700/70 bg-transparent text-zinc-300 hover:bg-zinc-800">Limpiar</Button>
-                        <Button size="sm" variant="ghost" onClick={() => onRefreshDatabase(activeDbTab)} className="h-7 px-2 text-xs border-zinc-700/70 bg-transparent text-zinc-300 hover:bg-zinc-800">Actualizar</Button>
+                        <Button size="sm" variant="ghost" onClick={() => onSelectAllCollections(activeDbTab)} className="h-7 px-2 text-body border-border-strong bg-transparent text-text hover:bg-surface-hover">Seleccionar todas</Button>
+                        <Button size="sm" variant="ghost" onClick={() => onClearAllCollections(activeDbTab)} className="h-7 px-2 text-body border-border-strong bg-transparent text-text hover:bg-surface-hover">Limpiar</Button>
+                        <Button size="sm" variant="ghost" onClick={() => onRefreshDatabase(activeDbTab)} className="h-7 px-2 text-body border-border-strong bg-transparent text-text hover:bg-surface-hover">Actualizar</Button>
                       </div>
                     </div>
-                    <div className="grid gap-2 max-h-64 overflow-y-auto rounded border border-zinc-800/50 bg-zinc-950/30 p-2">
+                    <div className="grid gap-2 max-h-64 overflow-y-auto rounded border border-border-subtle/50 bg-surface/30 p-2">
                       {(collectionsPerDb[activeDbTab] || []).length === 0 ? (
-                        <p className="text-xs text-zinc-500 text-center py-4">No hay {collectionLabel} disponibles</p>
+                        <p className="text-body text-text-faint text-center py-4">No hay {collectionLabel} disponibles</p>
                       ) : (
                         (collectionsPerDb[activeDbTab] || []).map((collection) => (
-                          <label key={collection} className="flex items-center gap-2 cursor-pointer p-1 hover:bg-zinc-900 rounded">
-                            <input type="checkbox" checked={selectedCollections[activeDbTab]?.has(collection) ?? false} onChange={() => onToggleCollection(activeDbTab, collection)} className="w-4 h-4 rounded border-zinc-600 bg-zinc-900 cursor-pointer" />
-                            <span className="text-sm text-zinc-300">{collection}</span>
+                          <label key={collection} className="flex items-center gap-2 cursor-pointer p-1 hover:bg-surface-elevated rounded">
+                            <input type="checkbox" checked={selectedCollections[activeDbTab]?.has(collection) ?? false} onChange={() => onToggleCollection(activeDbTab, collection)} className="w-4 h-4 rounded border-border-strong bg-surface-elevated cursor-pointer" />
+                            <span className="text-h3 text-text">{collection}</span>
                           </label>
                         ))
                       )}
@@ -1713,7 +1920,7 @@ function DatabaseCollectionSelector({
 
       {selectedDatabases.size === 0 && loadedDatabases.length > 0 && provider.id !== "redis" && (
         <FormSection title="Resumen" description={`Selecciona al menos una base de datos para ver sus ${collectionLabel}.`}>
-          <div className="text-sm text-zinc-400">Bases de datos disponibles: {loadedDatabases.length}</div>
+          <div className="text-h3 text-text-muted">Bases de datos disponibles: {loadedDatabases.length}</div>
         </FormSection>
       )}
     </div>
@@ -1792,8 +1999,8 @@ function FormSection({ title, description, children }: { title: string; descript
   return (
     <section className="grid gap-3">
       <div>
-        <h3 className="text-[10px] font-semibold uppercase tracking-[.08em] text-zinc-400">{title}</h3>
-        {description && <p className={cn("mt-1 max-w-2xl text-xs leading-5", softText)}>{description}</p>}
+        <h3 className="text-[10px] font-semibold uppercase tracking-[.08em] text-text-muted">{title}</h3>
+        {description && <p className={cn("mt-1 max-w-2xl text-body leading-5", softText)}>{description}</p>}
       </div>
       <div className="grid gap-3">{children}</div>
     </section>
@@ -1802,7 +2009,7 @@ function FormSection({ title, description, children }: { title: string; descript
 
 function FormOptions({ children }: { children: React.ReactNode }) {
   return (
-    <div className="grid gap-2 rounded-md border border-zinc-800/80 bg-[#0c0c0c] px-3 py-2.5">{children}</div>
+    <div className="grid gap-2 rounded-md border border-border-subtle bg-[#0c0c0c] px-3 py-2.5">{children}</div>
   );
 }
 
@@ -1812,8 +2019,8 @@ function ModalTab({ active, icon, label, onClick }: { active?: boolean; icon: Re
       type="button"
       onClick={onClick}
       className={cn(
-        "relative inline-flex h-11 max-w-65 items-center gap-1.5 truncate border-b-2 border-transparent px-0 text-xs font-semibold text-zinc-500 transition-colors hover:text-zinc-200",
-        active && "border-blue-500 text-white"
+        "relative inline-flex h-11 max-w-65 items-center gap-1.5 truncate border-b-2 border-transparent px-0 text-body font-semibold text-text-faint transition-colors hover:text-text",
+        active && "border-blue-500 text-text"
       )}
     >
       {icon}
@@ -1843,27 +2050,27 @@ function ModalField({
           onChange={(event) => onChange?.(event.target.value)}
           onBlur={onBlur}
           className={cn(
-            "h-9 border-zinc-700/70 bg-[#0a0a0a] px-3 text-[13px] font-medium text-zinc-100 placeholder:font-normal placeholder:italic placeholder:text-zinc-500",
+            "h-9 border-border-strong bg-[#0a0a0a] px-3 text-[13px] font-medium text-text placeholder:font-normal placeholder:italic placeholder:text-text-faint",
             (isPasswordField || trailing) && "pr-11",
-            readOnly && "text-zinc-400",
+            readOnly && "text-text-muted",
             error && "border-red-900 focus:border-red-700 focus:ring-red-900/20"
           )}
         />
         {isPasswordField ? (
-          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors">
+          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-text-faint hover:text-text transition-colors">
             {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
           </button>
         ) : (
-          trailing && <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500">{trailing}</span>
+          trailing && <span className="absolute right-4 top-1/2 -translate-y-1/2 text-text-faint">{trailing}</span>
         )}
       </span>
-      {error && <span className="text-xs normal-case tracking-normal text-red-400">{error}</span>}
+      {error && <span className="text-body normal-case tracking-normal text-red-400">{error}</span>}
     </label>
   );
 }
 
 function InlineError({ children }: { children: React.ReactNode }) {
-  return <p className="rounded-md border border-red-900/60 bg-red-950/20 px-3 py-2 text-xs text-red-200">{children}</p>;
+  return <p className="rounded-md border border-red-900/60 bg-red-950/20 px-3 py-2 text-body text-red-200">{children}</p>;
 }
 
 function ModalSelect({
@@ -1887,8 +2094,8 @@ function ModalSelect({
 
 function ModalCheckbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
   return (
-    <label className={cn("flex items-center gap-2 text-xs", mutedText)}>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="h-3.5 w-3.5 rounded border-zinc-600 bg-[#0a0a0a] accent-white" />
+    <label className={cn("flex items-center gap-2 text-body", mutedText)}>
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="h-3.5 w-3.5 rounded border-border-strong bg-[#0a0a0a] accent-white" />
       {label}
     </label>
   );
@@ -1896,13 +2103,13 @@ function ModalCheckbox({ label, checked, onChange }: { label: string; checked: b
 
 function SegmentedControl({ value, options, onChange }: { value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void }) {
   return (
-    <div className="inline-flex max-w-full overflow-hidden rounded-md border border-zinc-700/70 bg-[#0a0a0a]">
+    <div className="inline-flex max-w-full overflow-hidden rounded-md border border-border-strong bg-[#0a0a0a]">
       {options.map((option) => (
         <button
           key={option.value}
           type="button"
           onClick={() => onChange(option.value)}
-          className={cn("h-8 px-3 text-xs font-medium text-zinc-400 transition hover:text-zinc-100", value === option.value && "bg-white text-black hover:text-black")}
+          className={cn("h-8 px-3 text-body font-medium text-text-muted transition hover:text-text", value === option.value && "bg-white text-black hover:text-black")}
         >
           {option.label}
         </button>

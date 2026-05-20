@@ -13,6 +13,17 @@ export interface SqlSession {
   activeDb: string;
   activeTable: string;
   activeView: string;
+  queryDraft: string;
+  queryHistory: QueryHistoryEntry[];
+}
+
+export interface QueryHistoryEntry {
+  sql: string;
+  ts: number;
+  ok: boolean;
+  ms?: number;
+  rows?: number;
+  affected?: number | null;
 }
 
 export interface DocumentSession {
@@ -117,6 +128,8 @@ function addSession(connection: Connection) {
         activeDb: "",
         activeTable: "",
         activeView: "",
+        queryDraft: "-- Escribe tu consulta SQL aquí. Cmd/Ctrl+Enter para ejecutar.\n",
+        queryHistory: [],
       };
     }
     return { ...state, sessions: { ...state.sessions, [connection.id]: session } };
@@ -143,7 +156,21 @@ function updateSession(connectionId: number, patch: Partial<Session>) {
 }
 
 function hydrate(sessions: Record<number, Session>) {
-  sessionsStore.setState((state) => ({ ...state, sessions, loaded: true }));
+  // Backfill fields added after a session was originally stored so older
+  // payloads from SQLite don't blow up when the UI reads them.
+  const normalized: Record<number, Session> = {};
+  for (const [id, raw] of Object.entries(sessions)) {
+    let s = raw as Session;
+    if (s.type === "sql") {
+      s = {
+        ...s,
+        queryDraft: s.queryDraft ?? "-- Escribe tu consulta SQL aquí. Cmd/Ctrl+Enter para ejecutar.\n",
+        queryHistory: s.queryHistory ?? [],
+      };
+    }
+    normalized[Number(id)] = s;
+  }
+  sessionsStore.setState((state) => ({ ...state, sessions: normalized, loaded: true }));
 }
 
 type StoreFns = {

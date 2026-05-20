@@ -1,17 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowLeft, BarChart2, Database, Folder, List, Loader2, Radio, RefreshCw, Search, X } from "lucide-react";
+import { Folder, List, Loader2, RefreshCw, Search, X } from "lucide-react";
 import { AutocompleteInput, type GetSuggestions, type SuggestionItem } from "@/components/autocomplete-input";
-import { Link, Outlet } from "@tanstack/react-router";
+import { Outlet } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "@/lib/router-compat";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MetricsPanel } from "@/components/metrics-panel";
 import RedisPubSubPage from "./RedisPubSubPage";
 import { getProviderUi, ProviderIcon } from "@/lib/providers";
-import { mutedText, panel, sectionBorder } from "@/lib/styles";
+import { panel } from "@/lib/styles";
 import type { Connection, RedisKey } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useSessionsStore, type RedisSession } from "@/store/sessions";
 import { Select } from "@/components/ui/select";
+import { PageHeader, SegmentedTabs } from "@/components/ui/page-header";
+import { useInspectorContextFor } from "@/components/shell/InspectorContext";
 
 const KEY_TYPE_COLORS: Record<string, string> = {
   string: "bg-violet-500/20 text-violet-300",
@@ -25,7 +28,7 @@ function TypeBadge({ type }: { type: string }) {
   return (
     <span className={cn(
       "shrink-0 rounded px-1 py-px font-mono text-[9px] font-bold uppercase leading-none",
-      KEY_TYPE_COLORS[type] ?? "bg-zinc-700/50 text-zinc-400"
+      KEY_TYPE_COLORS[type] ?? "bg-surface-active/50 text-text-muted"
     )}>
       {type}
     </span>
@@ -98,10 +101,10 @@ function KeyRow({
     <button
       onClick={() => onSelect(rkey.key)}
       className={cn(
-        "flex w-full items-center gap-1.5 border-l-2 px-3 py-1.5 text-left text-xs transition-all",
+        "flex w-full items-center gap-1.5 border-l-2 px-3 py-1.5 text-left text-body transition-all",
         active
           ? "bg-blue-500/10 text-blue-400 border-blue-500/30 shadow-inner"
-          : "border-transparent text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+          : "border-transparent text-text-muted hover:bg-surface-hover hover:text-text"
       )}
       style={active ? { borderColor: providerColor } : undefined}
     >
@@ -144,10 +147,10 @@ function TreeNodeList({
             key={node.key}
             onClick={() => onSelect(node.key)}
             className={cn(
-              "flex w-full items-center gap-1.5 border-l-2 py-1.5 pr-3 text-left text-xs transition-all",
+              "flex w-full items-center gap-1.5 border-l-2 py-1.5 pr-3 text-left text-body transition-all",
               activeKey === node.key
                 ? "bg-blue-500/10 text-blue-400 border-blue-500/30 shadow-inner"
-                : "border-transparent text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+                : "border-transparent text-text-muted hover:bg-surface-hover hover:text-text"
             )}
             style={{
               paddingLeft: depth * 10 + 8,
@@ -186,23 +189,23 @@ function FolderRow({
     <div>
       <button
         onClick={() => setOpen((x) => !x)}
-        className="flex w-full items-center gap-1.5 border-l-2 border-transparent py-1.5 pr-3 text-left text-xs text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+        className="flex w-full items-center gap-1.5 border-l-2 border-transparent py-1.5 pr-3 text-left text-body text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
         style={{ paddingLeft: depth * 10 + 8 }}
       >
         <svg
           ref={chevronRef}
           viewBox="0 0 12 12"
-          className={cn("h-3 w-3 shrink-0 text-zinc-600 transition-transform duration-100", open && "rotate-90")}
+          className={cn("h-3 w-3 shrink-0 text-text-faint transition-transform duration-100", open && "rotate-90")}
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
         >
           <path d="M4 2l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        <Folder className="h-3 w-3 shrink-0 text-zinc-600" />
+        <Folder className="h-3 w-3 shrink-0 text-text-faint" />
         <span className="min-w-0 flex-1 truncate font-mono">{node.label}</span>
-        <span className="shrink-0 text-[10px] text-zinc-600">{pct < 1 ? "<1" : pct}%</span>
-        <span className="w-10 shrink-0 text-right font-mono text-[10px] text-zinc-500">{node.count}</span>
+        <span className="shrink-0 text-[10px] text-text-faint">{pct < 1 ? "<1" : pct}%</span>
+        <span className="w-10 shrink-0 text-right font-mono text-[10px] text-text-faint">{node.count}</span>
       </button>
       {open && (
         <TreeNodeList
@@ -269,6 +272,7 @@ const TYPE_OPTIONS = [
 ];
 
 export default function RedisLayout() {
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const connectionId = Number(searchParams.get("id"));
@@ -369,61 +373,48 @@ export default function RedisLayout() {
   const keyPatterns = useMemo(() => buildKeyPatterns(keys), [keys]);
   const getKeySuggestions = useMemo(() => buildKeySuggestions(keyPatterns), [keyPatterns]);
 
-  if (connectionId && !sessions[connectionId]) {
-    navigate("/connections", { replace: true });
-    return null;
-  }
+  useInspectorContextFor({
+    connection,
+    database: activeDb ? `DB ${activeDb}` : null,
+    table: activeKey || null,
+    tableLabel: "Key",
+    extras: keys.length > 0
+      ? [{ label: "Keys", value: <span className="text-text-muted">{keys.length}</span> }]
+      : undefined,
+  });
+
+  const missingSession = !!connectionId && !sessions[connectionId];
+  useEffect(() => {
+    if (missingSession) navigate("/connections", { replace: true });
+  }, [missingSession, navigate]);
+  if (missingSession) return null;
 
   return (
     <div className={cn("flex min-w-0 flex-1 flex-col", panel)}>
-      <header className={cn("flex h-12 shrink-0 items-center gap-3 border-b px-4", panel, sectionBorder)}>
-        <Link to="/connections" className="flex items-center gap-1.5 text-xs text-zinc-400 transition-colors hover:text-zinc-200">
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Conexiones
-        </Link>
-        <span className="text-zinc-700">/</span>
-        {connection && provider && (
-          <div className="flex items-center gap-2">
-            <span className="shrink-0 h-5 w-5 overflow-hidden rounded border border-white/10 shadow-inner">
-              <ProviderIcon providerId={connection.plugin_id} className="block h-full w-full object-cover" />
-            </span>
-            <span className="text-sm font-medium text-white">{connection.name}</span>
-            <span className={cn("text-xs", mutedText)}>{connection.host}:{connection.port ?? "-"}</span>
-          </div>
-        )}
-        <div className="ml-auto flex items-center gap-0.5">
-          <button
-            onClick={() => navView("data")}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              view !== "metrics" && view !== "pubsub" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300"
-            )}
-          >
-            <Database className="h-3.5 w-3.5" />
-            Datos
-          </button>
-          <button
-            onClick={() => navView("pubsub")}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              view === "pubsub" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300"
-            )}
-          >
-            <Radio className="h-3.5 w-3.5" />
-            Pub/Sub
-          </button>
-          <button
-            onClick={() => navView("metrics")}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              view === "metrics" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300"
-            )}
-          >
-            <BarChart2 className="h-3.5 w-3.5" />
-            Métricas
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        left={
+          connection && provider ? (
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 h-5 w-5 overflow-hidden rounded-sm border border-border-subtle">
+                <ProviderIcon providerId={connection.plugin_id} className="block h-full w-full object-cover" />
+              </span>
+              <span className="text-h3 font-medium text-text">{connection.name}</span>
+              <span className="text-body text-text-muted">{connection.host}:{connection.port ?? "-"}</span>
+            </div>
+          ) : null
+        }
+        right={
+          <SegmentedTabs
+            value={view === "metrics" ? "metrics" : view === "pubsub" ? "pubsub" : "data"}
+            onChange={(v) => navView(v as "data" | "metrics" | "pubsub")}
+            options={[
+              { value: "data", label: t("common.data") },
+              { value: "pubsub", label: "Pub/Sub" },
+              { value: "metrics", label: t("common.metrics") },
+            ]}
+          />
+        }
+      />
 
       {view === "metrics" && connection && (
         <div className="min-h-0 flex-1 overflow-hidden">
@@ -437,7 +428,7 @@ export default function RedisLayout() {
         </div>
       )}
 
-      {view !== "metrics" && view !== "pubsub" && <div className="flex h-14 shrink-0 items-center gap-2 border-b border-white/5 bg-zinc-950/40 px-4">
+      {view !== "metrics" && view !== "pubsub" && <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border-subtle bg-surface/40 px-4">
         <Select
           value={typeFilter}
           onChange={setTypeFilter}
@@ -445,35 +436,35 @@ export default function RedisLayout() {
           className="text-[11px] h-8"
         />
 
-        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/5 bg-black/40 px-2.5 py-1.5 transition-colors focus-within:border-white/20 focus-within:ring-1 focus-within:ring-white/10 shadow-inner">
-          <Search className="h-3 w-3 shrink-0 text-zinc-600" />
+        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border-subtle bg-surface-sunken px-2.5 py-1.5 transition-colors focus-within:border-border-strong focus-within:ring-1 focus-within:ring-accent-ring shadow-inner">
+          <Search className="h-3 w-3 shrink-0 text-text-faint" />
           <AutocompleteInput
             value={keySearch}
             onChange={setKeySearch}
             getSuggestions={getKeySuggestions}
             placeholder="Search by Key Name or Pattern..."
-            className="min-w-0 flex-1 bg-transparent text-xs text-zinc-200 placeholder-zinc-600 outline-none"
+            className="min-w-0 flex-1 bg-transparent text-body text-text placeholder:text-text-faint outline-none"
           />
           {keySearch && (
-            <button onClick={() => setKeySearch("")} className="shrink-0 text-zinc-600 transition-colors hover:text-zinc-400">
+            <button onClick={() => setKeySearch("")} className="shrink-0 text-text-faint transition-colors hover:text-text-muted">
               <X className="h-3 w-3" />
             </button>
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-white/5 bg-black/40 p-1 shadow-inner">
-          <button onClick={() => setViewMode("list")} title="Lista" className={cn("rounded p-0.5 transition-colors", viewMode === "list" ? "bg-zinc-700 text-white" : "text-zinc-600 hover:text-zinc-400")}>
+        <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-border-subtle bg-surface-sunken p-1 shadow-inner">
+          <button onClick={() => setViewMode("list")} title="Lista" className={cn("rounded p-0.5 transition-colors", viewMode === "list" ? "bg-surface-active text-text" : "text-text-faint hover:text-text-muted")}>
             <List className="h-3 w-3" />
           </button>
-          <button onClick={() => setViewMode("tree")} title="Árbol" className={cn("rounded p-0.5 transition-colors", viewMode === "tree" ? "bg-zinc-700 text-white" : "text-zinc-600 hover:text-zinc-400")}>
+          <button onClick={() => setViewMode("tree")} title="Árbol" className={cn("rounded p-0.5 transition-colors", viewMode === "tree" ? "bg-surface-active text-text" : "text-text-faint hover:text-text-muted")}>
             <Folder className="h-3 w-3" />
           </button>
         </div>
 
-        <div className="h-4 w-px bg-zinc-800" />
+        <div className="h-4 w-px bg-surface-hover" />
 
         {loadingDbs ? (
-          <Loader2 className="h-3 w-3 animate-spin text-zinc-600" />
+          <Loader2 className="h-3 w-3 animate-spin text-text-faint" />
         ) : (
           <Select
             value={activeDb}
@@ -485,15 +476,15 @@ export default function RedisLayout() {
       </div>}
 
       {view !== "metrics" && view !== "pubsub" && <div className="flex min-h-0 flex-1 bg-black/20">
-        <div className="flex w-80 shrink-0 flex-col border-r border-white/5 bg-zinc-950/50">
-          <div className="flex h-10 shrink-0 items-center justify-between border-b border-white/5 px-4 bg-white/[0.01]">
-            <span className="text-[10px] text-zinc-500">
-              Results: <span className="text-zinc-400">{filteredKeys.length.toLocaleString()}</span>
+        <div className="flex w-80 shrink-0 flex-col border-r border-border-subtle bg-surface/50">
+          <div className="flex h-10 shrink-0 items-center justify-between border-b border-border-subtle px-4 bg-white/[0.01]">
+            <span className="text-[10px] text-text-faint">
+              Results: <span className="text-text-muted">{filteredKeys.length.toLocaleString()}</span>
             </span>
             <button
               onClick={reloadKeys}
               disabled={loadingKeys}
-              className="text-zinc-600 transition-colors hover:text-zinc-400 disabled:opacity-40"
+              className="text-text-faint transition-colors hover:text-text-muted disabled:opacity-40"
               title="Recargar claves"
             >
               {loadingKeys
@@ -520,7 +511,7 @@ export default function RedisLayout() {
             )}
 
             {!loadingKeys && filteredKeys.length === 0 && (
-              <div className={cn("px-3 py-4 text-center text-xs", mutedText)}>
+              <div className="px-3 py-4 text-center text-body text-text-muted">
                 {keySearch || typeFilter !== "all" ? "Sin resultados." : "Sin claves en esta base de datos."}
               </div>
             )}

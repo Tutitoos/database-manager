@@ -1,153 +1,77 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { Plus, Server } from "lucide-react";
 import { useNavigate } from "@/lib/router-compat";
-import { Disc as DiscordIcon, Github, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  completeOAuth,
-  currentUser,
-  EXAMPLE_SYNC_SERVER_URL,
-  extractAuthCode,
-  getSyncServerUrl,
-  onDeepLink,
-  setSyncServerUrl,
-  startOAuth,
-  SUPPORTED_PROVIDERS,
-  type OAuthProvider,
-} from "@/lib/auth";
-import { mutedText, panel, textTitle } from "@/lib/styles";
+import { AddOrgWizard } from "@/components/shell/AddOrgWizard";
+import { useOrgs } from "@/store/orgs";
+import { currentUser } from "@/lib/auth";
+import { panel } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
-const PROVIDER_LABELS: Record<OAuthProvider, string> = {
-  discord: "Discord",
-  github: "GitHub",
-  google: "Google",
-  microsoft: "Microsoft",
-};
-
 export default function LoginPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
-  const [serverUrl, setServerUrl] = useState("");
-  const [busy, setBusy] = useState<OAuthProvider | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { orgs } = useOrgs();
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
     let cancelled = false;
-
     (async () => {
-      const existing = await getSyncServerUrl();
-      if (!cancelled) setServerUrl(existing ?? "");
-
       const me = await currentUser();
       if (!cancelled && me) navigate("/settings/account", { replace: true });
-
-      unlisten = await onDeepLink(async (url) => {
-        const code = extractAuthCode(url);
-        if (!code) return;
-        setStatus("Completando inicio de sesión…");
-        try {
-          await completeOAuth(code);
-          setStatus(null);
-          setBusy(null);
-          navigate("/settings/account", { replace: true });
-        } catch (e) {
-          setError(String(e));
-          setBusy(null);
-        }
-      });
-    })().catch((e) => setError(String(e)));
-
+    })();
     return () => {
       cancelled = true;
-      unlisten?.();
     };
   }, [navigate]);
 
-  async function persistServerUrl() {
-    setError(null);
-    try {
-      await setSyncServerUrl(serverUrl.trim());
-      setStatus("Servidor guardado.");
-      setTimeout(() => setStatus(null), 2000);
-    } catch (e) {
-      setError(String(e));
-    }
-  }
-
-  async function login(provider: OAuthProvider) {
-    setError(null);
-    setBusy(provider);
-    try {
-      if (serverUrl.trim()) await setSyncServerUrl(serverUrl.trim());
-      await startOAuth(provider);
-      setStatus(`Esperando autenticación con ${PROVIDER_LABELS[provider]}…`);
-    } catch (e) {
-      setError(String(e));
-      setBusy(null);
-    }
-  }
+  const remoteOrgs = orgs.filter((o) => o.server_kind !== "local");
 
   return (
-    <div className={cn("flex min-h-screen items-center justify-center", panel)}>
-      <div className="w-full max-w-md space-y-6 rounded-lg border border-white/5 bg-zinc-950/80 p-8 shadow-2xl">
-        <div>
-          <h1 className={textTitle}>Iniciar sesión</h1>
-          <p className={cn("mt-1 text-xs", mutedText)}>
-            Sincroniza tus conexiones, carpetas y credenciales entre máquinas. La app funciona
-            sin login si prefieres modo local.
-          </p>
-        </div>
+    <>
+      <div data-tauri-drag-region className={cn("flex min-h-screen items-center justify-center", panel)}>
+        <div
+          data-tauri-drag-region="false"
+          className="w-full max-w-md space-y-6 rounded-xl border border-border-subtle bg-surface-overlay p-8 shadow-md"
+        >
+          <div>
+            <h1 className="text-page-title text-text">{t("login.title")}</h1>
+            <p className="text-caption mt-1 text-text-muted">{t("login.subtitle")}</p>
+          </div>
 
-        <div className="space-y-2">
-          <label className="block text-[11px] uppercase tracking-wide text-zinc-500">
-            URL servidor de sincronización
-          </label>
-          <div className="flex gap-2">
-            <Input
-              placeholder={EXAMPLE_SYNC_SERVER_URL}
-              value={serverUrl}
-              onChange={(e) => setServerUrl(e.target.value)}
-            />
-            <Button size="sm" onClick={persistServerUrl}>
-              Guardar
+          <div className="space-y-3">
+            <p className="text-body text-text-muted">{t("login.orgFlowHint")}</p>
+            <Button onClick={() => setWizardOpen(true)} className="w-full justify-center">
+              <Plus className="h-4 w-4" />
+              {t("login.addOrg")}
             </Button>
           </div>
-          <p className="text-[11px] text-zinc-500">
-            Una instancia hospedada o tu propio VPS (<code className="rounded bg-zinc-900 px-1">server/</code>).
-            Sin URL = modo local sin sync.
-          </p>
+
+          {remoteOrgs.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-overline">{t("login.existingOrgs")}</p>
+              <ul className="space-y-1">
+                {remoteOrgs.map((o) => (
+                  <li
+                    key={o.id}
+                    className="flex items-center gap-2 rounded-md border border-border-subtle bg-surface-elevated px-3 py-2 text-body"
+                  >
+                    <Server className="h-3.5 w-3.5 text-text-faint" />
+                    <span className="flex-1 truncate">{o.name}</span>
+                    <span className="text-tiny text-text-faint">{o.server_url ?? "—"}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="w-full justify-center">
+            {t("login.back")}
+          </Button>
         </div>
-
-        <div className="grid grid-cols-1 gap-2">
-          {SUPPORTED_PROVIDERS.map((p) => (
-            <Button
-              key={p}
-              variant="secondary"
-              onClick={() => login(p)}
-              disabled={busy !== null}
-              className="justify-center"
-            >
-              {busy === p ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : p === "discord" ? (
-                <DiscordIcon className="h-4 w-4" />
-              ) : p === "github" ? (
-                <Github className="h-4 w-4" />
-              ) : null}
-              Continuar con {PROVIDER_LABELS[p]}
-            </Button>
-          ))}
-        </div>
-
-        {status && <p className="text-xs text-zinc-400">{status}</p>}
-        {error && <p className="text-xs text-red-400">{error}</p>}
-
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="w-full justify-center">
-          Volver
-        </Button>
       </div>
-    </div>
+      {wizardOpen && <AddOrgWizard onClose={() => setWizardOpen(false)} />}
+    </>
   );
 }

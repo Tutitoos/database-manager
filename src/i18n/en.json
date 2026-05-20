@@ -1,0 +1,598 @@
+{
+  "common": {
+    "back": "Back",
+    "data": "Data",
+    "queries": "Queries",
+    "metrics": "Metrics"
+  },
+  "nav": {
+    "dashboard": "Home",
+    "connections": "Connections",
+    "settings": "Settings"
+  },
+  "command": {
+    "placeholder": "Search connections, tables, actions…",
+    "noResults": "No results",
+    "group": {
+      "navigation": "Navigation",
+      "connections": "Connections",
+      "actions": "Actions"
+    }
+  },
+  "appearance": {
+    "title": "Appearance",
+    "subtitle": "Theme, color, density, font and zoom for the app.",
+    "theme": {
+      "title": "Theme",
+      "dark": "Dark",
+      "light": "Light",
+      "system": "System",
+      "midnight": "Midnight",
+      "sepia": "Sepia",
+      "solarized": "Solarized",
+      "schedule": "Schedule",
+      "scheduleLabel": "Auto schedule",
+      "scheduleDescription": "When to switch between light and dark.",
+      "scheduleDark": "Dark",
+      "scheduleLight": "Light"
+    },
+    "accent": {
+      "title": "Accent color",
+      "cyan": "Cyan",
+      "violet": "Violet",
+      "emerald": "Emerald",
+      "amber": "Amber",
+      "rose": "Rose",
+      "indigo": "Indigo",
+      "customTitle": "Custom color"
+    },
+    "density": {
+      "title": "Density",
+      "rowSpacing": "Row spacing",
+      "rowSpacingDescription": "Compact saves space. Comfortable improves readability.",
+      "compact": "Compact",
+      "comfortable": "Comfortable"
+    },
+    "font": {
+      "title": "Font",
+      "label": "Interface typography",
+      "description": "System uses SF Pro on macOS. Mono recommended for queries.",
+      "system": "System (SF Pro)",
+      "inter": "Inter",
+      "mono": "Monospaced"
+    },
+    "zoom": {
+      "title": "Zoom",
+      "label": "Zoom level",
+      "description": "{{percent}}% · ⌘= / ⌘- / ⌘0 for quick adjustments.",
+      "reset": "Reset"
+    },
+    "language": {
+      "title": "Language",
+      "label": "Interface language",
+      "description": "Applies to menus, settings, and system messages.",
+      "es": "Español",
+      "en": "English"
+    }
+  },
+  "account": {
+    "title": "My account",
+    "subtitle": "Profile, session and personal data.",
+    "profile": {
+      "title": "Profile",
+      "notSignedIn": "You are not signed in.",
+      "signIn": "Sign in",
+      "signOut": "Sign out",
+      "providers": "Linked providers",
+      "noProviders": "None",
+      "localTitle": "Local account",
+      "localBody": "local@dbm.local · OAuth not required"
+    },
+    "security": {
+      "title": "Security",
+      "biometryGate": "Biometry available",
+      "biometrySupported": "Touch ID / Face ID detected on this device.",
+      "biometryUnsupported": "This device does not expose compatible biometry.",
+      "forgetLabel": "Sign out and wipe local bearer",
+      "forgetDescription": "Removes the token from the keychain and signs you out. You will need to reconfigure the org on next launch.",
+      "forgetButton": "Wipe",
+      "forgotten": "Local bearer wiped.",
+      "biometryRestoreButton": "Restore with biometry",
+      "biometryRestoreOk": "Session restored",
+      "biometryRestoreNone": "No saved session"
+    },
+    "sessions": {
+      "title": "Current session",
+      "lastSync": "Last sync",
+      "never": "Never",
+      "thisDevice": "This device",
+      "active": "Active"
+    },
+    "danger": {
+      "title": "Danger zone",
+      "exportLabel": "Export my data",
+      "exportDescription": "Download a JSON with your profile, connections and orgs (no decrypted secrets).",
+      "exportButton": "Export",
+      "deleteLabel": "Delete my account",
+      "deleteDescription": "Removes your account from the sync server. This action can't be undone.",
+      "deleteButton": "Delete account",
+      "deleteSoon": "Coming soon."
+    },
+    "toasts": {
+      "signedOut": "Signed out.",
+      "exportOk": "Data exported."
+    }
+  },
+  "metrics": {
+    "title": "Metrics",
+    "pg": {
+      "dbSize": "DB size",
+      "connections": "Connections",
+      "maxOf": "of {{n}} max.",
+      "cacheHit": "Cache hit (cumulative)",
+      "intervalCache": "interval: {{n}}%",
+      "tables": "Tables",
+      "activeConnections": "Active connections",
+      "cacheRatioInterval": "Cache hit ratio (%) per interval",
+      "tps": "Transactions / s",
+      "writes": "Writes / s (ins+upd+del)",
+      "topTables": "Largest tables",
+      "tableCol": "Table",
+      "sizeCol": "Size"
+    },
+    "mongo": {
+      "data": "Data",
+      "storage": "Storage",
+      "connections": "Connections",
+      "available": "{{n}} available",
+      "memRss": "RSS memory",
+      "virtual": "{{n}} MB virtual",
+      "activeConnections": "Active connections",
+      "memRssMb": "RSS memory (MB)",
+      "queriesWrites": "Queries + Writes / s",
+      "networkKb": "Network KB/s",
+      "collections": "Collections",
+      "collectionCol": "Collection",
+      "docsCol": "Documents (~)"
+    },
+    "redis": {
+      "redis": "Redis",
+      "memUsed": "Memory used",
+      "totalKeys": "Total keys",
+      "connections": "Connections",
+      "memUsedMb": "Memory used (MB)",
+      "activeConnections": "Active connections",
+      "commands": "Commands / s",
+      "hitRate": "Keyspace hit rate (%)",
+      "channels": "Active channels",
+      "patterns": "Patterns",
+      "shardChannels": "Shard channels",
+      "subscribedChannel": "Subscribed channel"
+    }
+  },
+  "auth": {
+    "requiredTitle": "Sign in",
+    "requiredBody": "To access {{name}} you must authenticate. This organization requires OAuth.",
+    "continueWith": "Continue with {{provider}}",
+    "noProviders": "This server has no OAuth providers configured. Ask the admin to add GITHUB_CLIENT_ID / GOOGLE_CLIENT_ID / etc to the server's .env.",
+    "signedInToast": "Signed in"
+  },
+  "welcome": {
+    "title": "Welcome",
+    "subtitle": "To get started, pick where your data should live: on this machine or in a remote organization.",
+    "localTitle": "Start local",
+    "localBody": "Spin up an embedded server on this machine. Your data stays here.",
+    "remoteTitle": "Connect remote",
+    "remoteBody": "Join a self-hosted server shared with your team.",
+    "portLabel": "Local server port",
+    "portHelp": "Defaults to 18787. Change if it's already in use.",
+    "persistentLabel": "Keep the server running when the app closes",
+    "startLocal": "Create and start",
+    "localReadyToast": "Local server ready"
+  },
+  "offline": {
+    "title": "Server unreachable",
+    "body": "Cannot reach the server for {{name}}. Retry or check the configuration.",
+    "startLocal": "Start local server",
+    "retry": "Retry",
+    "viewLogs": "View logs"
+  },
+  "migration": {
+    "title": "Important migration",
+    "body": "This version changes how data is stored: everything now lives on a server (local or remote). Connections, groups and credentials saved locally will be wiped. Download an export before continuing.",
+    "counts": {
+      "connections": "Connections",
+      "groups": "Groups",
+      "credentials": "Credentials"
+    },
+    "export": "Download JSON export",
+    "exportAgain": "Download again",
+    "continue": "Continue and wipe",
+    "exportFirst": "Download the JSON before continuing.",
+    "exportedToast": "Export downloaded"
+  },
+  "errorBoundary": {
+    "title": "Something broke",
+    "retry": "Retry",
+    "reload": "Reload"
+  },
+  "sidebar": {
+    "favorites": "Favorites",
+    "workspaces": "Workspaces",
+    "activeConnection": "Active connection",
+    "noConnection": "No active connection"
+  },
+  "inspector": {
+    "empty": "Select a table, query or connection to see details here."
+  },
+  "login": {
+    "title": "Sign in",
+    "subtitle": "Sync your connections, folders and credentials across machines. The app works without login.",
+    "orgFlowHint": "Login is per-organization. Add one to authenticate against its server.",
+    "addOrg": "Add organization",
+    "existingOrgs": "Existing organizations",
+    "back": "Back"
+  },
+  "home": {
+    "title": "Home",
+    "welcome": "Welcome back",
+    "stats": {
+      "total": "Total connections",
+      "open": "Currently open",
+      "online": "Online",
+      "byProvider": "By provider"
+    },
+    "workspace": {
+      "title": "Active workspace",
+      "empty": "No connections in this workspace. Create one to get started.",
+      "viewAll": "View all connections"
+    },
+    "quickActions": {
+      "title": "Quick actions",
+      "newConnection": "New connection",
+      "newConnectionDescription": "Connect to PostgreSQL, MongoDB or Redis.",
+      "import": "Import connections",
+      "importDescription": "Load a previously saved JSON file.",
+      "export": "Export connections",
+      "exportDescription": "Download current connections as JSON."
+    },
+    "toasts": {
+      "exported": "Connections exported",
+      "imported": "Connections imported",
+      "importFailed": "Could not import"
+    }
+  },
+  "plugins": {
+    "runtime": {
+      "title": "Plugin runtime",
+      "description": "Pick where the plugin runs when issuing queries: in your app (local subprocess) or on the server (REST proxy).",
+      "label": "Run on the server",
+      "clientHint": "OFF: each query spawns the plugin on this machine. Lower latency, credentials touch the client.",
+      "serverHint": "ON: the server runs the plugin and returns results over HTTP. Credentials never leave the server, higher latency.",
+      "toastOn": "Server-side mode enabled",
+      "toastOff": "Client mode enabled"
+    },
+    "title": "Plugins",
+    "subtitle": "Database drivers. Enable, reload or sync with your organization.",
+    "metrics": {
+      "installed": "Installed",
+      "enabled": "Enabled",
+      "synced": "Synced"
+    },
+    "tabs": {
+      "installed": "Installed",
+      "sync": "Sync"
+    },
+    "search": "Search plugins…",
+    "rescan": "Rescan",
+    "select": "Select a plugin to see details.",
+    "empty": "No plugins installed.",
+    "noMatches": "No plugins match \"{{query}}\".",
+    "detail": {
+      "version": "Version",
+      "status": "Status",
+      "loaded": "Loaded",
+      "notLoaded": "Not loaded",
+      "enabled": "Active",
+      "disabled": "Inactive",
+      "path": "Path",
+      "builtin": "Built-in",
+      "third": "External",
+      "capabilities": "Capabilities",
+      "settings": "Plugin settings",
+      "noCapabilities": "No capabilities declared.",
+      "noSettings": "This plugin exposes no settings.",
+      "error": "Error",
+      "errorHint": "Run `pnpm plugins:build` to rebuild.",
+      "enable": "Enable",
+      "disable": "Disable",
+      "reload": "Reload"
+    },
+    "sync": {
+      "title": "Server plugins",
+      "subtitle": "Plugins distributed by the active organization.",
+      "fetch": "Refresh",
+      "empty": "The server does not publish any plugins.",
+      "noOrg": "No active organization with a server.",
+      "remoteVersion": "v{{version}}",
+      "checksum": "Checksum",
+      "install": "Install",
+      "unsigned": "Invalid signature — install blocked"
+    },
+    "toasts": {
+      "rescanOk": "Plugins rescanned",
+      "reloadOk": "Plugin reloaded",
+      "enabled": "Plugin enabled",
+      "disabled": "Plugin disabled",
+      "syncOk": "Server plugins fetched",
+      "syncFail": "Could not sync plugins",
+      "installOk": "{{name}} installed",
+      "installFail": "Could not install plugin"
+    }
+  },
+  "credentials": {
+    "title": "Credentials",
+    "subtitle": "Encrypted server-side, shared with your organization.",
+    "count": "{{count}} stored",
+    "search": "Search credentials…",
+    "new": "New",
+    "select": "Select a credential to see details.",
+    "empty": {
+      "title": "No credentials",
+      "body": "Create your first reusable credential. It is encrypted server-side on save.",
+      "cta": "Create first"
+    },
+    "noMatches": "No credentials match \"{{query}}\".",
+    "detail": {
+      "name": "Name",
+      "username": "Username",
+      "password": "Password",
+      "updated": "Updated",
+      "created": "Created",
+      "linkedConnections": "Connections using this",
+      "linkedEmpty": "No connections use this credential.",
+      "reveal": "Show",
+      "hide": "Hide",
+      "copyUser": "Copy username",
+      "copyPassword": "Copy password",
+      "duplicate": "Duplicate",
+      "edit": "Edit",
+      "delete": "Delete",
+      "save": "Save",
+      "cancel": "Cancel"
+    },
+    "form": {
+      "newTitle": "New credential",
+      "editTitle": "Edit credential",
+      "namePlaceholder": "Production · API · Prod-DB",
+      "nameHint": "Short label to identify it.",
+      "usernamePlaceholder": "postgres",
+      "passwordPlaceholder": "••••••••",
+      "passwordHintCreate": "Encrypted before being stored.",
+      "passwordHintEdit": "Leave empty to keep current.",
+      "required": "Password is required.",
+      "saving": "Saving…"
+    },
+    "deleteConfirm": {
+      "title": "Delete credential?",
+      "body": "{{name}} will no longer be available. Linked connections will lose the link and need to be reconfigured.",
+      "cancel": "Cancel",
+      "confirm": "Delete"
+    },
+    "toasts": {
+      "saved": "Credential saved",
+      "deleted": "Credential deleted",
+      "duplicated": "Credential duplicated",
+      "copiedUser": "Username copied",
+      "copiedPassword": "Password copied"
+    },
+    "copySuffix": " (copy)"
+  },
+  "connections": {
+    "settingsTitle": "Connections",
+    "settingsSubtitle": "Listing preferences and connection-opening behavior.",
+    "confirmDelete": "Confirm before deleting",
+    "confirmDeleteDescription": "Shows a confirmation dialog when removing a connection.",
+    "autoConnect": "Auto-connect when opening tab",
+    "autoConnectDescription": "Connects immediately when clicking a saved connection.",
+    "showBadges": "Show counts in sidebar",
+    "showBadgesDescription": "Numeric badges with item counts per folder.",
+    "restoreLastSession": "Reopen last session at startup",
+    "restoreLastSessionDescription": "Restores open tabs the next time you start the app."
+  },
+  "orgs": {
+    "title": "Organizations",
+    "subtitle": "Connect to self-hosted servers to share connections, credentials and plugins.",
+    "add": "Add",
+    "empty": "You don't have any organizations yet. Add one to get started.",
+    "active": "Active",
+    "switchTo": "Switch to this",
+    "currentlyActive": "Active organization",
+    "membersLabel": "Members",
+    "edit": "Edit",
+    "recheck": "Check connection",
+    "signOut": "Sign out",
+    "delete": "Delete locally",
+    "status": {
+      "online": "Online",
+      "offline": "Offline",
+      "checking": "Checking…"
+    },
+    "fields": {
+      "server": "Server",
+      "version": "Version",
+      "fingerprint": "TLS fingerprint",
+      "role": "Your role",
+      "user": "User",
+      "membersCount": "{{count}} members",
+      "membersOne": "1 member",
+      "membersNone": "No members"
+    },
+    "roles": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "member": "Member",
+      "viewer": "Viewer",
+      "none": "—"
+    },
+    "deleteConfirm": {
+      "title": "Delete organization?",
+      "body": "{{name}} and all its local data will be removed from this machine. The remote server is not affected.",
+      "cancel": "Cancel",
+      "confirm": "Delete"
+    },
+    "editModal": {
+      "title": "Edit organization",
+      "namePlaceholder": "Organization name",
+      "accentLabel": "Accent color",
+      "iconLabel": "Icon URL",
+      "save": "Save",
+      "cancel": "Cancel"
+    },
+    "toasts": {
+      "deleted": "Organization deleted",
+      "deleteFailed": "Could not delete",
+      "saved": "Changes saved",
+      "switchOk": "Active organization: {{name}}",
+      "recheckOk": "Connection live",
+      "recheckFail": "Server unreachable"
+    },
+    "select": "Select an organization on the left to see details.",
+    "members": {
+      "back": "Back",
+      "title": "{{name}} · Members",
+      "invite": "Invite",
+      "cancel": "Cancel",
+      "generate": "Generate",
+      "close": "Close",
+      "role": "Role",
+      "ttl": "Expires in (hours)",
+      "loading": "Loading…",
+      "empty": "No members.",
+      "kick": "Kick {{email}}?",
+      "kickToast": "Member removed",
+      "roleChanged": "Role updated",
+      "inviteGenerate": "Generate invite",
+      "inviteShare": "Share this link. Valid for {{ttl}}h and single-use.",
+      "inviteCopied": "Copied",
+      "errorPrefix": "Error"
+    },
+    "invitePage": {
+      "title": "Organization invite",
+      "invalidLink": "Invalid invitation link.",
+      "loading": "Loading invite…",
+      "joinAs": "You'll join as {{role}}",
+      "cancel": "Cancel",
+      "join": "Join",
+      "joinedToast": "Joined organization"
+    },
+    "wizard": {
+      "title": "Add organization",
+      "stepInput": "Enter the server IP or domain.",
+      "stepPreview": "Confirm server details.",
+      "stepLogin": "Sign in to the server.",
+      "discovered": "Discovered on your network",
+      "addressPlaceholder": "example.com  or  192.168.1.10:8787",
+      "cancel": "Cancel",
+      "next": "Next",
+      "back": "Back",
+      "noProviders": "Server does not expose OAuth providers.",
+      "noProvidersBlock": "Login required — server exposes no OAuth providers.",
+      "signInToServer": "Sign in",
+      "addedToast": "Organization added",
+      "selectProvider": "Pick a provider to sign in to {{name}}."
+    }
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "subtitle": "Customize shortcuts. Changes apply on app restart.",
+    "search": "Search shortcuts…",
+    "reset": "Reset",
+    "resetAll": "Reset all",
+    "rebind": "Rebind",
+    "pressKeys": "Press the keys…",
+    "cancel": "Cancel",
+    "save": "Save",
+    "custom": "Custom",
+    "default": "Default",
+    "categories": {
+      "navigation": "Navigation",
+      "tabs": "Tabs",
+      "query": "Queries",
+      "view": "View",
+      "window": "Window"
+    },
+    "actions": {
+      "commandPalette": "Open command palette",
+      "openSettings": "Open Settings",
+      "focusSearch": "Focus search",
+      "toggleSidebar": "Toggle sidebar",
+      "toggleInspector": "Toggle inspector",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "zoomReset": "Reset zoom",
+      "switchOrg": "Switch organization",
+      "newTab": "New tab",
+      "closeTab": "Close tab",
+      "closeOtherTabs": "Close other tabs",
+      "closeAllTabs": "Close all tabs",
+      "pinTab": "Pin/unpin tab",
+      "jumpToTab": "Jump to tab N",
+      "runQuery": "Run query",
+      "cancelQuery": "Cancel query"
+    },
+    "notes": {
+      "rebindHelp": "This action uses the OS shortcut and cannot be modified.",
+      "restartRequired": "Some changes require restarting the app."
+    }
+  },
+  "localServer": {
+    "title": "Local server",
+    "subtitle": "Embedded daemon. Your data lives here; the client never touches disk.",
+    "navLabel": "Local server",
+    "status": {
+      "bind": "Bind",
+      "uptime": "Uptime"
+    },
+    "config": {
+      "title": "Configuration",
+      "port": "Port",
+      "portHint": "Takes effect after restarting the server.",
+      "lan": "Share on LAN",
+      "lanHint": "Bind 0.0.0.0 + self-signed TLS. Allows access from other devices on your network.",
+      "autostart": "Autostart at OS login",
+      "autostartHint": "Persistent daemon via LaunchAgent (macOS), systemd-user (Linux) or Task Scheduler (Windows)."
+    },
+    "actions": {
+      "start": "Start",
+      "stop": "Stop",
+      "restart": "Restart",
+      "viewLogs": "View logs"
+    },
+    "logs": {
+      "title": "Logs (last 200 lines)",
+      "clear": "Clear"
+    },
+    "plugins": {
+      "title": "Plugins",
+      "subtitle": "Upload a plugin binary (.so/.dylib/.dll) to the local server directory.",
+      "upload": "Upload plugin",
+      "uploadHint": "Plugin lands in plugins/ on the local server and shows up after a rescan.",
+      "choose": "Choose file…",
+      "serverStopped": "Server stopped",
+      "serverStoppedHint": "Start the server to upload plugins."
+    },
+    "toasts": {
+      "started": "Local server started",
+      "startFail": "Failed to start",
+      "stopped": "Server stopped",
+      "restarted": "Server restarted",
+      "autostartOn": "Autostart enabled",
+      "autostartOff": "Autostart disabled",
+      "tokenWarnTitle": "Token not rotated",
+      "tokenWarnBody": "Autostart uses the current token. Restart the server to reflect changes.",
+      "uploadOk": "Plugin uploaded",
+      "uploadFail": "Upload failed"
+    }
+  }
+}

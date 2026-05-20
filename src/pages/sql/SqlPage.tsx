@@ -1,6 +1,6 @@
 
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronLeft, ChevronRight, Copy, Loader2, Pencil, RefreshCw, Table, Trash2, X, Zap } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, Download, Loader2, Pencil, Plus, RefreshCw, Table, Trash2, X, XCircle, Zap } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "@/lib/router-compat";
 import { useSessionsStore, type SqlSession } from "@/store/sessions";
@@ -9,6 +9,7 @@ import type { Connection, TableResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AutocompleteInput, getWordAtPos, type GetSuggestions, type SuggestionItem, type SuggestionResult } from "@/components/autocomplete-input";
 import { Modal } from "@/components/modal";
+import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/code-editor";
 import { QueryTimings, type TimingEntry } from "@/components/query-timings";
 import {
@@ -24,6 +25,9 @@ import {
 import { ArrowDown, ArrowUp, ArrowUpDown, Eye } from "lucide-react";
 
 const PAGE_SIZE = 100;
+
+const SQL_TOOL_BTN =
+  "inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded-md border border-border-subtle bg-surface-elevated px-3 text-body font-medium text-text transition-colors duration-150 hover:border-border-strong hover:bg-surface-hover disabled:pointer-events-none disabled:opacity-50";
 
 type ExplainResult = {
   planning_ms: number;
@@ -98,6 +102,7 @@ function SqlPage() {
 
   const [connection, setConnection] = useState<Connection | null>(null);
   const [result, setResult] = useState<TableResult | null>(null);
+  const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
   const [prevQueryMs, setPrevQueryMs] = useState<number | null>(null);
   const [renderMs, setRenderMs] = useState<number | null>(null);
   const [timingHistory, setTimingHistory] = useState<TimingEntry[]>([]);
@@ -154,6 +159,7 @@ function SqlPage() {
   } | null>(null);
   const [rowDelete, setRowDelete] = useState<{ pkValue: string | number } | null>(null);
   const [actionStatus, setActionStatus] = useState<string | null>(null);
+  const [selectedRowIdx, setSelectedRowIdx] = useState<number | null>(null);
 
   function rowToRecord(row: (string | number | boolean | null)[]): Record<string, unknown> {
     const cols = result?.columns ?? [];
@@ -162,6 +168,44 @@ function SqlPage() {
       out[c] = row[i] ?? null;
     });
     return out;
+  }
+
+  function openRowInsert() {
+    if (!result) return;
+    // Seed the editor with an empty record: column names as keys, null values.
+    // Use a sentinel pkValue so the save path knows it's an insert (delete_row
+    // would never match). Save handler treats `pkValue === ""` as INSERT.
+    const obj: Record<string, unknown> = {};
+    for (const c of result.columns) obj[c] = null;
+    setRowEditor({
+      pkValue: "",
+      json: JSON.stringify(obj, null, 2),
+      saving: false,
+      error: null,
+    });
+  }
+
+  /** Serialize the current page rows to CSV and trigger a download. */
+  function exportCsv() {
+    if (!result) return;
+    const escape = (v: unknown): string => {
+      if (v == null) return "";
+      const s = typeof v === "string" ? v : JSON.stringify(v);
+      if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+    const header = result.columns.map(escape).join(",");
+    const body = result.rows
+      .map((row) => result.columns.map((_, i) => escape(row[i])).join(","))
+      .join("\n");
+    const csv = `${header}\n${body}\n`;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${table}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   function openRowEdit(row: (string | number | boolean | null)[]) {
@@ -222,8 +266,9 @@ function SqlPage() {
         pkValue: rowEditor.pkValue,
         values: parsed,
       });
+      const wasInsert = rowEditor.pkValue === "";
       setRowEditor(null);
-      setActionStatus("Fila actualizada");
+      setActionStatus(wasInsert ? "Fila insertada" : "Fila actualizada");
       setTimeout(() => setActionStatus(null), 1500);
       retry();
     } catch (e) {
@@ -248,7 +293,7 @@ function SqlPage() {
   const pageNum = stackIdx + 1;
 
   const columnSuggestions: SuggestionItem[] = useMemo(
-    () => (result?.columns ?? []).map((col) => ({ label: col, hint: "col", color: "text-zinc-600" })),
+    () => (result?.columns ?? []).map((col) => ({ label: col, hint: "col", color: "text-text-faint" })),
     [result?.columns]
   );
 
@@ -299,6 +344,7 @@ function SqlPage() {
     setExplainOpen(false);
     setExplainData(null);
     setIndexes([]);
+    setSelectedRowIdx(null);
   }, [db, table]);
 
   useEffect(() => {
@@ -351,6 +397,8 @@ function SqlPage() {
         const rMs = Math.max(0, totalMs - queryMs);
         setPrevQueryMs(result?.query_ms ?? null);
         setResult(res);
+        setSelectedRowIdx(null);
+        setLastLoadedAt(new Date());
         setRenderMs(rMs);
         setTimingHistory((prev) => {
           const next = [
@@ -444,11 +492,11 @@ function SqlPage() {
     return (
       <div className="flex h-full flex-col items-center justify-center p-8 text-center bg-black/20 relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(59,130,246,0.05)_0%,transparent_70%)]" />
-        <div className="grid h-16 w-16 place-items-center rounded-2xl border border-white/5 bg-zinc-900/50 text-zinc-400 shadow-2xl backdrop-blur-sm relative">
+        <div className="grid h-16 w-16 place-items-center rounded-2xl border border-border-subtle bg-surface-elevated/50 text-text-muted shadow-2xl backdrop-blur-sm relative">
           <Table className="h-8 w-8 text-blue-400/50" />
         </div>
-        <h2 className="mt-6 text-base font-medium text-white relative">Selecciona una tabla</h2>
-        <p className="mt-2 max-w-sm text-sm text-zinc-500 relative">
+        <h2 className="mt-6 text-h2 font-medium text-text relative">Selecciona una tabla</h2>
+        <p className="mt-2 max-w-sm text-h3 text-text-faint relative">
           Expande una base de datos en el panel izquierdo y haz clic en una tabla para ver sus datos.
         </p>
       </div>
@@ -464,16 +512,11 @@ function SqlPage() {
     <div className="flex h-full flex-col">
       {/* ── Filter area ── */}
       <div className={cn("relative shrink-0 border-b", sectionBorder)}>
-        <div className="flex items-center gap-2 px-3 py-2">
-          <span className={cn(
-            "shrink-0 rounded-md bg-violet-500/15 px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-widest text-violet-400 transition-opacity",
-            loading && appliedFilter ? "animate-pulse" : ""
-          )}>
-            where
-          </span>
+        <div className="flex items-center gap-2 px-4 py-2.5">
+          <span className="text-overline shrink-0">where</span>
           <div className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 rounded-lg border bg-zinc-950/60 px-2.5 py-1.5 transition-colors",
-            filterFocused ? "border-zinc-600" : "border-zinc-800/80"
+            "flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border bg-surface-sunken px-3 transition-colors",
+            filterFocused ? "border-border-focus ring-1 ring-accent-ring" : "border-border-subtle"
           )}>
             <AutocompleteInput
               value={filterInput}
@@ -481,63 +524,73 @@ function SqlPage() {
               onSubmit={applyFilter}
               getSuggestions={getSuggestions}
               placeholder="id > 100 AND active = true AND name = 'foo'"
-              className="min-w-0 flex-1 bg-transparent font-mono text-xs text-zinc-300 placeholder-zinc-700 outline-none"
+              className="min-w-0 flex-1 bg-transparent font-mono text-body text-text placeholder:text-text-faint outline-none"
               onFocusChange={setFilterFocused}
             />
             {filterInput && (
-              <button onClick={() => setFilterInput("")} className="shrink-0 text-zinc-600 transition-colors hover:text-zinc-400">
-                <X className="h-3 w-3" />
+              <button onClick={() => setFilterInput("")} className="shrink-0 text-text-faint transition-colors hover:text-text">
+                <X className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
-          {appliedFilter && (
-            <div className="flex shrink-0 items-center gap-1 rounded-full border border-yellow-500/30 bg-yellow-500/10 px-2.5 py-1">
-              <span className="max-w-32 truncate font-mono text-[10px] text-yellow-400">{appliedFilter}</span>
-              <button onClick={clearFilter} className="shrink-0 text-yellow-600 transition-colors hover:text-yellow-300">
-                <X className="h-2.5 w-2.5" />
+          {appliedFilter && appliedFilter !== filterInput && (
+            <div className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-accent/40 bg-accent-soft px-2.5">
+              <span className="text-overline text-accent/70">Activo</span>
+              <span className="max-w-32 truncate font-mono text-body text-accent">{appliedFilter}</span>
+              <button onClick={clearFilter} className="shrink-0 text-accent transition-opacity hover:opacity-70" title="Limpiar filtro">
+                <X className="h-3 w-3" />
               </button>
             </div>
           )}
-          <button
+          <Button
             onClick={applyFilter}
             disabled={loading}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/80 px-3 py-1.5 text-[10px] font-medium text-zinc-300 transition-all hover:border-zinc-500 hover:bg-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            variant="primary"
+            size="md"
           >
-            {loading && appliedFilter ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+            {loading && appliedFilter ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
             {loading && appliedFilter ? "Buscando" : "Aplicar"}
-          </button>
+          </Button>
         </div>
 
         {loading && appliedFilter && (
           <div className="absolute bottom-0 left-0 h-px w-full overflow-hidden">
-            <div className="h-full w-1/3 animate-[slide_1.2s_ease-in-out_infinite] bg-violet-500/70" />
+            <div className="h-full w-1/3 animate-[slide_1.2s_ease-in-out_infinite] bg-accent" />
           </div>
         )}
 
         {/* Column chips */}
         {columnSuggestions.length > 0 && (
-          <div className="flex items-center gap-1 overflow-x-auto px-3 pb-2 scrollbar-none">
-            <span className="shrink-0 pr-1 text-[10px] uppercase tracking-wider text-zinc-600">Columnas</span>
-            <span className="mx-1 h-3 w-px shrink-0 bg-zinc-800" />
+          <div className="flex items-center gap-1.5 overflow-x-auto px-4 pb-2.5 scrollbar-none">
+            <span className="text-overline shrink-0 pr-1">Columnas</span>
+            <span className="mx-1 h-3 w-px shrink-0 bg-border-subtle" />
             {columnSuggestions.map(({ label }) => {
               const meta = colMeta.get(label);
+              const stripeCls = meta?.primary
+                ? "bg-accent"
+                : meta?.unique
+                  ? "bg-info"
+                  : meta?.indexed
+                    ? "bg-text-faint"
+                    : "";
+              const titleSuffix = meta?.primary
+                ? " · Primary Key"
+                : meta?.unique
+                  ? " · Unique"
+                  : meta?.indexed
+                    ? " · Indexed"
+                    : "";
               return (
                 <button
                   key={label}
                   onClick={() => insertColumn(label)}
-                  title={label + (meta?.primary ? " · PK" : meta?.unique ? " · UQ" : meta?.indexed ? " · IDX" : "")}
-                  className="group/chip flex shrink-0 items-center gap-1 rounded-full border border-zinc-800/70 bg-zinc-900/40 py-0.5 pl-2 pr-1 transition-all hover:border-zinc-600 hover:bg-zinc-800/70"
+                  title={`${label}${titleSuffix}`}
+                  className="group/chip relative inline-flex h-7 shrink-0 items-center gap-1.5 overflow-hidden rounded-md border border-border-subtle bg-surface-elevated pl-3 pr-2.5 transition-colors hover:border-border-strong hover:bg-surface-hover"
                 >
-                  <span className="font-mono text-[10.5px] text-zinc-300 transition-colors group-hover/chip:text-zinc-100">
-                    {label}
-                  </span>
-                  {meta?.primary ? (
-                    <ColTag accent="blue">PK</ColTag>
-                  ) : meta?.unique ? (
-                    <ColTag accent="purple">UQ</ColTag>
-                  ) : meta?.indexed ? (
-                    <ColTag accent="zinc">IDX</ColTag>
-                  ) : null}
+                  {stripeCls && (
+                    <span className={cn("absolute left-0 top-0 h-full w-1", stripeCls)} aria-hidden />
+                  )}
+                  <span className="text-body-mono text-text">{label}</span>
                 </button>
               );
             })}
@@ -545,67 +598,167 @@ function SqlPage() {
         )}
       </div>
 
-      {/* ── Breadcrumb ── */}
-      <div className={cn("flex h-10 shrink-0 items-center gap-2 border-b px-4", sectionBorder)}>
-        <span className="text-xs text-zinc-500">{db}</span>
-        <span className="text-xs text-zinc-700">/</span>
-        <span className="text-xs font-medium text-zinc-200">{table}</span>
+      {/* ── Stats + actions toolbar ── */}
+      {!error && !loading && result && (
+      <div className={cn("flex h-12 shrink-0 items-center gap-3 border-b px-4", sectionBorder)}>
         {result && (
-          <span className="ml-2 rounded-md bg-indigo-500/15 border border-indigo-500/30 px-2 py-0.5 text-[10px] font-bold text-indigo-400 shadow-sm shadow-indigo-900/20">
-            Cargadas: {result.rows.length} | Total: {result.is_estimated ? "~" : ""}{result.total.toLocaleString()}
-          </span>
+          <div className="flex items-baseline gap-1 text-body">
+            <span className="font-mono font-semibold text-text">{result.rows.length}</span>
+            {result.total >= 0 && (
+              <span className="font-mono text-text-faint">
+                / {result.is_estimated ? "~" : ""}{result.total.toLocaleString()}
+              </span>
+            )}
+            <span className="ml-1 text-text-muted">filas</span>
+          </div>
         )}
         {result?.query_ms != null && !loading && (
-          <QueryTimings
-            queryMs={result.query_ms}
-            renderMs={renderMs}
-            history={timingHistory}
-          />
+          <>
+            <span className="text-text-faint">·</span>
+            <QueryTimings
+              queryMs={result.query_ms}
+              renderMs={renderMs}
+              history={timingHistory}
+            />
+          </>
         )}
-        <div className="ml-auto flex items-center gap-1.5">
-          {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-500" />}
+        {result && selectedRowIdx != null && result.rows[selectedRowIdx] && (
+          <>
+            <span className="text-text-faint">·</span>
+            <div className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-accent/40 bg-accent-soft pl-2.5 pr-1 text-body">
+              <span className="font-medium text-accent">Fila {selectedRowIdx + 1}</span>
+              <span className="mx-1 h-4 w-px bg-accent/30" />
+              <button
+                onClick={() => copyRowJson(result.rows[selectedRowIdx])}
+                title="Copiar fila JSON"
+                className="inline-flex h-6 items-center gap-1.5 rounded px-2 text-body font-medium text-text transition-colors hover:bg-surface-hover"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Copiar
+              </button>
+              <button
+                onClick={() => openRowEdit(result.rows[selectedRowIdx])}
+                disabled={!result.pk_column}
+                title={result.pk_column ? "Editar fila" : "Sin PK no editable"}
+                className="inline-flex h-6 items-center gap-1.5 rounded px-2 text-body font-medium text-text transition-colors hover:bg-surface-hover disabled:pointer-events-none disabled:opacity-50"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Editar
+              </button>
+              <button
+                onClick={() => {
+                  if (!result.pk_column) return;
+                  const pkIdx = result.columns.indexOf(result.pk_column);
+                  setRowDelete({ pkValue: result.rows[selectedRowIdx][pkIdx] as string | number });
+                }}
+                disabled={!result.pk_column}
+                title={result.pk_column ? "Eliminar fila" : "Sin PK no eliminable"}
+                className="inline-flex h-6 items-center gap-1.5 rounded px-2 text-body font-medium text-danger transition-colors hover:bg-danger-soft disabled:pointer-events-none disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Eliminar
+              </button>
+              <button
+                onClick={() => setSelectedRowIdx(null)}
+                title="Deseleccionar"
+                className="inline-flex h-6 w-6 items-center justify-center rounded text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          {loading && <Loader2 className="h-4 w-4 animate-spin text-text-faint" />}
           {result && (
-            <button
-              onClick={runExplain}
-              disabled={explainLoading}
-              title="Explain query"
-              className={cn(
-                "flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-medium transition-colors disabled:opacity-40",
-                explainOpen
-                  ? "border-violet-500/40 bg-violet-500/10 text-violet-400"
-                  : "border-zinc-700/60 bg-zinc-800/60 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+            <>
+              <button onClick={openRowInsert} title="Insertar fila" className={SQL_TOOL_BTN}>
+                <Plus className="h-3.5 w-3.5" />
+                Insertar
+              </button>
+              <button onClick={exportCsv} title="Exportar página actual a CSV" className={SQL_TOOL_BTN}>
+                <Download className="h-3.5 w-3.5" />
+                CSV
+              </button>
+              <button
+                onClick={runExplain}
+                disabled={explainLoading}
+                title="Explain query"
+                className={cn(
+                  SQL_TOOL_BTN,
+                  explainOpen && "border-accent/40 bg-accent-soft text-accent hover:bg-accent-soft",
+                )}
+              >
+                {explainLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                Explain
+              </button>
+            </>
+          )}
+          {result && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setColMenuOpen((v) => !v)}
+                title="Mostrar/ocultar columnas"
+                className={cn(SQL_TOOL_BTN, "w-8 px-0", colMenuOpen && "border-accent/40 bg-accent-soft text-accent")}
+              >
+                <Eye className="h-3.5 w-3.5" />
+              </button>
+              {colMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setColMenuOpen(false)} />
+                  <div className="absolute right-0 top-full z-40 mt-1 max-h-72 w-56 overflow-auto rounded-md border border-border-subtle bg-surface-overlay p-2 shadow-xl">
+                    <p className="text-overline mb-1">Columnas</p>
+                    {tableInstance.getAllLeafColumns().map((c) => (
+                      <label
+                        key={c.id}
+                        className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-caption text-text hover:bg-surface-hover"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={c.getIsVisible()}
+                          onChange={c.getToggleVisibilityHandler()}
+                          className="h-3 w-3 accent-accent"
+                        />
+                        <span className="truncate font-mono">{c.id}</span>
+                      </label>
+                    ))}
+                  </div>
+                </>
               )}
-            >
-              {explainLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
-              Explain
-            </button>
+            </div>
           )}
           <button
             onClick={retry}
             disabled={loading}
-            title="Actualizar"
-            className="rounded p-1 text-zinc-600 transition-colors hover:bg-zinc-800 hover:text-zinc-300 disabled:opacity-40"
+            title={
+              lastLoadedAt
+                ? `Actualizar · última carga ${lastLoadedAt.toLocaleTimeString()}`
+                : "Actualizar"
+            }
+            className={cn(SQL_TOOL_BTN, "w-8 px-0")}
           >
             <RefreshCw className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
+      )}
 
       {/* ── Explain panel ── */}
       {explainOpen && (
         <div className={cn("shrink-0 border-b", sectionBorder)}>
-          <div className="flex items-center justify-between border-b border-zinc-800/50 px-4 py-2">
+          <div className="flex items-center justify-between border-b border-border-subtle/50 px-4 py-2">
             <div className="flex items-center gap-3 text-[10px]">
-              <span className="font-semibold uppercase tracking-wider text-zinc-500">Explain</span>
+              <span className="font-semibold uppercase tracking-wider text-text-faint">Explain</span>
               {explainData && (
                 <>
-                  <span className="text-zinc-400">Planning <span className="text-white">{explainData.planning_ms.toFixed(2)}ms</span></span>
-                  <span className="text-zinc-400">Execution <span className={cn("font-medium", explainData.execution_ms > 5000 ? "text-red-400" : explainData.execution_ms > 1000 ? "text-amber-400" : "text-emerald-400")}>{explainData.execution_ms >= 1000 ? `${(explainData.execution_ms / 1000).toFixed(2)}s` : `${explainData.execution_ms.toFixed(2)}ms`}</span></span>
+                  <span className="text-text-muted">Planning <span className="text-text">{explainData.planning_ms.toFixed(2)}ms</span></span>
+                  <span className="text-text-muted">Execution <span className={cn("font-medium", explainData.execution_ms > 5000 ? "text-red-400" : explainData.execution_ms > 1000 ? "text-amber-400" : "text-emerald-400")}>{explainData.execution_ms >= 1000 ? `${(explainData.execution_ms / 1000).toFixed(2)}s` : `${explainData.execution_ms.toFixed(2)}ms`}</span></span>
                 </>
               )}
-              {explainLoading && <Loader2 className="h-3 w-3 animate-spin text-zinc-500" />}
+              {explainLoading && <Loader2 className="h-3 w-3 animate-spin text-text-faint" />}
             </div>
-            <button onClick={() => setExplainOpen(false)} className="text-zinc-600 transition-colors hover:text-zinc-300">
+            <button onClick={() => setExplainOpen(false)} className="text-text-faint transition-colors hover:text-text">
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -619,7 +772,7 @@ function SqlPage() {
                   {(explainData.seq_scans ?? []).map((s, i) => (
                     <div key={i} className="mb-1 text-[10px]">
                       <span className="font-mono text-amber-300">{s.relation}</span>
-                      {s.filter && <span className="ml-1 text-zinc-500 truncate block max-w-48">{s.filter}</span>}
+                      {s.filter && <span className="ml-1 text-text-faint truncate block max-w-48">{s.filter}</span>}
                     </div>
                   ))}
                 </div>
@@ -627,17 +780,17 @@ function SqlPage() {
               {(explainData.seq_scans ?? []).length === 0 && (
                 <div className="min-w-36 p-3">
                   <p className="text-[9px] font-semibold uppercase tracking-wider text-emerald-500">✓ Index scan</p>
-                  <p className="mt-1 text-[10px] text-zinc-500">No seq scans</p>
+                  <p className="mt-1 text-[10px] text-text-faint">No seq scans</p>
                 </div>
               )}
 
               {/* Indexes */}
               <div className="min-w-0 flex-1 p-3">
-                <p className="mb-1.5 text-[9px] font-semibold uppercase tracking-wider text-zinc-500">Índices ({indexes.length})</p>
-                {indexes.length === 0 && <p className="text-[10px] text-zinc-600">Ninguno</p>}
+                <p className="mb-1.5 text-[9px] font-semibold uppercase tracking-wider text-text-faint">Índices ({indexes.length})</p>
+                {indexes.length === 0 && <p className="text-[10px] text-text-faint">Ninguno</p>}
                 <div className="flex flex-wrap gap-1.5">
                   {indexes.map((idx) => (
-                    <span key={idx.name} className="flex items-center gap-1 rounded border border-zinc-800 bg-zinc-900/60 px-2 py-0.5 font-mono text-[9px] text-zinc-400">
+                    <span key={idx.name} className="flex items-center gap-1 rounded border border-border-subtle bg-surface-elevated/60 px-2 py-0.5 font-mono text-[9px] text-text-muted">
                       {idx.primary && <span className="rounded bg-blue-500/20 px-1 text-[8px] text-blue-400">PK</span>}
                       {idx.unique && !idx.primary && <span className="rounded bg-purple-500/20 px-1 text-[8px] text-purple-400">UQ</span>}
                       {idx.name}
@@ -649,8 +802,8 @@ function SqlPage() {
               {/* Full plan */}
               <div className="p-3">
                 <details>
-                  <summary className="cursor-pointer text-[9px] font-semibold uppercase tracking-wider text-zinc-600 hover:text-zinc-400">Plan completo</summary>
-                  <pre className="mt-2 max-h-48 max-w-sm overflow-auto rounded border border-zinc-800 bg-zinc-950 p-2 text-[9px] text-zinc-400">{JSON.stringify(explainData.plan, null, 2)}</pre>
+                  <summary className="cursor-pointer text-[9px] font-semibold uppercase tracking-wider text-text-faint hover:text-text-muted">Plan completo</summary>
+                  <pre className="mt-2 max-h-48 max-w-sm overflow-auto rounded border border-border-subtle bg-surface p-2 text-[9px] text-text-muted">{JSON.stringify(explainData.plan, null, 2)}</pre>
                 </details>
               </div>
             </div>
@@ -660,51 +813,23 @@ function SqlPage() {
 
       <div className="min-h-0 flex-1 overflow-auto">
         {error && (
-          <div className="flex items-center gap-3 p-4 text-xs text-red-400">
-            <span>{error}</span>
-            <button
-              onClick={retry}
-              className="rounded border border-red-500/30 px-2 py-1 transition-colors hover:bg-red-500/10"
-            >
+          <div className="mx-auto mt-4 flex w-full max-w-3xl items-start gap-3 rounded-md border border-danger/40 bg-danger-soft p-4">
+            <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-danger" />
+            <div className="min-w-0 flex-1">
+              <p className="text-body font-medium text-danger">Error al ejecutar la consulta</p>
+              <p className="text-body-mono mt-1 break-all text-danger/80">{error}</p>
+            </div>
+            <Button variant="secondary" size="sm" onClick={retry}>
               Reintentar
-            </button>
+            </Button>
           </div>
         )}
-        {result && result.columns.length > 0 && (
-          <div className="relative">
-            <div className="absolute right-2 top-2 z-20">
-              <button
-                type="button"
-                onClick={() => setColMenuOpen((v) => !v)}
-                className="rounded-md border border-zinc-800/80 bg-zinc-900/80 p-1 text-zinc-400 backdrop-blur hover:border-zinc-600 hover:text-zinc-200"
-                title="Mostrar/ocultar columnas"
-              >
-                <Eye className="h-3.5 w-3.5" />
-              </button>
-              {colMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-30" onClick={() => setColMenuOpen(false)} />
-                  <div className="absolute right-0 top-full z-40 mt-1 max-h-72 w-56 overflow-auto rounded-md border border-zinc-800 bg-zinc-950 p-2 shadow-2xl">
-                    <p className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">Columnas</p>
-                    {tableInstance.getAllLeafColumns().map((c) => (
-                      <label
-                        key={c.id}
-                        className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[11px] text-zinc-300 hover:bg-zinc-900"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={c.getIsVisible()}
-                          onChange={c.getToggleVisibilityHandler()}
-                          className="h-3 w-3 accent-blue-500"
-                        />
-                        <span className="truncate font-mono">{c.id}</span>
-                      </label>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-            <table className="border-collapse text-xs" style={{ width: tableInstance.getTotalSize() }}>
+        {loading && !error && (
+          <SqlTableSkeleton columns={result?.columns ?? null} />
+        )}
+        {!loading && !error && result && result.columns.length > 0 && (
+          <div>
+            <table className="w-full border-collapse text-body" style={{ minWidth: tableInstance.getTotalSize() }}>
               <thead className="sticky top-0 z-10">
                 {tableInstance.getHeaderGroups().map((hg) => (
                   <tr key={hg.id}>
@@ -717,7 +842,7 @@ function SqlPage() {
                           colSpan={h.colSpan}
                           style={{ width: h.getSize() }}
                           className={cn(
-                            "group/h relative border-b border-r px-3 py-2 text-left font-medium whitespace-nowrap text-zinc-400 select-none",
+                            "group/h relative border-b border-r px-3 py-2 text-left font-medium whitespace-nowrap text-text-muted select-none",
                             sectionBorder,
                             panel,
                           )}
@@ -727,21 +852,21 @@ function SqlPage() {
                             onClick={h.column.getToggleSortingHandler()}
                           >
                             {meta?.primary && (
-                              <span className="rounded px-1 py-px text-[8px] font-bold uppercase tracking-wider bg-blue-950 text-blue-300 border border-blue-800/60">PK</span>
+                              <span className="text-tiny rounded border border-accent/40 bg-accent-soft px-1 py-px font-bold uppercase tracking-wider text-accent">PK</span>
                             )}
                             {!meta?.primary && meta?.unique && (
-                              <span className="rounded px-1 py-px text-[8px] font-bold uppercase tracking-wider bg-purple-950 text-purple-300 border border-purple-800/60">UQ</span>
+                              <span className="text-tiny rounded border border-info/40 bg-info-soft px-1 py-px font-bold uppercase tracking-wider text-info">UQ</span>
                             )}
                             {!meta?.primary && !meta?.unique && meta?.indexed && (
-                              <span className="rounded px-1 py-px text-[8px] font-bold uppercase tracking-wider bg-zinc-800 text-zinc-400 border border-zinc-700/60">IDX</span>
+                              <span className="text-tiny rounded border border-border-strong/60 bg-surface-sunken px-1 py-px font-bold uppercase tracking-wider text-text-muted">IDX</span>
                             )}
                             <span className="truncate">{flexRender(h.column.columnDef.header, h.getContext())}</span>
                             {sortDir === "asc" ? (
-                              <ArrowUp className="h-3 w-3 text-blue-400" />
+                              <ArrowUp className="h-3 w-3 text-accent" />
                             ) : sortDir === "desc" ? (
-                              <ArrowDown className="h-3 w-3 text-blue-400" />
+                              <ArrowDown className="h-3 w-3 text-accent" />
                             ) : (
-                              <ArrowUpDown className="h-3 w-3 text-zinc-700 opacity-0 group-hover/h:opacity-100" />
+                              <ArrowUpDown className="h-3 w-3 text-text-faint opacity-0 group-hover/h:opacity-100" />
                             )}
                           </div>
                           {h.column.getCanResize() && (
@@ -750,22 +875,33 @@ function SqlPage() {
                               onTouchStart={h.getResizeHandler()}
                               className={cn(
                                 "absolute right-0 top-0 h-full w-1.5 cursor-col-resize select-none touch-none",
-                                h.column.getIsResizing() ? "bg-blue-500/60" : "hover:bg-zinc-700",
+                                h.column.getIsResizing() ? "bg-accent" : "hover:bg-surface-active",
                               )}
                             />
                           )}
                         </th>
                       );
                     })}
-                    <th className={cn("sticky right-0 z-10 w-10 border-b px-2 py-2 text-right whitespace-nowrap text-zinc-500", sectionBorder, panel)}>·</th>
                   </tr>
                 ))}
               </thead>
               <tbody>
                 {tableInstance.getRowModel().rows.map((tableRow) => {
                   const row = tableRow.original;
+                  const rowIdx = tableRow.index;
+                  const isSelected = selectedRowIdx === rowIdx;
                   return (
-                    <tr key={tableRow.id} className="group border-b border-zinc-800/40 transition-colors hover:bg-zinc-900/50">
+                    <tr
+                      key={tableRow.id}
+                      aria-selected={isSelected}
+                      onClick={() => setSelectedRowIdx((cur) => (cur === rowIdx ? null : rowIdx))}
+                      className={cn(
+                        "group cursor-pointer border-b border-border-subtle transition-colors",
+                        isSelected
+                          ? "bg-accent-soft hover:bg-accent-soft/80"
+                          : "hover:bg-surface-elevated/50",
+                      )}
+                    >
                       {tableRow.getVisibleCells().map((cellCtx) => {
                         const cell = cellCtx.getValue() as string | number | boolean | null;
                         return (
@@ -773,12 +909,12 @@ function SqlPage() {
                             key={cellCtx.id}
                             style={{ width: cellCtx.column.getSize() }}
                             className={cn(
-                              "border-r border-zinc-800/40 px-3 py-1.5",
-                              typeof cell === "number" ? "text-right font-mono text-blue-300/80" : "text-zinc-300",
+                              "border-r border-border-subtle px-3 py-1.5",
+                              typeof cell === "number" ? "text-right font-mono text-accent" : "text-text",
                             )}
                           >
                             {cell === null ? (
-                              <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-600">null</span>
+                              <span className="text-caption rounded bg-surface-sunken px-1.5 py-0.5 text-text-faint">null</span>
                             ) : (
                               <span className="block max-w-70 truncate font-mono" title={String(cell)}>
                                 {String(cell)}
@@ -787,32 +923,6 @@ function SqlPage() {
                           </td>
                         );
                       })}
-                      <td className="sticky right-0 bg-zinc-950/95 px-2 py-1 text-right">
-                        <div className="flex items-center justify-end gap-0.5 rounded-md border border-transparent p-0.5 opacity-0 transition-all group-hover:border-zinc-800/70 group-hover:bg-zinc-900/70 group-hover:opacity-100">
-                          <SqlRowBtn title="Copiar fila JSON" onClick={() => copyRowJson(row)}>
-                            <Copy className="h-3 w-3" />
-                          </SqlRowBtn>
-                          <SqlRowBtn
-                            disabled={!result.pk_column}
-                            title={result.pk_column ? "Editar fila" : "Sin PK no editable"}
-                            onClick={() => openRowEdit(row)}
-                          >
-                            <Pencil className="h-3 w-3" />
-                          </SqlRowBtn>
-                          <SqlRowBtn
-                            disabled={!result.pk_column}
-                            title={result.pk_column ? "Eliminar fila" : "Sin PK no eliminable"}
-                            danger
-                            onClick={() => {
-                              if (!result.pk_column) return;
-                              const pkIdx = result.columns.indexOf(result.pk_column);
-                              setRowDelete({ pkValue: row[pkIdx] as string | number });
-                            }}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </SqlRowBtn>
-                        </div>
-                      </td>
                     </tr>
                   );
                 })}
@@ -820,62 +930,71 @@ function SqlPage() {
             </table>
           </div>
         )}
-        {!loading && result && result.rows.length === 0 && (
-          <div className={cn("p-8 text-center text-xs", mutedText)}>Sin datos</div>
+        {!error && !loading && result && result.rows.length === 0 && (
+          <div className={cn("p-8 text-center text-body", mutedText)}>Sin datos</div>
         )}
       </div>
 
       {/* ── Pagination + Cancel ── */}
-      <div className={cn("flex h-10 shrink-0 items-center justify-between border-t px-4", sectionBorder)}>
-        <button
-          onClick={prevPage}
-          disabled={!canGoPrev || loading}
-          className="flex items-center gap-1 rounded px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-30"
-        >
-          <ChevronLeft className="h-3.5 w-3.5" />
-          Anterior
-        </button>
+      {/* Single-page guard: when total rows fit in one page and we know the
+          total exactly, hide the footer. Keep showing it while loading so the
+          cancel button stays reachable. */}
+      {!error && (loading ||
+        canGoPrev ||
+        canGoNext ||
+        (result?.is_estimated ?? false) ||
+        (result ? result.total > PAGE_SIZE : false)) && (
+        <div className={cn("flex h-10 shrink-0 items-center justify-between border-t px-4", sectionBorder)}>
+          <button
+            onClick={prevPage}
+            disabled={!canGoPrev || loading}
+            className="flex items-center gap-1 rounded px-2 py-1 text-body text-text-muted transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+            Anterior
+          </button>
 
-        <div className="flex items-center gap-2">
-          {loading && (
-            <button
-              onClick={cancelRequest}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/80 px-2.5 py-1 text-[10px] text-zinc-400 transition-all hover:border-red-500/40 hover:text-red-400"
-            >
-              <X className="h-3 w-3" />
-              Cancelar
-            </button>
-          )}
-          <span className="text-xs text-zinc-500">
-            Página {pageNum}
-            {result && !result.is_estimated
-              ? ` de ${Math.max(1, Math.ceil(result.total / PAGE_SIZE))}`
-              : ""}
-          </span>
+          <div className="flex items-center gap-2">
+            {loading && (
+              <button
+                onClick={cancelRequest}
+                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border-subtle bg-surface-elevated px-2 text-caption text-text-muted transition-colors hover:border-danger/40 hover:bg-danger-soft hover:text-danger"
+              >
+                <X className="h-3 w-3" />
+                Cancelar
+              </button>
+            )}
+            <span className="text-body text-text-faint">
+              Página {pageNum}
+              {result && !result.is_estimated
+                ? ` de ${Math.max(1, Math.ceil(result.total / PAGE_SIZE))}`
+                : ""}
+            </span>
+          </div>
+
+          <button
+            onClick={nextPage}
+            disabled={!canGoNext || loading}
+            className="flex items-center gap-1 rounded px-2 py-1 text-body text-text-muted transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            Siguiente
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
         </div>
-
-        <button
-          onClick={nextPage}
-          disabled={!canGoNext || loading}
-          className="flex items-center gap-1 rounded px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-30"
-        >
-          Siguiente
-          <ChevronRight className="h-3.5 w-3.5" />
-        </button>
-      </div>
+      )}
 
       {rowEditor && (
         <Modal onClose={() => !rowEditor.saving && setRowEditor(null)}>
-          <div className="flex max-h-[80vh] w-full max-w-3xl flex-col rounded-md border border-zinc-800 bg-zinc-950 shadow-xl">
-            <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-              <h2 className="text-sm font-medium text-zinc-100">
-                Editar fila — PK {String(rowEditor.pkValue)}
+          <div className="flex max-h-[80vh] w-full max-w-3xl flex-col rounded-lg border border-border-subtle bg-surface-overlay shadow-xl">
+            <div className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
+              <h2 className="text-h3 font-medium text-text">
+                {rowEditor.pkValue === "" ? "Insertar fila" : `Editar fila — PK ${String(rowEditor.pkValue)}`}
               </h2>
-              <button className="rounded p-1 text-zinc-500 hover:bg-zinc-800" onClick={() => setRowEditor(null)}>
-                ✕
+              <button className="rounded p-1 text-text-faint hover:bg-surface-hover hover:text-text" onClick={() => setRowEditor(null)}>
+                <X className="h-3.5 w-3.5" />
               </button>
             </div>
-            <div className="min-h-[50vh] flex-1 overflow-auto bg-zinc-950">
+            <div className="min-h-[50vh] flex-1 overflow-auto bg-surface">
               <CodeEditor
                 lang="json"
                 value={rowEditor.json}
@@ -884,23 +1003,15 @@ function SqlPage() {
               />
             </div>
             {rowEditor.error && (
-              <div className="border-t border-red-900/40 bg-red-950/30 px-4 py-2 text-xs text-red-300">{rowEditor.error}</div>
+              <div className="border-t border-danger/40 bg-danger-soft px-4 py-2 text-body text-danger">{rowEditor.error}</div>
             )}
-            <div className="flex justify-end gap-2 border-t border-zinc-800 px-4 py-3">
-              <button
-                className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
-                onClick={() => setRowEditor(null)}
-                disabled={rowEditor.saving}
-              >
+            <div className="flex justify-end gap-2 border-t border-border-subtle px-4 py-3">
+              <Button variant="secondary" size="sm" onClick={() => setRowEditor(null)} disabled={rowEditor.saving}>
                 Cancelar
-              </button>
-              <button
-                className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
-                onClick={performRowSave}
-                disabled={rowEditor.saving}
-              >
+              </Button>
+              <Button variant="primary" size="sm" onClick={performRowSave} disabled={rowEditor.saving}>
                 {rowEditor.saving ? "Guardando…" : "Guardar"}
-              </button>
+              </Button>
             </div>
           </div>
         </Modal>
@@ -908,23 +1019,23 @@ function SqlPage() {
 
       {rowDelete && (
         <Modal onClose={() => setRowDelete(null)}>
-          <div className="w-full max-w-md rounded-md border border-zinc-800 bg-zinc-950 p-5 shadow-xl">
-            <h2 className="text-sm font-medium text-zinc-100">¿Eliminar fila?</h2>
-            <p className="mt-2 break-all rounded bg-zinc-900 px-2 py-1 font-mono text-[11px] text-zinc-300">PK: {String(rowDelete.pkValue)}</p>
+          <div className="w-full max-w-md rounded-lg border border-border-subtle bg-surface-overlay p-5 shadow-xl">
+            <h2 className="text-h3 font-medium text-text">¿Eliminar fila?</h2>
+            <p className="text-body-mono mt-2 break-all rounded bg-surface-elevated px-2 py-1 text-text">PK: {String(rowDelete.pkValue)}</p>
             <div className="mt-4 flex justify-end gap-2">
-              <button className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800" onClick={() => setRowDelete(null)}>
+              <Button variant="secondary" size="sm" onClick={() => setRowDelete(null)}>
                 Cancelar
-              </button>
-              <button className="rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500" onClick={performRowDelete}>
+              </Button>
+              <Button variant="danger" size="sm" onClick={performRowDelete}>
                 Eliminar
-              </button>
+              </Button>
             </div>
           </div>
         </Modal>
       )}
 
       {actionStatus && (
-        <div className="fixed bottom-5 right-5 rounded-md border border-emerald-900/40 bg-emerald-950/40 px-3 py-2 text-xs text-emerald-300 shadow-xl">
+        <div className="text-body fixed bottom-5 right-5 rounded-md border border-success/40 bg-success-soft px-3 py-2 text-success shadow-xl">
           {actionStatus}
         </div>
       )}
@@ -932,48 +1043,50 @@ function SqlPage() {
   );
 }
 
-function ColTag({ accent, children }: { accent: "blue" | "purple" | "zinc"; children: React.ReactNode }) {
-  const cls =
-    accent === "blue"
-      ? "bg-blue-500/15 text-blue-300 ring-blue-500/30"
-      : accent === "purple"
-        ? "bg-purple-500/15 text-purple-300 ring-purple-500/30"
-        : "bg-zinc-700/40 text-zinc-300 ring-zinc-600/40";
+function SqlTableSkeleton({ columns }: { columns: string[] | null }) {
+  const cols = columns && columns.length > 0 ? columns : ["", "", "", ""];
+  const rowCount = 8;
   return (
-    <span className={cn("inline-flex h-4 items-center rounded-full px-1.5 text-[9px] font-semibold uppercase tracking-wider ring-1 ring-inset", cls)}>
-      {children}
-    </span>
+    <div className="relative" aria-busy="true" aria-label="Cargando">
+      <table className="w-full border-collapse text-body">
+        <thead className="sticky top-0 z-10">
+          <tr>
+            {cols.map((c, i) => (
+              <th
+                key={`${c}-${i}`}
+                className={cn(
+                  "border-b border-r px-3 py-2 text-left text-text-muted",
+                  sectionBorder,
+                  panel,
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="h-3 w-16 animate-pulse rounded bg-surface-elevated" />
+                </div>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: rowCount }).map((_, r) => (
+            <tr key={r} className="border-b border-border-subtle">
+              {cols.map((_c, ci) => (
+                <td key={ci} className="border-r border-border-subtle px-3 py-2">
+                  <span
+                    className="block h-3 animate-pulse rounded bg-surface-elevated"
+                    style={{ width: `${40 + ((r * 13 + ci * 27) % 50)}%`, animationDelay: `${(r * 60 + ci * 30) % 700}ms` }}
+                  />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
-function SqlRowBtn({
-  children,
-  onClick,
-  title,
-  disabled,
-  danger,
-}: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  title?: string;
-  disabled?: boolean;
-  danger?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      title={title}
-      className={cn(
-        "rounded p-1 text-zinc-400 transition-colors disabled:cursor-not-allowed disabled:opacity-30",
-        !disabled && (danger ? "hover:bg-red-950/60 hover:text-red-300" : "hover:bg-zinc-800 hover:text-zinc-100"),
-      )}
-    >
-      {children}
-    </button>
-  );
-}
+
 
 export default function SqlDataPage() {
   return (

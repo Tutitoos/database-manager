@@ -1,0 +1,598 @@
+{
+  "common": {
+    "back": "Atrás",
+    "data": "Datos",
+    "queries": "Consultas",
+    "metrics": "Métricas"
+  },
+  "nav": {
+    "dashboard": "Inicio",
+    "connections": "Conexiones",
+    "settings": "Ajustes"
+  },
+  "command": {
+    "placeholder": "Buscar conexiones, tablas, acciones…",
+    "noResults": "Sin resultados",
+    "group": {
+      "navigation": "Navegación",
+      "connections": "Conexiones",
+      "actions": "Acciones"
+    }
+  },
+  "appearance": {
+    "title": "Apariencia",
+    "subtitle": "Tema, color, densidad, fuente y zoom de la app.",
+    "theme": {
+      "title": "Tema",
+      "dark": "Oscuro",
+      "light": "Claro",
+      "system": "Sistema",
+      "midnight": "Midnight",
+      "sepia": "Sepia",
+      "solarized": "Solarized",
+      "schedule": "Horario",
+      "scheduleLabel": "Horario auto",
+      "scheduleDescription": "Cuándo cambiar entre claro y oscuro.",
+      "scheduleDark": "Oscuro",
+      "scheduleLight": "Claro"
+    },
+    "accent": {
+      "title": "Color de acento",
+      "cyan": "Cian",
+      "violet": "Violeta",
+      "emerald": "Esmeralda",
+      "amber": "Ámbar",
+      "rose": "Rosa",
+      "indigo": "Índigo",
+      "customTitle": "Color personalizado"
+    },
+    "density": {
+      "title": "Densidad",
+      "rowSpacing": "Espacio entre filas",
+      "rowSpacingDescription": "Compact ahorra espacio. Comfortable mejora la legibilidad.",
+      "compact": "Compacta",
+      "comfortable": "Cómoda"
+    },
+    "font": {
+      "title": "Fuente",
+      "label": "Tipografía de la interfaz",
+      "description": "System usa SF Pro en macOS. Mono recomendable para queries.",
+      "system": "Sistema (SF Pro)",
+      "inter": "Inter",
+      "mono": "Monoespaciada"
+    },
+    "zoom": {
+      "title": "Zoom",
+      "label": "Nivel de zoom",
+      "description": "{{percent}}% · ⌘= / ⌘- / ⌘0 para ajustes rápidos.",
+      "reset": "Reset"
+    },
+    "language": {
+      "title": "Idioma",
+      "label": "Idioma de la interfaz",
+      "description": "Aplica a menús, ajustes y mensajes del sistema.",
+      "es": "Español",
+      "en": "English"
+    }
+  },
+  "account": {
+    "title": "Mi cuenta",
+    "subtitle": "Perfil, sesión y datos personales.",
+    "profile": {
+      "title": "Perfil",
+      "notSignedIn": "No has iniciado sesión.",
+      "signIn": "Iniciar sesión",
+      "signOut": "Salir",
+      "providers": "Providers vinculados",
+      "noProviders": "Ninguno",
+      "localTitle": "Cuenta local",
+      "localBody": "local@dbm.local · Sin OAuth requerido"
+    },
+    "security": {
+      "title": "Seguridad",
+      "biometryGate": "Biometría disponible",
+      "biometrySupported": "Touch ID / Face ID detectado en este dispositivo.",
+      "biometryUnsupported": "Este dispositivo no expone biometría compatible.",
+      "forgetLabel": "Cerrar sesión y borrar bearer local",
+      "forgetDescription": "Elimina el token almacenado en el keychain y cierra la sesión. En el próximo arranque tendrás que volver a configurar la org.",
+      "forgetButton": "Borrar",
+      "forgotten": "Bearer local borrado.",
+      "biometryRestoreButton": "Restaurar con biometría",
+      "biometryRestoreOk": "Sesión restaurada",
+      "biometryRestoreNone": "No hay sesión guardada"
+    },
+    "sessions": {
+      "title": "Sesión actual",
+      "lastSync": "Última sync",
+      "never": "Nunca",
+      "thisDevice": "Este dispositivo",
+      "active": "Activa"
+    },
+    "danger": {
+      "title": "Zona peligrosa",
+      "exportLabel": "Exportar mis datos",
+      "exportDescription": "Descarga un JSON con tu perfil, conexiones y orgs (sin credenciales descifradas).",
+      "exportButton": "Exportar",
+      "deleteLabel": "Eliminar mi cuenta",
+      "deleteDescription": "Borra tu cuenta del servidor sync. Esta acción no se puede deshacer.",
+      "deleteButton": "Eliminar cuenta",
+      "deleteSoon": "Próximamente."
+    },
+    "toasts": {
+      "signedOut": "Sesión cerrada.",
+      "exportOk": "Datos exportados."
+    }
+  },
+  "metrics": {
+    "title": "Métricas",
+    "pg": {
+      "dbSize": "Tamaño DB",
+      "connections": "Conexiones",
+      "maxOf": "de {{n}} máx.",
+      "cacheHit": "Cache hit (acum.)",
+      "intervalCache": "intervalo: {{n}}%",
+      "tables": "Tablas",
+      "activeConnections": "Conexiones activas",
+      "cacheRatioInterval": "Cache hit ratio (%) por intervalo",
+      "tps": "Transacciones / s",
+      "writes": "Escrituras / s (ins+upd+del)",
+      "topTables": "Tablas más grandes",
+      "tableCol": "Tabla",
+      "sizeCol": "Tamaño"
+    },
+    "mongo": {
+      "data": "Datos",
+      "storage": "Almacenamiento",
+      "connections": "Conexiones",
+      "available": "{{n}} disponibles",
+      "memRss": "Memoria RSS",
+      "virtual": "{{n}} MB virtual",
+      "activeConnections": "Conexiones activas",
+      "memRssMb": "Memoria RSS (MB)",
+      "queriesWrites": "Queries + Escrituras / s",
+      "networkKb": "Red KB/s",
+      "collections": "Colecciones",
+      "collectionCol": "Colección",
+      "docsCol": "Documentos (~)"
+    },
+    "redis": {
+      "redis": "Redis",
+      "memUsed": "Memoria usada",
+      "totalKeys": "Total claves",
+      "connections": "Conexiones",
+      "memUsedMb": "Memoria usada (MB)",
+      "activeConnections": "Conexiones activas",
+      "commands": "Comandos / s",
+      "hitRate": "Keyspace hit rate (%)",
+      "channels": "Canales activos",
+      "patterns": "Patrones",
+      "shardChannels": "Shard channels",
+      "subscribedChannel": "Canal suscrito"
+    }
+  },
+  "auth": {
+    "requiredTitle": "Inicia sesión",
+    "requiredBody": "Para acceder a {{name}} debes autenticarte. Esta organización requiere OAuth.",
+    "continueWith": "Continuar con {{provider}}",
+    "noProviders": "Este servidor no tiene proveedores OAuth configurados. Pide al administrador que añada GITHUB_CLIENT_ID / GOOGLE_CLIENT_ID / etc al .env del server.",
+    "signedInToast": "Sesión iniciada"
+  },
+  "welcome": {
+    "title": "Bienvenido",
+    "subtitle": "Para empezar, elige dónde guardar tu data: en este equipo o en una organización remota.",
+    "localTitle": "Empezar local",
+    "localBody": "Arranca un server embebido en este equipo. Tu data vive solo aquí.",
+    "remoteTitle": "Conectar a remota",
+    "remoteBody": "Únete a un server self-hosted compartido con tu equipo.",
+    "portLabel": "Puerto del server local",
+    "portHelp": "Por defecto 18787. Cambia si está ocupado.",
+    "persistentLabel": "Mantener el server corriendo cuando cierre la app",
+    "startLocal": "Crear y arrancar",
+    "localReadyToast": "Server local listo"
+  },
+  "offline": {
+    "title": "Sin conexión al server",
+    "body": "No se puede contactar al server de {{name}}. Reintenta o revisa la configuración.",
+    "startLocal": "Arrancar server local",
+    "retry": "Reintentar",
+    "viewLogs": "Ver logs"
+  },
+  "migration": {
+    "title": "Migración importante",
+    "body": "Esta versión cambia el almacenamiento: toda tu data pasa a vivir en el server (local o remoto). Las conexiones, grupos y credenciales guardadas localmente se borrarán. Descarga un export antes de continuar.",
+    "counts": {
+      "connections": "Conexiones",
+      "groups": "Grupos",
+      "credentials": "Credenciales"
+    },
+    "export": "Descargar export JSON",
+    "exportAgain": "Volver a descargar",
+    "continue": "Continuar y borrar",
+    "exportFirst": "Descarga el JSON antes de continuar.",
+    "exportedToast": "Export descargado"
+  },
+  "errorBoundary": {
+    "title": "Algo se rompió",
+    "retry": "Reintentar",
+    "reload": "Recargar"
+  },
+  "sidebar": {
+    "favorites": "Favoritas",
+    "workspaces": "Workspaces",
+    "activeConnection": "Conexión activa",
+    "noConnection": "Sin conexión activa"
+  },
+  "inspector": {
+    "empty": "Selecciona una tabla, query o conexión para ver detalles aquí."
+  },
+  "login": {
+    "title": "Iniciar sesión",
+    "subtitle": "Sincroniza tus conexiones, carpetas y credenciales entre máquinas. La app funciona sin login.",
+    "orgFlowHint": "El login va por organización. Añade una para iniciar sesión contra su servidor.",
+    "addOrg": "Añadir organización",
+    "existingOrgs": "Organizaciones existentes",
+    "back": "Volver"
+  },
+  "home": {
+    "title": "Home",
+    "welcome": "Bienvenido de vuelta",
+    "stats": {
+      "total": "Conexiones totales",
+      "open": "Abiertas ahora",
+      "online": "Online",
+      "byProvider": "Por proveedor"
+    },
+    "workspace": {
+      "title": "Workspace activo",
+      "empty": "No hay conexiones en este workspace. Crea una para empezar.",
+      "viewAll": "Ver todas las conexiones"
+    },
+    "quickActions": {
+      "title": "Acciones rápidas",
+      "newConnection": "Nueva conexión",
+      "newConnectionDescription": "Conecta a PostgreSQL, MongoDB o Redis.",
+      "import": "Importar conexiones",
+      "importDescription": "Carga un JSON guardado previamente.",
+      "export": "Exportar conexiones",
+      "exportDescription": "Descarga las conexiones actuales como JSON."
+    },
+    "toasts": {
+      "exported": "Conexiones exportadas",
+      "imported": "Conexiones importadas",
+      "importFailed": "No se pudo importar"
+    }
+  },
+  "plugins": {
+    "title": "Plugins",
+    "subtitle": "Drivers de base de datos. Habilita, recarga o sincroniza con tu organización.",
+    "runtime": {
+      "title": "Ejecución de plugins",
+      "description": "Elige dónde se ejecuta el plugin al hacer queries: en tu app (subprocess local) o en el server (proxy REST).",
+      "label": "Ejecutar en el server",
+      "clientHint": "OFF: cada query lanza el plugin en este equipo. Menor latencia, expone credentials al cliente.",
+      "serverHint": "ON: el server ejecuta el plugin y devuelve los resultados via HTTP. Credentials no salen del server, mayor latencia.",
+      "toastOn": "Modo server-side activado",
+      "toastOff": "Modo cliente activado"
+    },
+    "metrics": {
+      "installed": "Instalados",
+      "enabled": "Habilitados",
+      "synced": "Sincronizados"
+    },
+    "tabs": {
+      "installed": "Instalados",
+      "sync": "Sincronización"
+    },
+    "search": "Buscar plugins…",
+    "rescan": "Re-escanear",
+    "select": "Selecciona un plugin para ver detalles.",
+    "empty": "No hay plugins instalados.",
+    "noMatches": "No hay plugins que coincidan con \"{{query}}\".",
+    "detail": {
+      "version": "Versión",
+      "status": "Estado",
+      "loaded": "Cargado",
+      "notLoaded": "No cargado",
+      "enabled": "Activo",
+      "disabled": "Inactivo",
+      "path": "Ruta",
+      "builtin": "Integrado",
+      "third": "Externo",
+      "capabilities": "Capacidades",
+      "settings": "Ajustes del plugin",
+      "noCapabilities": "Sin capacidades declaradas.",
+      "noSettings": "Este plugin no expone ajustes.",
+      "error": "Error",
+      "errorHint": "Ejecuta `pnpm plugins:build` para recompilar.",
+      "enable": "Habilitar",
+      "disable": "Deshabilitar",
+      "reload": "Recargar"
+    },
+    "sync": {
+      "title": "Plugins del servidor",
+      "subtitle": "Plugins distribuidos por la organización activa.",
+      "fetch": "Actualizar",
+      "empty": "El servidor no publica plugins.",
+      "noOrg": "No hay organización activa con servidor.",
+      "remoteVersion": "v{{version}}",
+      "checksum": "Checksum",
+      "install": "Instalar",
+      "unsigned": "Firma inválida — no se puede instalar"
+    },
+    "toasts": {
+      "rescanOk": "Plugins re-escaneados",
+      "reloadOk": "Plugin recargado",
+      "enabled": "Plugin habilitado",
+      "disabled": "Plugin deshabilitado",
+      "syncOk": "Plugins del servidor obtenidos",
+      "syncFail": "No se pudo sincronizar plugins",
+      "installOk": "{{name}} instalado",
+      "installFail": "No se pudo instalar el plugin"
+    }
+  },
+  "credentials": {
+    "title": "Credenciales",
+    "subtitle": "Cifradas en el server, compartidas con tu organización.",
+    "count": "{{count}} guardadas",
+    "search": "Buscar credenciales…",
+    "new": "Nueva",
+    "select": "Selecciona una credencial para ver detalles.",
+    "empty": {
+      "title": "Sin credenciales",
+      "body": "Crea tu primera credencial reutilizable. Se cifra en el server al guardarla.",
+      "cta": "Crear primera"
+    },
+    "noMatches": "No hay credenciales que coincidan con \"{{query}}\".",
+    "detail": {
+      "name": "Nombre",
+      "username": "Usuario",
+      "password": "Contraseña",
+      "updated": "Actualizada",
+      "created": "Creada",
+      "linkedConnections": "Conexiones que la usan",
+      "linkedEmpty": "Ninguna conexión usa esta credencial.",
+      "reveal": "Mostrar",
+      "hide": "Ocultar",
+      "copyUser": "Copiar usuario",
+      "copyPassword": "Copiar contraseña",
+      "duplicate": "Duplicar",
+      "edit": "Editar",
+      "delete": "Eliminar",
+      "save": "Guardar",
+      "cancel": "Cancelar"
+    },
+    "form": {
+      "newTitle": "Nueva credencial",
+      "editTitle": "Editar credencial",
+      "namePlaceholder": "Producción · API · Prod-DB",
+      "nameHint": "Etiqueta corta para identificarla.",
+      "usernamePlaceholder": "postgres",
+      "passwordPlaceholder": "••••••••",
+      "passwordHintCreate": "Se cifra antes de guardarse.",
+      "passwordHintEdit": "Déjalo vacío para no cambiarla.",
+      "required": "La contraseña es obligatoria.",
+      "saving": "Guardando…"
+    },
+    "deleteConfirm": {
+      "title": "¿Eliminar credencial?",
+      "body": "{{name}} dejará de estar disponible. Las conexiones vinculadas perderán el enlace y deberán reconfigurarse.",
+      "cancel": "Cancelar",
+      "confirm": "Eliminar"
+    },
+    "toasts": {
+      "saved": "Credencial guardada",
+      "deleted": "Credencial eliminada",
+      "duplicated": "Credencial duplicada",
+      "copiedUser": "Usuario copiado",
+      "copiedPassword": "Contraseña copiada"
+    },
+    "copySuffix": " (copia)"
+  },
+  "connections": {
+    "settingsTitle": "Conexiones",
+    "settingsSubtitle": "Preferencias del listado y comportamiento al abrir conexiones.",
+    "confirmDelete": "Confirmar antes de eliminar",
+    "confirmDeleteDescription": "Muestra un diálogo de confirmación al eliminar una conexión.",
+    "autoConnect": "Auto-conectar al abrir tab",
+    "autoConnectDescription": "Conecta inmediatamente al hacer click en una conexión guardada.",
+    "showBadges": "Mostrar contadores en sidebar",
+    "showBadgesDescription": "Badges numéricos con cantidad de items por carpeta.",
+    "restoreLastSession": "Reabrir última sesión al arrancar",
+    "restoreLastSessionDescription": "Restaura las pestañas abiertas al volver a abrir la app."
+  },
+  "orgs": {
+    "title": "Organizaciones",
+    "subtitle": "Conecta a servidores self-hosted para compartir conexiones, credenciales y plugins.",
+    "add": "Añadir",
+    "empty": "No tienes organizaciones todavía. Añade una para empezar.",
+    "active": "Activa",
+    "switchTo": "Cambiar a esta",
+    "currentlyActive": "Organización activa",
+    "membersLabel": "Miembros",
+    "edit": "Editar",
+    "recheck": "Verificar conexión",
+    "signOut": "Cerrar sesión",
+    "delete": "Eliminar localmente",
+    "status": {
+      "online": "Online",
+      "offline": "Offline",
+      "checking": "Comprobando…"
+    },
+    "fields": {
+      "server": "Servidor",
+      "version": "Versión",
+      "fingerprint": "Huella TLS",
+      "role": "Tu rol",
+      "user": "Usuario",
+      "membersCount": "{{count}} miembros",
+      "membersOne": "1 miembro",
+      "membersNone": "Sin miembros"
+    },
+    "roles": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "member": "Member",
+      "viewer": "Viewer",
+      "none": "—"
+    },
+    "deleteConfirm": {
+      "title": "¿Eliminar organización?",
+      "body": "{{name}} y todos sus datos locales asociados serán borrados de esta máquina. El servidor remoto no se ve afectado.",
+      "cancel": "Cancelar",
+      "confirm": "Eliminar"
+    },
+    "editModal": {
+      "title": "Editar organización",
+      "namePlaceholder": "Nombre de la organización",
+      "accentLabel": "Color de acento",
+      "iconLabel": "URL del icono",
+      "save": "Guardar",
+      "cancel": "Cancelar"
+    },
+    "toasts": {
+      "deleted": "Organización eliminada",
+      "deleteFailed": "No se pudo eliminar",
+      "saved": "Cambios guardados",
+      "switchOk": "Organización activa: {{name}}",
+      "recheckOk": "Conexión activa",
+      "recheckFail": "Sin conexión al servidor"
+    },
+    "select": "Selecciona una organización a la izquierda para ver los detalles.",
+    "members": {
+      "back": "Atrás",
+      "title": "{{name}} · Miembros",
+      "invite": "Invitar",
+      "cancel": "Cancelar",
+      "generate": "Generar",
+      "close": "Cerrar",
+      "role": "Rol",
+      "ttl": "Expira en (horas)",
+      "loading": "Cargando…",
+      "empty": "Sin miembros.",
+      "kick": "Expulsar a {{email}}?",
+      "kickToast": "Miembro expulsado",
+      "roleChanged": "Rol actualizado",
+      "inviteGenerate": "Generar invitación",
+      "inviteShare": "Comparte este enlace. Válido por {{ttl}}h y un solo uso.",
+      "inviteCopied": "Copiado",
+      "errorPrefix": "Error"
+    },
+    "invitePage": {
+      "title": "Invitación a organización",
+      "invalidLink": "Enlace de invitación inválido.",
+      "loading": "Cargando invitación…",
+      "joinAs": "Te unirás como {{role}}",
+      "cancel": "Cancelar",
+      "join": "Unirme",
+      "joinedToast": "Unido a organización"
+    },
+    "wizard": {
+      "title": "Añadir organización",
+      "stepInput": "Indica la IP o dominio del servidor.",
+      "stepPreview": "Confirma los detalles del servidor.",
+      "stepLogin": "Inicia sesión en el servidor.",
+      "discovered": "Descubiertos en tu red",
+      "addressPlaceholder": "ejemplo.com  ó  192.168.1.10:8787",
+      "cancel": "Cancelar",
+      "next": "Siguiente",
+      "back": "Atrás",
+      "noProviders": "El servidor no expone proveedores OAuth.",
+      "noProvidersBlock": "Login obligatorio — el servidor no expone proveedores OAuth.",
+      "signInToServer": "Iniciar sesión",
+      "addedToast": "Organización añadida",
+      "selectProvider": "Selecciona un proveedor para iniciar sesión en {{name}}."
+    }
+  },
+  "shortcuts": {
+    "title": "Atajos de teclado",
+    "subtitle": "Personaliza atajos. Los cambios se aplican al reiniciar la app.",
+    "search": "Buscar atajos…",
+    "reset": "Restablecer",
+    "resetAll": "Restablecer todos",
+    "rebind": "Rebind",
+    "pressKeys": "Pulsa los atajos…",
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "custom": "Personalizado",
+    "default": "Por defecto",
+    "categories": {
+      "navigation": "Navegación",
+      "tabs": "Pestañas",
+      "query": "Consultas",
+      "view": "Vista",
+      "window": "Ventana"
+    },
+    "actions": {
+      "commandPalette": "Abrir paleta de comandos",
+      "openSettings": "Abrir Ajustes",
+      "focusSearch": "Foco en búsqueda",
+      "toggleSidebar": "Mostrar/ocultar sidebar",
+      "toggleInspector": "Mostrar/ocultar inspector",
+      "zoomIn": "Aumentar zoom",
+      "zoomOut": "Reducir zoom",
+      "zoomReset": "Restablecer zoom",
+      "switchOrg": "Cambiar de organización",
+      "newTab": "Nueva pestaña",
+      "closeTab": "Cerrar pestaña",
+      "closeOtherTabs": "Cerrar otras pestañas",
+      "closeAllTabs": "Cerrar todas las pestañas",
+      "pinTab": "Pin/unpin pestaña",
+      "jumpToTab": "Saltar a pestaña N",
+      "runQuery": "Ejecutar consulta",
+      "cancelQuery": "Cancelar consulta"
+    },
+    "notes": {
+      "rebindHelp": "Esta acción usa el atajo del sistema operativo y no se puede modificar.",
+      "restartRequired": "Algunos cambios requieren reiniciar la app."
+    }
+  },
+  "localServer": {
+    "title": "Servidor local",
+    "subtitle": "Daemon embebido. Tu data vive aquí; el cliente no toca disco.",
+    "navLabel": "Servidor local",
+    "status": {
+      "bind": "Bind",
+      "uptime": "Uptime"
+    },
+    "config": {
+      "title": "Configuración",
+      "port": "Puerto",
+      "portHint": "Toma efecto al reiniciar el servidor.",
+      "lan": "Compartir en LAN",
+      "lanHint": "Bind 0.0.0.0 + TLS self-signed. Permite acceso desde otros equipos en tu red.",
+      "autostart": "Autostart en login del SO",
+      "autostartHint": "Daemon persistente vía LaunchAgent (macOS), systemd-user (Linux) o Task Scheduler (Windows)."
+    },
+    "actions": {
+      "start": "Iniciar",
+      "stop": "Detener",
+      "restart": "Reiniciar",
+      "viewLogs": "Ver logs"
+    },
+    "logs": {
+      "title": "Logs (últimas 200 líneas)",
+      "clear": "Limpiar"
+    },
+    "plugins": {
+      "title": "Plugins",
+      "subtitle": "Sube un binario plugin (.so/.dylib/.dll) al directorio del servidor local.",
+      "upload": "Subir plugin",
+      "uploadHint": "El plugin queda en plugins/ del servidor local y aparece tras un re-escaneo.",
+      "choose": "Elegir archivo…",
+      "serverStopped": "Servidor detenido",
+      "serverStoppedHint": "Inicia el servidor para subir plugins."
+    },
+    "toasts": {
+      "started": "Servidor local iniciado",
+      "startFail": "No se pudo iniciar",
+      "stopped": "Servidor detenido",
+      "restarted": "Servidor reiniciado",
+      "autostartOn": "Autostart habilitado",
+      "autostartOff": "Autostart deshabilitado",
+      "tokenWarnTitle": "Token no rotado",
+      "tokenWarnBody": "Autostart usa el token actual. Reinicia el servidor para reflejar cambios.",
+      "uploadOk": "Plugin subido",
+      "uploadFail": "Subida falló"
+    }
+  }
+}

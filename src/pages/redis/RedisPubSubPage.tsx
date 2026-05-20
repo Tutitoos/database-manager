@@ -117,27 +117,27 @@ export default function RedisPubSubPage({ connection }: { connection: Connection
   const activeMessages = messages.filter((m) => m.channel === activeChannel).reverse();
 
   return (
-    <div className="flex h-full w-full min-h-0 flex-1 bg-black/40">
-      <aside className="flex w-72 shrink-0 flex-col border-r border-white/5 bg-zinc-950/50">
-        <div className="flex h-14 shrink-0 items-center border-b border-white/5 px-5">
-          <span className="text-[10px] font-bold uppercase tracking-[.15em] text-zinc-500">
+    <div className="flex h-full w-full min-h-0 flex-1 bg-surface-sunken">
+      <aside className="flex w-72 shrink-0 flex-col border-r border-border-subtle bg-surface/50">
+        <div className="flex h-14 shrink-0 items-center border-b border-border-subtle px-5">
+          <span className="text-[10px] font-bold uppercase tracking-[.15em] text-text-faint">
             Suscripciones
           </span>
         </div>
         <div className="flex-1 overflow-y-auto p-3 space-y-1">
           {channels.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-white/10 p-6 text-center">
-              <p className="text-xs text-zinc-500">Sin suscripciones activas.</p>
+            <div className="rounded-xl border border-dashed border-border-strong p-6 text-center">
+              <p className="text-body text-text-faint">Sin suscripciones activas.</p>
             </div>
           ) : (
             channels.map((channel) => (
               <div
                 key={channel}
                 className={cn(
-                  "group flex items-center justify-between rounded-xl px-3 py-2.5 text-sm transition-all",
+                  "group flex items-center justify-between rounded-xl px-3 py-2.5 text-h3 transition-all",
                   activeChannel === channel
                     ? "bg-blue-500/10 text-blue-400 border border-blue-500/20 shadow-inner"
-                    : "border border-transparent text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+                    : "border border-transparent text-text-muted hover:bg-surface-hover hover:text-text"
                 )}
               >
                 <button
@@ -149,7 +149,7 @@ export default function RedisPubSubPage({ connection }: { connection: Connection
                 </button>
                 <button
                   onClick={() => unsubscribe(channel)}
-                  className="opacity-0 transition-opacity group-hover:opacity-100 text-zinc-500 hover:text-red-400 p-1"
+                  className="opacity-0 transition-opacity group-hover:opacity-100 text-text-faint hover:text-red-400 p-1"
                   title="Desuscribirse"
                 >
                   &times;
@@ -158,18 +158,18 @@ export default function RedisPubSubPage({ connection }: { connection: Connection
             ))
           )}
         </div>
-        <div className="shrink-0 border-t border-white/5 bg-white/[0.02] p-4 backdrop-blur-xl">
+        <div className="shrink-0 border-t border-border-subtle bg-white/[0.02] p-4 backdrop-blur-xl">
           <form onSubmit={subscribe} className="flex items-center gap-2">
             <Input
               value={newChannel}
               onChange={(e) => setNewChannel(e.target.value)}
               placeholder="Añadir canal..."
-              className="h-9 border-white/10 bg-black/50 text-sm focus-visible:ring-blue-500/50"
+              className="h-9 border-border-strong bg-black/50 text-h3 focus-visible:ring-blue-500/50"
             />
             <Button
               type="submit"
               variant="secondary"
-              className="h-9 w-9 shrink-0 p-0 border border-white/10 bg-white/5 hover:bg-white/10"
+              className="h-9 w-9 shrink-0 p-0 border border-border-strong bg-surface-hover hover:bg-surface-active"
               disabled={!newChannel.trim()}
             >
               <Plus className="h-4 w-4" />
@@ -178,17 +178,17 @@ export default function RedisPubSubPage({ connection }: { connection: Connection
         </div>
       </aside>
 
-      <main className="relative flex min-w-0 flex-1 flex-col bg-zinc-950/20">
+      <main className="relative flex min-w-0 flex-1 flex-col bg-surface/20">
         {activeChannel ? (
           <>
-            <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/5 bg-white/[0.02] px-6 backdrop-blur-md">
+            <div className="flex h-14 shrink-0 items-center justify-between border-b border-border-subtle bg-white/[0.02] px-6 backdrop-blur-md">
               <div className="flex items-center gap-3">
                 <div className="grid h-8 w-8 place-items-center rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/30">
                   <Radio className="h-4 w-4 animate-pulse" />
                 </div>
-                <h2 className="text-sm font-semibold text-zinc-100">{activeChannel}</h2>
+                <h2 className="text-h3 font-semibold text-text">{activeChannel}</h2>
               </div>
-              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1 text-xs text-zinc-400">
+              <div className="flex items-center gap-2 rounded-full border border-border-strong bg-surface-sunken px-3 py-1 text-body text-text-muted">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -200,23 +200,23 @@ export default function RedisPubSubPage({ connection }: { connection: Connection
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {activeMessages.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center text-center">
-                  <div className="grid h-16 w-16 place-items-center rounded-2xl border border-white/10 bg-white/5 text-zinc-500 shadow-inner">
+                  <div className="grid h-16 w-16 place-items-center rounded-2xl border border-border-strong bg-surface-hover text-text-faint shadow-inner">
                     <MessageSquare className="h-6 w-6" />
                   </div>
-                  <h3 className="mt-5 text-base font-medium text-white">Escuchando canal</h3>
-                  <p className="mt-2 text-sm text-zinc-500">
-                    Los mensajes publicados en <span className="font-mono text-zinc-300">{activeChannel}</span> aparecerán aquí en tiempo real.
+                  <h3 className="mt-5 text-h2 font-medium text-text">Escuchando canal</h3>
+                  <p className="mt-2 text-h3 text-text-faint">
+                    Los mensajes publicados en <span className="font-mono text-text">{activeChannel}</span> aparecerán aquí en tiempo real.
                   </p>
                 </div>
               ) : (
                 activeMessages.map((msg) => (
-                  <div key={msg.id} className="group relative rounded-2xl border border-white/5 bg-white/[0.03] p-4 shadow-sm transition-all hover:bg-white/[0.05]">
+                  <div key={msg.id} className="group relative rounded-2xl border border-border-subtle bg-white/[0.03] p-4 shadow-sm transition-all hover:bg-white/[0.05]">
                     <div className="mb-3 flex items-center justify-between">
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-2.5 py-0.5 text-[10px] font-medium text-zinc-400">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-black/30 px-2.5 py-0.5 text-[10px] font-medium text-text-muted">
                         <Radio className="h-3 w-3" />
                         {msg.channel}
                       </span>
-                      <span className="text-[10px] font-mono text-zinc-500">
+                      <span className="text-[10px] font-mono text-text-faint">
                         {msg.timestamp.toLocaleTimeString()}
                       </span>
                     </div>
@@ -225,14 +225,14 @@ export default function RedisPubSubPage({ connection }: { connection: Connection
                         const parsed = JSON.parse(msg.payload);
                         if (parsed !== null && typeof parsed === "object") {
                           return (
-                            <div className="rounded-xl border border-black/20 bg-black/40 p-4 shadow-inner">
+                            <div className="rounded-xl border border-black/20 bg-surface-sunken p-4 shadow-inner">
                               <JsonTree data={parsed as Record<string, unknown> | unknown[]} />
                             </div>
                           );
                         }
                       } catch {}
                       return (
-                        <pre className="whitespace-pre-wrap break-all rounded-xl border border-black/20 bg-black/40 p-4 font-mono text-xs text-zinc-300 shadow-inner">
+                        <pre className="whitespace-pre-wrap break-all rounded-xl border border-black/20 bg-surface-sunken p-4 font-mono text-body text-text shadow-inner">
                           {msg.payload}
                         </pre>
                       );
@@ -242,18 +242,18 @@ export default function RedisPubSubPage({ connection }: { connection: Connection
               )}
             </div>
 
-            <div className="shrink-0 border-t border-white/5 bg-white/[0.02] p-4 backdrop-blur-xl">
+            <div className="shrink-0 border-t border-border-subtle bg-white/[0.02] p-4 backdrop-blur-xl">
               <form onSubmit={publish} className="mx-auto flex max-w-4xl gap-3">
                 <Input
                   value={draftMessage}
                   onChange={(e) => setDraftMessage(e.target.value)}
                   placeholder={`Escribe un mensaje para ${activeChannel}...`}
-                  className="h-10 border-white/10 bg-black/50 font-mono text-sm shadow-inner focus-visible:ring-blue-500/50"
+                  className="h-10 border-border-strong bg-black/50 font-mono text-h3 shadow-inner focus-visible:ring-blue-500/50"
                 />
                 <Button
                   type="submit"
                   disabled={!draftMessage.trim()}
-                  className="h-10 bg-blue-600 px-6 text-white shadow-lg shadow-blue-900/20 transition-all hover:bg-blue-500 hover:shadow-blue-900/40"
+                  className="h-10 bg-blue-600 px-6 text-text shadow-lg shadow-blue-900/20 transition-all hover:bg-blue-500 hover:shadow-blue-900/40"
                 >
                   <Send className="mr-2 h-4 w-4" />
                   Publicar
@@ -263,11 +263,11 @@ export default function RedisPubSubPage({ connection }: { connection: Connection
           </>
         ) : (
           <div className="flex h-full flex-col items-center justify-center text-center">
-            <div className="grid h-16 w-16 place-items-center rounded-2xl border border-white/10 bg-white/5 text-zinc-500 shadow-inner">
+            <div className="grid h-16 w-16 place-items-center rounded-2xl border border-border-strong bg-surface-hover text-text-faint shadow-inner">
               <Radio className="h-6 w-6" />
             </div>
-            <h3 className="mt-5 text-lg font-semibold tracking-tight text-white">Pub/Sub</h3>
-            <p className="mt-2 max-w-sm text-sm text-zinc-500">
+            <h3 className="mt-5 text-h1 font-semibold tracking-tight text-text">Pub/Sub</h3>
+            <p className="mt-2 max-w-sm text-h3 text-text-faint">
               Selecciona o añade un canal en el panel izquierdo para empezar a enviar y recibir mensajes.
             </p>
           </div>

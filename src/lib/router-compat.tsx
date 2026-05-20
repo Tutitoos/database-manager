@@ -1,6 +1,7 @@
 import {
   Navigate as TsrNavigate,
   useNavigate as useTsrNavigate,
+  useParams as useTsrParams,
   useRouterState,
   useSearch,
 } from "@tanstack/react-router";
@@ -55,6 +56,10 @@ export function useNavigate() {
     }
     navigate({ to: pathname as never, search: search as never, replace: opts?.replace });
   };
+}
+
+export function useParams<T extends Record<string, string> = Record<string, string>>(): T {
+  return useTsrParams({ strict: false }) as unknown as T;
 }
 
 export function useLocation() {

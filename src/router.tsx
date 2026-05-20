@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import AppLayout from "./pages/AppLayout";
 import ConnectionsPage from "./pages/ConnectionsPage";
+import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
 import SqlLayout from "./pages/sql/SqlLayout";
 import SqlPage from "./pages/sql/SqlPage";
@@ -21,6 +22,13 @@ import GeneralPage from "./pages/settings/GeneralPage";
 import PluginsPage from "./pages/settings/PluginsPage";
 import AccountPage from "./pages/settings/AccountPage";
 import CredentialsPage from "./pages/settings/CredentialsPage";
+import AppearancePage from "./pages/settings/AppearancePage";
+import ShortcutsPage from "./pages/settings/ShortcutsPage";
+import OrganizationsPage from "./pages/settings/OrganizationsPage";
+import LocalServerPage from "./pages/settings/LocalServerPage";
+import MembersPage from "./pages/settings/MembersPage";
+import ConnectionsSettingsPage from "./pages/settings/ConnectionsSettingsPage";
+import InvitePage from "./pages/InvitePage";
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
@@ -28,7 +36,7 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   beforeLoad: () => {
-    throw redirect({ to: "/connections" });
+    throw redirect({ to: "/dashboard" });
   },
 });
 
@@ -42,6 +50,12 @@ const layoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "app",
   component: AppLayout,
+});
+
+const dashboardRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: "/dashboard",
+  component: DashboardPage,
 });
 
 const connectionsRoute = createRoute({
@@ -113,21 +127,64 @@ const settingsPluginsRoute = createRoute({
   path: "plugins",
   component: PluginsPage,
 });
+const settingsAppearanceRoute = createRoute({
+  getParentRoute: () => settingsLayoutRoute,
+  path: "appearance",
+  component: AppearancePage,
+});
+const settingsShortcutsRoute = createRoute({
+  getParentRoute: () => settingsLayoutRoute,
+  path: "shortcuts",
+  component: ShortcutsPage,
+});
+const settingsConnectionsRoute = createRoute({
+  getParentRoute: () => settingsLayoutRoute,
+  path: "connections",
+  component: ConnectionsSettingsPage,
+});
+const settingsOrganizationsRoute = createRoute({
+  getParentRoute: () => settingsLayoutRoute,
+  path: "organizations",
+  component: OrganizationsPage,
+});
+const settingsLocalServerRoute = createRoute({
+  getParentRoute: () => settingsLayoutRoute,
+  path: "local-server",
+  component: LocalServerPage,
+});
+const settingsOrgMembersRoute = createRoute({
+  getParentRoute: () => settingsLayoutRoute,
+  path: "organizations/$orgId/members",
+  component: MembersPage,
+});
+const inviteRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: "/invite",
+  component: InvitePage,
+});
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
   layoutRoute.addChildren([
+    dashboardRoute,
     connectionsRoute,
+    inviteRoute,
     sqlLayoutRoute.addChildren([sqlIndexRoute]),
     documentLayoutRoute.addChildren([documentIndexRoute]),
     redisLayoutRoute.addChildren([redisIndexRoute]),
     settingsLayoutRoute.addChildren([
       settingsIndexRoute,
       settingsGeneralRoute,
+      settingsAppearanceRoute,
+      settingsOrganizationsRoute,
+      settingsOrgMembersRoute,
+      settingsLocalServerRoute,
       settingsAccountRoute,
+      settingsConnectionsRoute,
       settingsCredentialsRoute,
       settingsPluginsRoute,
+      settingsShortcutsRoute,
     ]),
   ]),
 ]);
