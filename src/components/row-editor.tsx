@@ -1,7 +1,7 @@
-import { Code2, Copy, RotateCcw, Rows3, X } from "lucide-react";
+import { Code2, Copy, Rows3, RotateCcw, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
-import { Modal } from "@/components/modal";
 import { CodeEditor } from "@/components/code-editor";
 import { pushToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
@@ -34,7 +34,6 @@ interface Props {
   columns: string[];
   colMeta: Map<string, ColumnMeta>;
   columnsInfo: ColumnInfo[];
-  /** Initial values keyed by column name (used in edit mode). */
   initialValues: Record<string, RowValue>;
   saving: boolean;
   error: string | null;
@@ -42,7 +41,6 @@ interface Props {
   onSave: (values: Record<string, RowValue>) => void;
 }
 
-/** Pre-NULL bookkeeping columns when the DB will fill them via DEFAULT. */
 const AUTO_TIMESTAMP_RE = /(^|_)at$|^(created|updated|inserted|deleted)_at$/i;
 
 const NUMERIC_TYPES = new Set([
@@ -50,22 +48,14 @@ const NUMERIC_TYPES = new Set([
   "numeric", "decimal", "real", "double precision", "float4", "float8",
   "smallserial", "serial", "bigserial",
 ]);
-
 const BOOLEAN_TYPES = new Set(["boolean", "bool"]);
 const JSON_TYPES = new Set(["json", "jsonb"]);
+const LONG_TEXT_TYPES = new Set(["text", "varchar", "bytea", "xml"]);
 
-function isNumeric(t: string | undefined): boolean {
-  if (!t) return false;
-  return NUMERIC_TYPES.has(t.toLowerCase());
-}
-function isBoolean(t: string | undefined): boolean {
-  if (!t) return false;
-  return BOOLEAN_TYPES.has(t.toLowerCase());
-}
-function isJsonish(t: string | undefined): boolean {
-  if (!t) return false;
-  return JSON_TYPES.has(t.toLowerCase());
-}
+function isNumeric(t?: string) { return !!t && NUMERIC_TYPES.has(t.toLowerCase()); }
+function isBoolean(t?: string) { return !!t && BOOLEAN_TYPES.has(t.toLowerCase()); }
+function isJsonish(t?: string) { return !!t && JSON_TYPES.has(t.toLowerCase()); }
+function isLongText(t?: string) { return !!t && LONG_TEXT_TYPES.has(t.toLowerCase()); }
 
 export function RowEditor({
   mode,
@@ -82,7 +72,6 @@ export function RowEditor({
   onSave,
 }: Props) {
   const isInsert = mode === "insert";
-
   const infoByName = useMemo(() => {
     const map = new Map<string, ColumnInfo>();
     for (const c of columnsInfo) map.set(c.name, c);
@@ -95,10 +84,7 @@ export function RowEditor({
   }, [columns, isInsert, pkColumn]);
 
   const buildInitial = useMemo(() => {
-    return (): {
-      values: Record<string, RowValue>;
-      nulls: Record<string, boolean>;
-    } => {
+    return (): { values: Record<string, RowValue>; nulls: Record<string, boolean> } => {
       const values: Record<string, RowValue> = {};
       const nulls: Record<string, boolean> = {};
       for (const c of editable) {
@@ -109,22 +95,12 @@ export function RowEditor({
           nulls[c] = provided === null || provided === undefined;
           continue;
         }
-        // Insert defaults: pre-mark NULL only when the column is nullable OR
-        // has a server-side DEFAULT, since either path lets the row succeed
-        // without an explicit value. AUTO_TIMESTAMP_RE catches the common
-        // created_at / updated_at convention even on schemas that report
-        // nullable=false without a default expression.
         const nullable = info?.nullable !== false;
         const hasDefault = info?.default != null;
         const autoTs = AUTO_TIMESTAMP_RE.test(c);
         const preNull = nullable || hasDefault || autoTs;
-        if (preNull) {
-          nulls[c] = true;
-          values[c] = null;
-        } else {
-          nulls[c] = false;
-          values[c] = defaultEmpty(info?.type);
-        }
+        nulls[c] = preNull;
+        values[c] = preNull ? null : defaultEmpty(info?.type);
       }
       return { values, nulls };
     };
@@ -140,19 +116,16 @@ export function RowEditor({
   const saveRef = useRef<() => void>(() => undefined);
 
   function setValue(col: string, value: RowValue) {
-    setValues((prev) => ({ ...prev, [col]: value }));
+    setValues((p) => ({ ...p, [col]: value }));
+    if (nulls[col]) setNulls((n) => ({ ...n, [col]: false }));
     setValidation((v) => ({ ...v, [col]: "" }));
   }
-  function setNull(col: string, nextNull: boolean) {
-    setNulls((prev) => ({ ...prev, [col]: nextNull }));
-    if (nextNull) {
-      setValues((prev) => ({ ...prev, [col]: null }));
-    } else {
-      setValues((prev) => ({ ...prev, [col]: defaultEmpty(infoByName.get(col)?.type) }));
-    }
+  function toggleNull(col: string) {
+    const next = !nulls[col];
+    setNulls((p) => ({ ...p, [col]: next }));
+    setValues((p) => ({ ...p, [col]: next ? null : defaultEmpty(infoByName.get(col)?.type) }));
     setValidation((v) => ({ ...v, [col]: "" }));
   }
-
   function switchTo(next: "form" | "json") {
     if (next === view) return;
     if (next === "json") {
@@ -181,8 +154,6 @@ export function RowEditor({
     for (const c of editable) {
       const info = infoByName.get(c);
       const isNull = nulls[c];
-      // NOT NULL guard: only when the plugin tells us nullable=false AND
-      // there's no default to fall back on.
       const nullable = info?.nullable !== false;
       const hasDefault = info?.default != null;
       if (isNull && !nullable && !hasDefault) {
@@ -210,10 +181,7 @@ export function RowEditor({
   function buildPayload(): Record<string, RowValue> {
     const out: Record<string, RowValue> = {};
     for (const c of editable) {
-      if (nulls[c]) {
-        out[c] = null;
-        continue;
-      }
+      if (nulls[c]) { out[c] = null; continue; }
       const info = infoByName.get(c);
       const v = values[c];
       if (isNumeric(info?.type) && typeof v === "string") {
@@ -229,12 +197,8 @@ export function RowEditor({
   function handleSave() {
     if (view === "json") {
       let parsed: Record<string, RowValue>;
-      try {
-        parsed = JSON.parse(jsonDraft);
-      } catch (e) {
-        setJsonError(String(e));
-        return;
-      }
+      try { parsed = JSON.parse(jsonDraft); }
+      catch (e) { setJsonError(String(e)); return; }
       onSave(parsed);
       return;
     }
@@ -255,12 +219,10 @@ export function RowEditor({
   }
 
   function copyAsSql() {
-    const payload = view === "json"
-      ? safeParse(jsonDraft) ?? buildPayload()
-      : buildPayload();
+    const payload = view === "json" ? safeParse(jsonDraft) ?? buildPayload() : buildPayload();
     const sql = buildInsertSql(table, payload);
     navigator.clipboard.writeText(sql).catch(() => undefined);
-    pushToast({ level: "success", title: "SQL copiado", body: sql.slice(0, 80) + (sql.length > 80 ? "…" : "") });
+    pushToast({ level: "success", title: "SQL copiado", body: sql.slice(0, 100) + (sql.length > 100 ? "…" : "") });
   }
 
   useEffect(() => {
@@ -270,21 +232,32 @@ export function RowEditor({
         e.preventDefault();
         saveRef.current();
       }
+      if (e.key === "Escape" && !saving) {
+        e.preventDefault();
+        onCancel();
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [onCancel, saving]);
 
   const title = isInsert ? "Insertar fila" : `Editar fila — PK ${String(pkValue)}`;
   const hasMetadata = columnsInfo.length > 0;
 
-  return (
-    <Modal onClose={() => !saving && onCancel()}>
-      <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-lg border border-border-subtle bg-surface-overlay shadow-xl">
-        <header className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
-          <div className="flex items-center gap-2">
+  return createPortal(
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[100] flex justify-center">
+      <div
+        className={cn(
+          "pointer-events-auto flex w-full max-w-[1400px] flex-col rounded-t-xl border border-b-0 border-border-subtle bg-surface-overlay shadow-2xl",
+          "animate-in slide-in-from-bottom duration-200",
+        )}
+        style={{ maxHeight: "min(60vh, 720px)" }}
+      >
+        {/* Header */}
+        <header className="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-2.5">
+          <div className="flex min-w-0 items-center gap-2">
             <h2 className="text-h3 font-medium text-text">{title}</h2>
-            <span className="text-caption font-mono text-text-faint">{table}</span>
+            <span className="text-caption truncate font-mono text-text-faint">{table}</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="flex overflow-hidden rounded-md border border-border-subtle bg-surface text-caption">
@@ -309,123 +282,99 @@ export function RowEditor({
                 <Code2 className="h-3 w-3" /> JSON
               </button>
             </div>
-            <button
-              type="button"
-              onClick={copyAsSql}
-              title="Copiar como INSERT SQL"
-              className="rounded p-1 text-text-faint hover:bg-surface-hover hover:text-text"
-            >
+            <button type="button" onClick={copyAsSql} title="Copiar como INSERT SQL" className="rounded p-1 text-text-faint hover:bg-surface-hover hover:text-text">
               <Copy className="h-3.5 w-3.5" />
             </button>
-            <button
-              type="button"
-              onClick={handleReset}
-              title="Restablecer"
-              className="rounded p-1 text-text-faint hover:bg-surface-hover hover:text-text"
-            >
+            <button type="button" onClick={handleReset} title="Restablecer" className="rounded p-1 text-text-faint hover:bg-surface-hover hover:text-text">
               <RotateCcw className="h-3.5 w-3.5" />
             </button>
-            <button
-              className="rounded p-1 text-text-faint hover:bg-surface-hover hover:text-text"
-              onClick={onCancel}
-              disabled={saving}
-            >
+            <button className="rounded p-1 text-text-faint hover:bg-surface-hover hover:text-text" onClick={onCancel} disabled={saving}>
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
         </header>
 
+        {/* Body */}
         {view === "form" ? (
-          <div className="flex-1 space-y-3 overflow-auto px-4 py-4">
-            {editable.map((col) => {
-              const meta = colMeta.get(col);
-              const info = infoByName.get(col);
-              const isNull = nulls[col];
-              const required = info?.nullable === false && info?.default == null;
-              const value = values[col];
-              const err = validation[col];
-              return (
-                <div
-                  key={col}
-                  className={cn(
-                    "rounded-md border bg-surface-elevated transition-colors",
-                    err ? "border-danger/60" : "border-border-subtle",
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-2 px-3 pb-1.5 pt-2">
-                    <span className="text-body inline-flex items-center gap-1.5">
-                      <span className="font-mono text-text">{col}</span>
-                      {info?.type && (
-                        <span className="text-tiny rounded-sm bg-surface px-1.5 py-0.5 font-mono text-text-muted">
-                          {info.type}
-                        </span>
-                      )}
-                      {meta?.primary && (
-                        <span className="text-tiny rounded-sm bg-accent-soft px-1 py-0.5 font-semibold uppercase tracking-wider text-accent">
-                          PK
-                        </span>
-                      )}
-                      {meta?.unique && !meta.primary && (
-                        <span className="text-tiny rounded-sm bg-surface px-1 py-0.5 font-semibold uppercase tracking-wider text-text-muted">
-                          UQ
-                        </span>
-                      )}
-                      {required && (
-                        <span className="text-tiny font-semibold text-danger" title="NOT NULL">
-                          *
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 px-3 pb-2.5">
-                    <div className="flex-1">
-                      <FieldInput
-                        type={info?.type}
-                        value={value}
-                        onChange={(v) => setValue(col, v)}
-                        disabled={!!isNull}
-                        invalid={!!err}
-                        placeholder={info?.default != null ? `default: ${info.default}` : undefined}
-                      />
+          <div className="flex-1 overflow-auto">
+            <div className="grid grid-cols-1 gap-x-4 gap-y-2 px-4 py-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {editable.map((col) => {
+                const meta = colMeta.get(col);
+                const info = infoByName.get(col);
+                const isNull = nulls[col];
+                const required = info?.nullable === false && info?.default == null;
+                const value = values[col];
+                const err = validation[col];
+                const fullWidth = isJsonish(info?.type) || isLongText(info?.type) || (typeof value === "string" && (value.length > 80 || value.includes("\n")));
+                return (
+                  <div
+                    key={col}
+                    className={cn("flex flex-col gap-1", fullWidth && "sm:col-span-2 lg:col-span-3 xl:col-span-4")}
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-caption inline-flex min-w-0 items-center gap-1.5 truncate">
+                        <span className="truncate font-mono text-text">{col}</span>
+                        {info?.type && (
+                          <span className="text-tiny shrink-0 font-mono text-text-faint">{info.type}</span>
+                        )}
+                        {meta?.primary && (
+                          <span className="text-tiny shrink-0 rounded-sm bg-accent-soft px-1 font-semibold uppercase tracking-wider text-accent">PK</span>
+                        )}
+                        {meta?.unique && !meta.primary && (
+                          <span className="text-tiny shrink-0 rounded-sm bg-surface px-1 font-semibold uppercase tracking-wider text-text-muted">UQ</span>
+                        )}
+                        {required && (
+                          <span className="text-tiny shrink-0 font-semibold text-danger" title="NOT NULL">*</span>
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => toggleNull(col)}
+                        className={cn(
+                          "text-tiny shrink-0 rounded-sm px-1.5 py-0.5 font-semibold uppercase tracking-wider transition-colors",
+                          isNull
+                            ? "bg-accent-soft text-accent"
+                            : "bg-surface text-text-faint hover:bg-surface-hover hover:text-text-muted",
+                        )}
+                        title={isNull ? "Quitar NULL" : "Marcar NULL"}
+                      >
+                        NULL
+                      </button>
                     </div>
-                    <label className="text-caption inline-flex shrink-0 cursor-pointer items-center gap-1.5 text-text-muted">
-                      <input
-                        type="checkbox"
-                        checked={!!isNull}
-                        onChange={(e) => setNull(col, e.target.checked)}
-                        className="h-3 w-3 accent-accent"
-                      />
-                      NULL
-                    </label>
+                    <FieldInput
+                      type={info?.type}
+                      value={value}
+                      onChange={(v) => setValue(col, v)}
+                      disabled={!!isNull}
+                      invalid={!!err}
+                      placeholder={isNull ? "NULL" : info?.default != null ? `default: ${info.default}` : ""}
+                    />
+                    {err && <p className="text-tiny text-danger">{err}</p>}
                   </div>
-                  {err && <p className="text-caption px-3 pb-2 text-danger">{err}</p>}
-                </div>
-              );
-            })}
-            {editable.length === 0 && (
-              <p className="text-body p-4 text-text-muted">Esta tabla no tiene columnas editables.</p>
-            )}
-            {isInsert && pkColumn && (
-              <p className="text-caption text-text-faint">
-                La columna <span className="font-mono text-text">{pkColumn}</span> la asigna la base de datos.
-              </p>
-            )}
-            {!hasMetadata && editable.length > 0 && (
-              <p className="text-caption text-text-faint">
-                Sin metadatos del plugin — los campos NOT NULL no se validarán automáticamente.
-              </p>
-            )}
+                );
+              })}
+              {editable.length === 0 && (
+                <p className="text-body p-2 text-text-muted">Esta tabla no tiene columnas editables.</p>
+              )}
+            </div>
+            {(isInsert && pkColumn) || (!hasMetadata && editable.length > 0) ? (
+              <div className="border-t border-border-subtle bg-surface-elevated px-4 py-1.5 text-caption text-text-faint">
+                {isInsert && pkColumn && (
+                  <span>PK <span className="font-mono text-text-muted">{pkColumn}</span> la asigna la base de datos.</span>
+                )}
+                {!hasMetadata && editable.length > 0 && (
+                  <span className="ml-2">Sin metadatos del plugin — validación parcial.</span>
+                )}
+              </div>
+            ) : null}
           </div>
         ) : (
-          <div className="min-h-[50vh] flex-1 overflow-auto bg-surface">
+          <div className="min-h-[260px] flex-1 overflow-auto bg-surface">
             <CodeEditor
               lang="json"
               value={jsonDraft}
-              onChange={(v) => {
-                setJsonDraft(v);
-                setJsonError(null);
-              }}
-              minHeight="50vh"
+              onChange={(v) => { setJsonDraft(v); setJsonError(null); }}
+              minHeight="260px"
             />
           </div>
         )}
@@ -436,22 +385,22 @@ export function RowEditor({
           </div>
         )}
 
-        <footer className="flex items-center justify-between gap-2 border-t border-border-subtle px-4 py-3">
+        {/* Footer */}
+        <footer className="flex items-center justify-between gap-2 border-t border-border-subtle px-4 py-2.5">
           <span className="text-caption text-text-faint">
             <kbd className="rounded border border-border-subtle bg-surface px-1.5 py-0.5 font-mono">⌘S</kbd> guardar ·
             <kbd className="ml-1 rounded border border-border-subtle bg-surface px-1.5 py-0.5 font-mono">Esc</kbd> cerrar
           </span>
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={onCancel} disabled={saving}>
-              Cancelar
-            </Button>
+            <Button variant="secondary" size="sm" onClick={onCancel} disabled={saving}>Cancelar</Button>
             <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
               {saving ? "Guardando…" : "Guardar"}
             </Button>
           </div>
         </footer>
       </div>
-    </Modal>
+    </div>,
+    document.body,
   );
 }
 
@@ -463,7 +412,7 @@ function FieldInput({
   invalid,
   placeholder,
 }: {
-  type: string | undefined;
+  type?: string;
   value: RowValue;
   onChange: (v: RowValue) => void;
   disabled: boolean;
@@ -473,7 +422,7 @@ function FieldInput({
   if (isBoolean(type) || typeof value === "boolean") {
     const v = typeof value === "boolean" ? value : value === "true";
     return (
-      <label className="text-body inline-flex items-center gap-2">
+      <label className="text-body inline-flex h-7 items-center gap-2 rounded border border-border-subtle bg-surface px-2">
         <input
           type="checkbox"
           checked={v}
@@ -481,16 +430,15 @@ function FieldInput({
           onChange={(e) => onChange(e.target.checked)}
           className="h-3.5 w-3.5 accent-accent"
         />
-        <span className="text-text-muted">{v ? "true" : "false"}</span>
+        <span className="text-text-muted">{disabled ? "—" : v ? "true" : "false"}</span>
       </label>
     );
   }
   if (isNumeric(type)) {
-    const str = value == null ? "" : String(value);
     return (
       <input
         type="number"
-        value={str}
+        value={value == null ? "" : String(value)}
         disabled={disabled}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
@@ -499,11 +447,11 @@ function FieldInput({
     );
   }
   const str = value == null ? "" : String(value);
-  if (isJsonish(type) || str.length > 80 || str.includes("\n")) {
+  if (isJsonish(type) || isLongText(type) || str.length > 80 || str.includes("\n")) {
     return (
       <textarea
         value={str}
-        rows={Math.min(8, Math.max(3, str.split("\n").length))}
+        rows={Math.min(6, Math.max(2, str.split("\n").length))}
         disabled={disabled}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
@@ -523,9 +471,9 @@ function FieldInput({
   );
 }
 
-function inputCls(invalid: boolean): string {
+function inputCls(invalid: boolean) {
   return cn(
-    "text-body-mono w-full rounded border bg-surface px-2 py-1 text-text outline-none transition-colors",
+    "text-body-mono h-7 w-full rounded border bg-surface px-2 text-text outline-none transition-colors",
     invalid ? "border-danger focus:border-danger" : "border-border-subtle focus:border-accent",
   );
 }
