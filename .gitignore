@@ -22,3 +22,4 @@ server/data/
 bun.lock
 bun.lockb
 .claude/worktrees/
+src-tauri/binaries/

@@ -1,13 +1,14 @@
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use dbm_plugin_rpc::{fail, method_not_found, ok, serve, ConnectionParams, Handler, Request, Response};
 use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tokio_postgres::{Client, Config, NoTls, SimpleQueryMessage};
+use tokio_postgres::{CancelToken, Client, Config, NoTls, SimpleQueryMessage};
 
 static PK_CACHE: Lazy<Mutex<HashMap<String, String>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
@@ -115,6 +116,26 @@ struct DeleteRowEnvelope {
     pk_value: Value,
 }
 
+#[derive(Debug, Deserialize)]
+struct ExecuteQueryEnvelope {
+    #[serde(default)]
+    params: ConnectionParams,
+    #[serde(default)]
+    database: String,
+    #[serde(default)]
+    sql: String,
+    #[serde(default)]
+    query_id: String,
+    #[serde(default)]
+    cap: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CancelQueryEnvelope {
+    #[serde(default)]
+    query_id: String,
+}
+
 fn build_config(p: &ConnectionParams, database: &str) -> Config {
     let mut c = Config::new();
     c.host(&p.host);
@@ -194,9 +215,39 @@ async fn get_cached_pk(client: &Client, params: &ConnectionParams, db: &str, sch
 }
 
 async fn test_connection(p: &ConnectionParams) -> anyhow::Result<()> {
-    let client = connect(p, "").await?;
-    let _ = client.simple_query("SELECT 1").await?;
+    let client = connect(p, "")
+        .await
+        .map_err(|e| anyhow::anyhow!(humanize_pg_error(&e)))?;
+    client
+        .simple_query("SELECT 1")
+        .await
+        .map_err(|e| anyhow::anyhow!(humanize_pg_error(&anyhow::Error::from(e))))?;
     Ok(())
+}
+
+/// `tokio_postgres::Error::to_string()` collapses to bland strings like
+/// "db error" when the inner detail isn't promoted. Walk the cause chain
+/// instead so the caller (the desktop UI) shows the actual reason — wrong
+/// password, host unreachable, db missing, etc.
+fn humanize_pg_error(err: &anyhow::Error) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let top = err.to_string();
+    if !top.is_empty() {
+        parts.push(top);
+    }
+    let mut cause: Option<&dyn std::error::Error> = err.source();
+    while let Some(c) = cause {
+        let msg = c.to_string();
+        if !msg.is_empty() && !parts.iter().any(|p| p == &msg) {
+            parts.push(msg);
+        }
+        cause = c.source();
+    }
+    if parts.is_empty() {
+        "Error desconocido".into()
+    } else {
+        parts.join(": ")
+    }
 }
 
 async fn get_databases(p: &ConnectionParams) -> anyhow::Result<Vec<String>> {
@@ -253,6 +304,21 @@ async fn get_columns_meta(client: &Client, schema: &str, table: &str) -> Vec<Str
     rows.into_iter().map(|r| r.get::<_, String>(0)).collect()
 }
 
+async fn get_bool_columns(client: &Client, schema: &str, table: &str) -> HashSet<String> {
+    let rows = client
+        .query(
+            r#"
+            SELECT column_name FROM information_schema.columns
+            WHERE table_schema = $1 AND table_name = $2
+              AND data_type IN ('boolean', 'bool')
+            "#,
+            &[&schema, &table],
+        )
+        .await
+        .unwrap_or_default();
+    rows.into_iter().map(|r| r.get::<_, String>(0)).collect()
+}
+
 async fn get_table_data(env: DataEnvelope) -> anyhow::Result<Value> {
     let dbg = std::env::var("DBM_PG_TRACE").ok().as_deref() == Some("1");
     let t_total = Instant::now();
@@ -283,6 +349,7 @@ async fn get_table_data(env: DataEnvelope) -> anyhow::Result<Value> {
         let pk = get_cached_pk(&client, &meta_params, &meta_db, &meta_schema, &meta_table).await;
         if dbg { eprintln!("[pg] pk lookup       {:>5}ms  pk={:?}", t.elapsed().as_millis(), pk); }
         let _ = pk_tx.send(pk);
+        let bool_cols = get_bool_columns(&client, &meta_schema, &meta_table).await;
         let quoted_table = format!("{}.{}", quote_ident(&meta_schema), quote_ident(&meta_table));
         let count_q = if meta_where.is_empty() {
             format!(
@@ -299,16 +366,16 @@ async fn get_table_data(env: DataEnvelope) -> anyhow::Result<Value> {
         if dbg { eprintln!("[pg] count query     {:>5}ms", t.elapsed().as_millis()); }
         let msgs = match res {
             Ok(Ok(m)) => m,
-            _ => return Ok::<i64, anyhow::Error>(0),
+            _ => return Ok::<(i64, HashSet<String>), anyhow::Error>((0, bool_cols)),
         };
         for msg in msgs {
             if let SimpleQueryMessage::Row(row) = msg {
                 if let Some(s) = row.get(0) {
-                    if let Ok(n) = s.parse::<i64>() { return Ok(n); }
+                    if let Ok(n) = s.parse::<i64>() { return Ok((n, bool_cols)); }
                 }
             }
         }
-        Ok(0)
+        Ok((0, bool_cols))
     };
 
     let data_params = env.params.clone();
@@ -357,10 +424,11 @@ async fn get_table_data(env: DataEnvelope) -> anyhow::Result<Value> {
     };
 
     let (count_res, data_res) = tokio::join!(count_fut, data_fut);
-    let total = count_res?;
+    let (total, bool_cols) = count_res?;
     let (pk, msgs, query_ms) = data_res?;
 
     let mut columns_out: Vec<String> = Vec::new();
+    let mut bool_idx: Vec<bool> = Vec::new();
     let mut out_rows: Vec<Vec<Value>> = Vec::new();
     for msg in &msgs {
         if let SimpleQueryMessage::Row(row) = msg {
@@ -368,11 +436,22 @@ async fn get_table_data(env: DataEnvelope) -> anyhow::Result<Value> {
                 columns_out = (0..row.len())
                     .map(|i| row.columns().get(i).map(|c| c.name().to_string()).unwrap_or_default())
                     .collect();
+                bool_idx = columns_out.iter().map(|n| bool_cols.contains(n)).collect();
             }
             let mut r: Vec<Value> = Vec::with_capacity(row.len());
             for i in 0..row.len() {
                 r.push(match row.get(i) {
-                    Some(s) => Value::String(s.to_string()),
+                    Some(s) => {
+                        if *bool_idx.get(i).unwrap_or(&false) {
+                            match s {
+                                "t" => Value::Bool(true),
+                                "f" => Value::Bool(false),
+                                _ => Value::String(s.to_string()),
+                            }
+                        } else {
+                            Value::String(s.to_string())
+                        }
+                    }
                     None => Value::Null,
                 });
             }
@@ -689,15 +768,64 @@ async fn get_metrics(env: MetricsEnvelope) -> anyhow::Result<Value> {
     Ok(Value::Object(result))
 }
 
-async fn update_row(env: UpdateRowEnvelope) -> anyhow::Result<Value> {
-    if env.pk_column.is_empty() || env.pk_value.is_null() {
-        return Err(anyhow::anyhow!("pk_column and pk_value required"));
+fn is_empty_pk(v: &Value) -> bool {
+    match v {
+        Value::Null => true,
+        Value::String(s) => s.is_empty(),
+        _ => false,
     }
+}
+
+async fn update_row(env: UpdateRowEnvelope) -> anyhow::Result<Value> {
     if env.values.is_empty() {
-        return Err(anyhow::anyhow!("no columns to update"));
+        return Err(anyhow::anyhow!("no columns to write"));
     }
     let client = connect(&env.params, &env.database).await?;
     let (schema, table_name) = split_schema_table(&env.table);
+    let is_insert = is_empty_pk(&env.pk_value);
+
+    if is_insert {
+        // INSERT path: include only columns with non-null values so DB defaults apply.
+        let mut cols: Vec<String> = Vec::new();
+        let mut placeholders: Vec<String> = Vec::new();
+        let mut params: Vec<String> = Vec::new();
+        let mut idx = 1usize;
+        for (col, val) in env.values.iter() {
+            if val.is_null() {
+                continue;
+            }
+            if !env.pk_column.is_empty() && col == &env.pk_column && is_empty_pk(val) {
+                continue;
+            }
+            cols.push(quote_ident(col));
+            placeholders.push(format!("${idx}::text"));
+            params.push(json_to_text(val));
+            idx += 1;
+        }
+        let sql = if cols.is_empty() {
+            format!(
+                "INSERT INTO {}.{} DEFAULT VALUES",
+                quote_ident(&schema),
+                quote_ident(&table_name),
+            )
+        } else {
+            format!(
+                "INSERT INTO {}.{} ({}) VALUES ({})",
+                quote_ident(&schema),
+                quote_ident(&table_name),
+                cols.join(", "),
+                placeholders.join(", "),
+            )
+        };
+        let refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
+            params.iter().map(|s| s as &(dyn tokio_postgres::types::ToSql + Sync)).collect();
+        client.execute(&sql, &refs).await?;
+        return Ok(json!({ "ok": true, "inserted": true }));
+    }
+
+    if env.pk_column.is_empty() {
+        return Err(anyhow::anyhow!("pk_column required for update"));
+    }
     let mut sets: Vec<String> = Vec::new();
     let mut params: Vec<String> = Vec::new();
     let mut idx = 1usize;
@@ -759,6 +887,247 @@ fn json_to_text(v: &Value) -> String {
         Value::Number(n) => n.to_string(),
         _ => v.to_string(),
     }
+}
+
+fn cancel_token_registry() -> &'static tokio::sync::Mutex<HashMap<String, CancelToken>> {
+    static REG: OnceLock<tokio::sync::Mutex<HashMap<String, CancelToken>>> = OnceLock::new();
+    REG.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()))
+}
+
+fn pg_err_message(e: &tokio_postgres::Error) -> String {
+    if let Some(db) = e.as_db_error() {
+        let mut s = format!("{}: {}", db.severity(), db.message());
+        if let Some(detail) = db.detail() {
+            s.push_str(&format!("\nDETAIL: {detail}"));
+        }
+        if let Some(hint) = db.hint() {
+            s.push_str(&format!("\nHINT: {hint}"));
+        }
+        let code = db.code().code();
+        if !code.is_empty() {
+            s.push_str(&format!("\nSQLSTATE: {code}"));
+        }
+        s
+    } else {
+        e.to_string()
+    }
+}
+
+static SELECT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^\s*(SELECT|WITH)\b").unwrap());
+static LIMIT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\bLIMIT\b\s+\d+").unwrap());
+
+fn split_first_stmt(sql: &str) -> (String, bool) {
+    // Skip leading whitespace, then walk char-by-char honoring string/dollar/comment
+    // boundaries so a `;` inside a string literal or quoted identifier doesn't
+    // truncate the statement prematurely.
+    let bytes = sql.as_bytes();
+    let mut i = 0;
+    #[derive(Copy, Clone)]
+    enum St { Code, Single, Double, LineComment, BlockComment, Dollar }
+    let mut st = St::Code;
+    let mut end = bytes.len();
+    while i < bytes.len() {
+        let c = bytes[i] as char;
+        match st {
+            St::Code => match c {
+                '\'' => st = St::Single,
+                '"' => st = St::Double,
+                '-' if i + 1 < bytes.len() && bytes[i + 1] as char == '-' => st = St::LineComment,
+                '/' if i + 1 < bytes.len() && bytes[i + 1] as char == '*' => { st = St::BlockComment; i += 1; }
+                '$' => st = St::Dollar,
+                ';' => { end = i; break; }
+                _ => {}
+            },
+            St::Single => if c == '\'' { st = St::Code; },
+            St::Double => if c == '"' { st = St::Code; },
+            St::LineComment => if c == '\n' { st = St::Code; },
+            St::BlockComment => if c == '*' && i + 1 < bytes.len() && bytes[i + 1] as char == '/' { st = St::Code; i += 1; },
+            St::Dollar => if c == '$' { st = St::Code; },
+        }
+        i += 1;
+    }
+    let head = sql[..end].trim().to_string();
+    let tail_has_more = sql[end..].chars().any(|c| !c.is_whitespace() && c != ';');
+    (head, tail_has_more)
+}
+
+fn pg_cell_to_json(row: &tokio_postgres::Row, i: usize, ty: &tokio_postgres::types::Type) -> Value {
+    use tokio_postgres::types::Type;
+    match *ty {
+        Type::BOOL => row
+            .try_get::<_, Option<bool>>(i)
+            .ok()
+            .flatten()
+            .map(Value::Bool)
+            .unwrap_or(Value::Null),
+        Type::INT2 => row
+            .try_get::<_, Option<i16>>(i)
+            .ok()
+            .flatten()
+            .map(|n| json!(n))
+            .unwrap_or(Value::Null),
+        Type::INT4 => row
+            .try_get::<_, Option<i32>>(i)
+            .ok()
+            .flatten()
+            .map(|n| json!(n))
+            .unwrap_or(Value::Null),
+        Type::INT8 => row
+            .try_get::<_, Option<i64>>(i)
+            .ok()
+            .flatten()
+            .map(|n| json!(n))
+            .unwrap_or(Value::Null),
+        Type::FLOAT4 => row
+            .try_get::<_, Option<f32>>(i)
+            .ok()
+            .flatten()
+            .and_then(|n| serde_json::Number::from_f64(n as f64))
+            .map(Value::Number)
+            .unwrap_or(Value::Null),
+        Type::FLOAT8 => row
+            .try_get::<_, Option<f64>>(i)
+            .ok()
+            .flatten()
+            .and_then(serde_json::Number::from_f64)
+            .map(Value::Number)
+            .unwrap_or(Value::Null),
+        Type::JSON | Type::JSONB => row
+            .try_get::<_, Option<Value>>(i)
+            .ok()
+            .flatten()
+            .unwrap_or(Value::Null),
+        _ => row
+            .try_get::<_, Option<String>>(i)
+            .ok()
+            .flatten()
+            .map(Value::String)
+            .unwrap_or(Value::Null),
+    }
+}
+
+async fn execute_query(env: ExecuteQueryEnvelope) -> anyhow::Result<Value> {
+    let (mut stmt, extra) = split_first_stmt(&env.sql);
+    if stmt.is_empty() {
+        return Err(anyhow::anyhow!("empty SQL"));
+    }
+    let cap = env.cap.unwrap_or(1000).max(1);
+    let mut was_capped = false;
+    let is_select = SELECT_RE.is_match(&stmt);
+    if is_select && !LIMIT_RE.is_match(&stmt) {
+        stmt = format!("{stmt} LIMIT {cap}");
+        was_capped = true;
+    }
+
+    let client = connect(&env.params, &env.database).await?;
+    if !env.query_id.is_empty() {
+        let mut reg = cancel_token_registry().lock().await;
+        reg.insert(env.query_id.clone(), client.cancel_token());
+    }
+
+    let t0 = Instant::now();
+    let mut columns: Vec<String> = Vec::new();
+    let mut column_types: Vec<String> = Vec::new();
+    let mut rows: Vec<Vec<Value>> = Vec::new();
+    let mut affected: Option<i64> = None;
+
+    if is_select {
+        let result = tokio::time::timeout(Duration::from_secs(55), client.query(&stmt, &[])).await;
+
+        if !env.query_id.is_empty() {
+            let mut reg = cancel_token_registry().lock().await;
+            reg.remove(&env.query_id);
+        }
+
+        let typed_rows = match result {
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) => return Err(anyhow::anyhow!(pg_err_message(&e))),
+            Err(_) => return Err(anyhow::anyhow!("query timed out after 55s")),
+        };
+
+        if let Some(first) = typed_rows.first() {
+            columns = first
+                .columns()
+                .iter()
+                .map(|c| c.name().to_string())
+                .collect();
+            let col_types: Vec<tokio_postgres::types::Type> =
+                first.columns().iter().map(|c| c.type_().clone()).collect();
+            column_types = col_types.iter().map(|t| t.name().to_string()).collect();
+            for row in &typed_rows {
+                let mut r: Vec<Value> = Vec::with_capacity(row.len());
+                for i in 0..row.len() {
+                    let ty = col_types.get(i).cloned().unwrap_or(tokio_postgres::types::Type::TEXT);
+                    r.push(pg_cell_to_json(row, i, &ty));
+                }
+                rows.push(r);
+            }
+        }
+    } else {
+        let result = tokio::time::timeout(Duration::from_secs(55), client.simple_query(&stmt)).await;
+
+        if !env.query_id.is_empty() {
+            let mut reg = cancel_token_registry().lock().await;
+            reg.remove(&env.query_id);
+        }
+
+        let msgs = match result {
+            Ok(Ok(m)) => m,
+            Ok(Err(e)) => return Err(anyhow::anyhow!(pg_err_message(&e))),
+            Err(_) => return Err(anyhow::anyhow!("query timed out after 55s")),
+        };
+        for msg in &msgs {
+            match msg {
+                SimpleQueryMessage::Row(row) => {
+                    if columns.is_empty() {
+                        columns = (0..row.len())
+                            .map(|i| row.columns().get(i).map(|c| c.name().to_string()).unwrap_or_default())
+                            .collect();
+                    }
+                    let mut r: Vec<Value> = Vec::with_capacity(row.len());
+                    for i in 0..row.len() {
+                        r.push(match row.get(i) {
+                            Some(s) => Value::String(s.to_string()),
+                            None => Value::Null,
+                        });
+                    }
+                    rows.push(r);
+                }
+                SimpleQueryMessage::CommandComplete(n) => {
+                    affected = Some(*n as i64);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let query_ms = t0.elapsed().as_millis() as i64;
+
+    Ok(json!({
+        "columns": columns,
+        "column_types": column_types,
+        "rows": rows,
+        "total": rows.len() as i64,
+        "affected": affected,
+        "query_ms": query_ms,
+        "was_capped": was_capped,
+        "statement": stmt,
+        "extra_statements_discarded": extra,
+    }))
+}
+
+async fn cancel_query(env: CancelQueryEnvelope) -> anyhow::Result<Value> {
+    if env.query_id.is_empty() {
+        return Ok(json!({ "ok": true }));
+    }
+    let token = {
+        let mut reg = cancel_token_registry().lock().await;
+        reg.remove(&env.query_id)
+    };
+    if let Some(t) = token {
+        let _ = t.cancel_query(NoTls).await;
+    }
+    Ok(json!({ "ok": true }))
 }
 
 #[async_trait]
@@ -834,6 +1203,20 @@ impl Handler for PgHandler {
             },
             "delete_row" => match serde_json::from_value::<DeleteRowEnvelope>(req.params) {
                 Ok(env) => match delete_row(env).await {
+                    Ok(v) => ok(id, v),
+                    Err(e) => fail(id, e.to_string()),
+                },
+                Err(e) => fail(id, e.to_string()),
+            },
+            "execute_query" => match serde_json::from_value::<ExecuteQueryEnvelope>(req.params) {
+                Ok(env) => match execute_query(env).await {
+                    Ok(v) => ok(id, v),
+                    Err(e) => fail(id, e.to_string()),
+                },
+                Err(e) => fail(id, e.to_string()),
+            },
+            "cancel_query" => match serde_json::from_value::<CancelQueryEnvelope>(req.params) {
+                Ok(env) => match cancel_query(env).await {
                     Ok(v) => ok(id, v),
                     Err(e) => fail(id, e.to_string()),
                 },

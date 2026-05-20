@@ -81,6 +81,33 @@ jobs:
             cp target/x86_64-unknown-linux-musl/release/${plugin}-plugin plugins/${plugin}/${plugin}-plugin
           done
 
+      # Build the local `dbm-server` sidecar per target and lay it under
+      # `src-tauri/binaries/dbm-server-<triple>[.exe]` where tauri's
+      # externalBin auto-resolves it for bundling.
+      - name: Build dbm-server (macOS universal)
+        if: matrix.os == 'macos-latest'
+        run: |
+          mkdir -p src-tauri/binaries
+          cargo build --release --target aarch64-apple-darwin -p dbm-server
+          cargo build --release --target x86_64-apple-darwin  -p dbm-server
+          cp target/aarch64-apple-darwin/release/dbm-server src-tauri/binaries/dbm-server-aarch64-apple-darwin
+          cp target/x86_64-apple-darwin/release/dbm-server  src-tauri/binaries/dbm-server-x86_64-apple-darwin
+
+      - name: Build dbm-server (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries
+          cargo build --release --target x86_64-pc-windows-msvc -p dbm-server
+          cp target/x86_64-pc-windows-msvc/release/dbm-server.exe src-tauri/binaries/dbm-server-x86_64-pc-windows-msvc.exe
+
+      - name: Build dbm-server (Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          mkdir -p src-tauri/binaries
+          cargo build --release --target x86_64-unknown-linux-gnu -p dbm-server
+          cp target/x86_64-unknown-linux-gnu/release/dbm-server src-tauri/binaries/dbm-server-x86_64-unknown-linux-gnu
+
       - name: Install frontend deps
         run: pnpm install
 
@@ -88,6 +115,12 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signing material for the auto-updater. Required for the bundle to
+          # produce `latest.json` signatures. Set both secrets in repo
+          # settings: the private key is the contents of
+          # `~/.tauri/dbm-updater.key` and the password is empty by default.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Database Manager ${{ github.ref_name }}"
