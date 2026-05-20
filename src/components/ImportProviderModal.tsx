@@ -1,9 +1,19 @@
-import { Database, Flame, Lock, Table2 } from "lucide-react";
+import { Database, Lock } from "lucide-react";
 import { siDatagrip, siDbeaver } from "simple-icons";
 import { Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { IMPORT_PROVIDERS, type ImportProviderInfo, type ImportSource } from "@/lib/import";
 import { cn } from "@/lib/utils";
+
+// Geometric mark taken verbatim from the official DataFlare logo
+// (https://dataflare.app/_next/static/media/logo.7c1bcd2e.svg, 550×550 box).
+const DATAFLARE_PATH =
+  "M275 7L495.533 113.161L550 351.704L275 275.5L397.387 543H152.613L0 351.704L54.4671 113.161L275 275.5V7Z";
+
+// TablePlus doesn't publish a flat-vector mark, so use the apple-touch-icon
+// PNG that ships with their site. Loaded remotely on first paint and cached
+// by the webview thereafter; falls back gracefully if offline (alt text).
+const TABLEPLUS_ICON_URL = "https://tableplus.com/resources/favicons/apple-icon.png";
 
 interface Props {
   onClose: () => void;
@@ -61,41 +71,66 @@ export function ImportProviderModal({ onClose, onSelect }: Props) {
 function ProviderIcon({ source }: { source: ImportSource }) {
   switch (source) {
     case "dbeaver":
-      return <BrandTile path={siDbeaver.path} hex={`#${siDbeaver.hex}`} title={siDbeaver.title} />;
+      return (
+        <BrandTile
+          viewBox="0 0 24 24"
+          path={siDbeaver.path}
+          bg={`#${siDbeaver.hex}`}
+          title={siDbeaver.title}
+        />
+      );
     case "datagrip":
-      // DataGrip's official brand mark is dark on light — fall back to the
-      // JetBrains accent so the chip stays legible on the dark settings panel.
-      return <BrandTile path={siDatagrip.path} hex="#22D88F" title={siDatagrip.title} />;
+      // DataGrip's official mark is dark on light — render on the JetBrains
+      // accent so the chip stays legible on the dark settings panel.
+      return (
+        <BrandTile viewBox="0 0 24 24" path={siDatagrip.path} bg="#22D88F" title={siDatagrip.title} />
+      );
     case "dataflare":
-      return <LucideTile icon={Flame} bg="#F97316" />;
+      return (
+        <BrandTile viewBox="0 0 550 550" path={DATAFLARE_PATH} bg="#1E293B" title="DataFlare" />
+      );
     case "tableplus":
-      return <LucideTile icon={Table2} bg="#3B82F6" />;
+      return <ImageTile src={TABLEPLUS_ICON_URL} alt="TablePlus" />;
     case "native":
     default:
-      return <LucideTile icon={Database} bg="#6366F1" />;
+      return (
+        <span
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-border-subtle text-white"
+          style={{ background: "#6366F1" }}
+        >
+          <Database strokeWidth={1.5} className="h-4 w-4" />
+        </span>
+      );
   }
 }
 
-function BrandTile({ path, hex, title }: { path: string; hex: string; title: string }) {
+function BrandTile({
+  viewBox,
+  path,
+  bg,
+  title,
+}: {
+  viewBox: string;
+  path: string;
+  bg: string;
+  title: string;
+}) {
   return (
     <span
       className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-border-subtle"
-      style={{ background: hex }}
+      style={{ background: bg }}
     >
-      <svg viewBox="0 0 24 24" className="h-5 w-5" aria-label={title} role="img">
+      <svg viewBox={viewBox} className="h-5 w-5" aria-label={title} role="img">
         <path d={path} fill="#ffffff" />
       </svg>
     </span>
   );
 }
 
-function LucideTile({ icon: Icon, bg }: { icon: typeof Database; bg: string }) {
+function ImageTile({ src, alt }: { src: string; alt: string }) {
   return (
-    <span
-      className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-border-subtle text-white"
-      style={{ background: bg }}
-    >
-      <Icon strokeWidth={1.5} className="h-4 w-4" />
+    <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-md border border-border-subtle bg-surface">
+      <img src={src} alt={alt} className="h-full w-full object-cover" />
     </span>
   );
 }
