@@ -154,18 +154,19 @@ export default function SqlQueriesPage({
     return `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   }
 
-  function nextScriptName(): string {
-    let n = scripts.length + 1;
+  function uniqueName(prefix: string): string {
     const taken = new Set(scripts.map((s) => s.name));
-    while (taken.has(`Script ${n}`)) n++;
-    return `Script ${n}`;
+    let n = scripts.length + 1;
+    while (taken.has(`${prefix} ${n}`)) n++;
+    return `${prefix} ${n}`;
   }
 
   function newScript(template: keyof typeof SQL_TEMPLATES = "blank") {
     if (!stored) return;
     const id = makeScriptId();
     const sql = SQL_TEMPLATES[template];
-    const name = template === "blank" ? nextScriptName() : `${TEMPLATE_LABELS[template]} ${scripts.length + 1}`;
+    const prefix = template === "blank" ? "Script" : TEMPLATE_LABELS[template];
+    const name = uniqueName(prefix);
     updateSession(connection.id, {
       queryScripts: [...scripts, { id, name, sql }],
       activeScriptId: id,

@@ -26,7 +26,7 @@ import {
   Zap
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import { useNavigate } from "@/lib/router-compat";
+import { useNavigate, useSearchParams } from "@/lib/router-compat";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { APP_EVENT, on as onBus } from "@/lib/app-bus";
 import { useSessionsStore } from "@/store/sessions";
@@ -189,6 +189,20 @@ export default function ConnectionsPage() {
     const off = onBus(APP_EVENT.newConnection, openCreate);
     return off;
   }, [openCreate]);
+
+  // Cross-route deep link: /connections?new=1 (used by the dashboard
+  // quick-action). Reads on mount so there's no setTimeout race with the
+  // bus listener registering.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get("new") !== "1") return;
+    openCreate();
+    setSearchParams((p) => {
+      p.delete("new");
+      return p;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function openEdit(connection: Connection) {
     setEditing(connection);
