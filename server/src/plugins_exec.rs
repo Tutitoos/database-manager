@@ -50,6 +50,9 @@ async fn exec(
     Json(req): Json<ExecRequest>,
 ) -> Result<Json<ExecResponse>, (StatusCode, String)> {
     let user_id = require_auth(&state, &headers)?;
+    if !is_safe_plugin_id(&plugin_id) {
+        return Err((StatusCode::BAD_REQUEST, "invalid plugin id".into()));
+    }
     let role = state
         .store
         .get_member_role(&req.org_id, &user_id)
@@ -67,7 +70,8 @@ async fn exec(
         return Err((StatusCode::CONFLICT, "plugin disabled".into()));
     }
 
-    let bin = plugin_binary_path(&plugin_id);
+    let bin = resolve_plugin_binary(&plugin_id)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     if !bin.exists() {
         return Err((
             StatusCode::NOT_FOUND,
@@ -80,12 +84,35 @@ async fn exec(
     Ok(Json(ExecResponse { ok: true, result }))
 }
 
-/// Where the server looks for server-mode plugin binaries. Matches the layout
-/// produced by `plugins_upload::upload_plugin`. Override via
-/// `DBM_PLUGINS_DIR` env when running the server.
-fn plugin_binary_path(plugin_id: &str) -> PathBuf {
-    let base = std::env::var("DBM_PLUGINS_DIR").unwrap_or_else(|_| "./plugins".into());
-    PathBuf::from(base).join(plugin_id).join("binary_server")
+/// Plugin ids must look like a package slug — alphanumerics, dashes,
+/// underscores, dots — and nothing that could traverse out of the plugins
+/// directory. Reject empty strings, separators, and leading dots so a
+/// plugin can't shadow a real binary or escape via `..`.
+pub(crate) fn is_safe_plugin_id(id: &str) -> bool {
+    if id.is_empty() || id.starts_with('.') {
+        return false;
+    }
+    id.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+}
+
+/// Resolve the plugin binary path and verify it stays within the configured
+/// plugins directory. Defense in depth on top of `is_safe_plugin_id` — even
+/// if a future change loosens id validation, this canonicalize step prevents
+/// path traversal against an existing binary outside the base directory.
+fn resolve_plugin_binary(plugin_id: &str) -> Result<PathBuf, String> {
+    let base_raw = std::env::var("DBM_PLUGINS_DIR").unwrap_or_else(|_| "./plugins".into());
+    let base = std::path::PathBuf::from(&base_raw);
+    let candidate = base.join(plugin_id).join("binary_server");
+    let base_abs = std::fs::canonicalize(&base).unwrap_or(base);
+    if let Ok(candidate_abs) = std::fs::canonicalize(&candidate) {
+        if !candidate_abs.starts_with(&base_abs) {
+            return Err("plugin binary path escapes plugins dir".into());
+        }
+        return Ok(candidate_abs);
+    }
+    // Binary may not exist yet; the caller checks `exists()` afterwards.
+    Ok(candidate)
 }
 
 async fn run_plugin(

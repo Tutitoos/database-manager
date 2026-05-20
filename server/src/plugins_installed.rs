@@ -81,6 +81,9 @@ async fn upsert(
     Json(input): Json<InstalledInput>,
 ) -> Result<Json<InstalledRow>, (StatusCode, String)> {
     let user_id = require_auth(&state, &headers)?;
+    if !crate::plugins_exec::is_safe_plugin_id(&plugin_id) {
+        return Err((StatusCode::BAD_REQUEST, "invalid plugin id".into()));
+    }
     require_admin(&state, &q.org_id, &user_id)?;
     Ok(Json(state
         .store
