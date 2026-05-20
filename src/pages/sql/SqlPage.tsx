@@ -6,6 +6,7 @@ import { useSearchParams } from "@/lib/router-compat";
 import { useSessionsStore, type SqlSession } from "@/store/sessions";
 import { mutedText, panel, sectionBorder, surface } from "@/lib/styles";
 import type { Connection, TableResult } from "@/lib/types";
+import { saveCsv } from "@/lib/save-file";
 import { cn } from "@/lib/utils";
 import { AutocompleteInput, getWordAtPos, type GetSuggestions, type SuggestionItem, type SuggestionResult } from "@/components/autocomplete-input";
 import { Modal } from "@/components/modal";
@@ -185,8 +186,8 @@ function SqlPage() {
     });
   }
 
-  /** Serialize the current page rows to CSV and trigger a download. */
-  function exportCsv() {
+  /** Serialize the current page rows to CSV via the system save dialog. */
+  async function exportCsv() {
     if (!result) return;
     const escape = (v: unknown): string => {
       if (v == null) return "";
@@ -199,13 +200,10 @@ function SqlPage() {
       .map((row) => result.columns.map((_, i) => escape(row[i])).join(","))
       .join("\n");
     const csv = `${header}\n${body}\n`;
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${table}-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    await saveCsv(csv, {
+      defaultPath: `${table}-${new Date().toISOString().slice(0, 10)}.csv`,
+      title: "Exportar tabla",
+    });
   }
 
   function openRowEdit(row: (string | number | boolean | null)[]) {

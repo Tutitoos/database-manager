@@ -21,6 +21,7 @@ import { Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { mutedText, panel, sectionBorder } from "@/lib/styles";
 import { getSchema, type SchemaMap } from "@/lib/schema-cache";
+import { saveCsv, saveJson } from "@/lib/save-file";
 import type { Connection } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useSessionsStore, type QueryHistoryEntry, type SqlSession } from "@/store/sessions";
@@ -279,33 +280,24 @@ export default function SqlQueriesPage({
     pulseToast("Copiado");
   }
 
-  function downloadBlob(name: string, mime: string, content: string) {
-    const blob = new Blob([content], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
   function cellToString(v: ExecCell): string {
     if (v == null) return "";
     if (typeof v === "string") return v;
     return typeof v === "object" ? JSON.stringify(v) : String(v);
   }
 
-  function exportCsv() {
+  async function exportCsv() {
     if (!result) return;
     const lines = [csvRow(result.columns)];
     for (const row of result.rows) lines.push(csvRow(row.map(cellToString)));
-    downloadBlob(`query-${Date.now()}.csv`, "text/csv;charset=utf-8", lines.join("\n"));
+    await saveCsv(lines.join("\n"), {
+      defaultPath: `query-${Date.now()}.csv`,
+      title: "Exportar resultado",
+    });
     setExportOpen(false);
   }
 
-  function exportJson() {
+  async function exportJson() {
     if (!result) return;
     const arr = result.rows.map((row) => {
       const obj: Record<string, ExecCell> = {};
@@ -314,11 +306,10 @@ export default function SqlQueriesPage({
       });
       return obj;
     });
-    downloadBlob(
-      `query-${Date.now()}.json`,
-      "application/json",
-      JSON.stringify(arr, null, 2),
-    );
+    await saveJson(arr, {
+      defaultPath: `query-${Date.now()}.json`,
+      title: "Exportar resultado",
+    });
     setExportOpen(false);
   }
 

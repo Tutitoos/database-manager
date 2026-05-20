@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isOrgSelectable, type OrgRecord } from "./orgs";
+import { isOrgSelectable, type OrgHealthState, type OrgRecord } from "./orgs";
 
 function org(overrides: Partial<OrgRecord> = {}): OrgRecord {
   return {
@@ -22,7 +22,10 @@ function org(overrides: Partial<OrgRecord> = {}): OrgRecord {
   };
 }
 
-const baseState = { orgs: [], activeId: null, loaded: true, health: {} } as const;
+function state(health: Record<number, OrgHealthState> = {}) {
+  return { orgs: [] as OrgRecord[], activeId: null as number | null, loaded: true, health };
+}
+const baseState = state();
 
 describe("isOrgSelectable", () => {
   it("local orgs are always selectable regardless of health state", () => {

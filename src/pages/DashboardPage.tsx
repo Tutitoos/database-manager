@@ -19,6 +19,7 @@ import { ping, useConnectionStatus, type ConnStatus } from "@/lib/connection-sta
 import { useSessionsStore } from "@/store/sessions";
 import { useOrgs } from "@/store/orgs";
 import { useOpenConnection } from "@/components/connect-gate";
+import { saveJson } from "@/lib/save-file";
 import type { Connection, ConnectionGroup } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -72,19 +73,19 @@ export default function DashboardPage() {
 
   async function handleExport() {
     const dump = {
+      schema: "database-manager.connections-export",
+      schema_version: 1,
       exported_at: new Date().toISOString(),
       org: activeOrg ? { id: activeOrg.id, name: activeOrg.name, server_kind: activeOrg.server_kind } : null,
       groups,
       connections: connections.map((c) => ({ ...c, password: "" })),
     };
-    const blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `database-manager-connections-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    pushToast({ level: "success", title: t("home.toasts.exported") });
+    const res = await saveJson(dump, {
+      defaultPath: `database-manager-connections-${new Date().toISOString().slice(0, 10)}.json`,
+      title: t("home.toasts.exported"),
+    });
+    if (!res.saved) return;
+    pushToast({ level: "success", title: t("home.toasts.exported"), body: res.path ?? undefined });
   }
 
   async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {

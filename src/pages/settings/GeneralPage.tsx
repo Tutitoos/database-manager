@@ -6,6 +6,7 @@ import { Modal } from "@/components/modal";
 import { pushToast } from "@/components/ui/toast";
 import { SettingsCard, SettingsRow } from "@/components/settings/SettingsCard";
 import { checkLatest, checkNativeUpdate, currentVersion, installAndRelaunch, openReleasePage } from "@/lib/updates";
+import { saveTextFile } from "@/lib/save-file";
 import type { Update } from "@tauri-apps/plugin-updater";
 import {
   exportSettingsJson,
@@ -84,14 +85,13 @@ export default function GeneralPage() {
 
   async function handleExport() {
     const json = await exportSettingsJson();
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "database-manager-settings.json";
-    a.click();
-    URL.revokeObjectURL(url);
-    pushToast({ level: "success", title: "Exportado", body: "Configuración guardada como JSON." });
+    const res = await saveTextFile(json, {
+      defaultPath: "database-manager-settings.json",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+      title: "Exportar configuración",
+    });
+    if (!res.saved) return;
+    pushToast({ level: "success", title: "Exportado", body: res.path ?? "Configuración guardada como JSON." });
   }
 
   async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {

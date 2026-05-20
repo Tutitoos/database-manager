@@ -23,6 +23,8 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 argon2 = "0.5"
 sha2 = "0.10"

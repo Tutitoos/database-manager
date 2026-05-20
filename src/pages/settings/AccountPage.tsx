@@ -16,6 +16,7 @@ import { pushToast } from "@/components/ui/toast";
 import { Modal } from "@/components/modal";
 import { SettingsCard, SettingsRow } from "@/components/settings/SettingsCard";
 import { currentUser, signOut } from "@/lib/auth";
+import { saveJson } from "@/lib/save-file";
 import type { AppUser } from "@/lib/types";
 import { useOrgs } from "@/store/orgs";
 
@@ -71,6 +72,8 @@ export default function AccountPage() {
         invoke<unknown[]>("list_organizations").catch(() => []),
       ]);
       const dump = {
+        schema: "database-manager.account-export",
+        schema_version: 1,
         exported_at: new Date().toISOString(),
         user,
         connections: conns,
@@ -78,14 +81,12 @@ export default function AccountPage() {
         credentials: creds,
         organizations: orgs,
       };
-      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `database-manager-data-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      pushToast({ level: "success", title: t("account.toasts.exportOk") });
+      const res = await saveJson(dump, {
+        defaultPath: `database-manager-data-${new Date().toISOString().slice(0, 10)}.json`,
+        title: t("account.toasts.exportOk"),
+      });
+      if (!res.saved) return;
+      pushToast({ level: "success", title: t("account.toasts.exportOk"), body: res.path ?? undefined });
     } catch (e) {
       pushToast({ level: "danger", title: String(e) });
     }

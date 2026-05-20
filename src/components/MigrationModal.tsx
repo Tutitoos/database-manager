@@ -5,6 +5,7 @@ import { AlertTriangle, Download, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/modal";
 import { pushToast } from "@/components/ui/toast";
+import { saveJson } from "@/lib/save-file";
 
 interface LegacyExport {
   schema_version: number;
@@ -40,18 +41,16 @@ export function MigrationModal({ onAcknowledged }: { onAcknowledged: () => void 
     try {
       const data = await invoke<LegacyExport>("export_legacy_data");
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-      // Webview download via anchor — works in Tauri without extra plugins.
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `database-manager-export-${stamp}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const res = await saveJson(data, {
+        defaultPath: `database-manager-export-${stamp}.json`,
+        title: t("migration.export"),
+      });
+      if (!res.saved) {
+        setExporting(false);
+        return;
+      }
       setDownloaded(true);
-      pushToast({ level: "success", title: t("migration.exportedToast") });
+      pushToast({ level: "success", title: t("migration.exportedToast"), body: res.path ?? undefined });
     } catch (e) {
       setError(String(e));
     } finally {
