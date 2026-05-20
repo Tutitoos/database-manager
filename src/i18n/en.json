@@ -408,6 +408,7 @@
     "active": "Active",
     "switchTo": "Switch to this",
     "currentlyActive": "Active organization",
+    "offlineDisabled": "Offline — cannot activate",
     "membersLabel": "Members",
     "edit": "Edit",
     "recheck": "Check connection",

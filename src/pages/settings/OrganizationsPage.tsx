@@ -24,6 +24,9 @@ import { SettingsCard } from "@/components/settings/SettingsCard";
 import {
   deleteOrg,
   fetchOrgHealth,
+  isOrgSelectable,
+  markOrgHealth,
+  OrgOfflineError,
   refreshOrgs,
   setActiveOrg,
   updateOrg,
@@ -37,12 +40,14 @@ type HealthState = "idle" | "checking" | "online" | "offline";
 
 export default function OrganizationsPage() {
   const { t } = useTranslation();
-  const { orgs, activeId } = useOrgs();
+  const orgsState = useOrgs();
+  const { orgs, activeId, health: storeHealth } = orgsState;
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [deleting, setDeleting] = useState<OrgRecord | null>(null);
   const [editing, setEditing] = useState<OrgRecord | null>(null);
-  const [health, setHealth] = useState<Record<number, HealthState>>({});
+  const [localHealth, setLocalHealth] = useState<Record<number, HealthState>>({});
+  const health: Record<number, HealthState> = { ...storeHealth, ...localHealth };
   const [memberCounts, setMemberCounts] = useState<Record<number, number>>({});
 
   useEffect(() => {
@@ -66,10 +71,12 @@ export default function OrganizationsPage() {
 
   async function recheck(org: OrgRecord) {
     if (!org.server_url) return;
-    setHealth((h) => ({ ...h, [org.id]: "checking" }));
+    setLocalHealth((h) => ({ ...h, [org.id]: "checking" }));
+    markOrgHealth(org.id, "checking");
     try {
       const h = await fetchOrgHealth(org.server_url);
-      setHealth((s) => ({ ...s, [org.id]: "online" }));
+      setLocalHealth((s) => ({ ...s, [org.id]: "online" }));
+      markOrgHealth(org.id, "online");
       const patch: Parameters<typeof updateOrg>[1] = {};
       if (h.version) patch.version = h.version;
       if (h.accent_color) patch.accent_color = h.accent_color;
@@ -77,7 +84,8 @@ export default function OrganizationsPage() {
       if (Object.keys(patch).length > 0) await updateOrg(org.id, patch);
       pushToast({ level: "success", title: t("orgs.toasts.recheckOk"), body: org.name });
     } catch {
-      setHealth((s) => ({ ...s, [org.id]: "offline" }));
+      setLocalHealth((s) => ({ ...s, [org.id]: "offline" }));
+      markOrgHealth(org.id, "offline");
       pushToast({ level: "danger", title: t("orgs.toasts.recheckFail"), body: org.name });
     }
   }
@@ -104,8 +112,20 @@ export default function OrganizationsPage() {
   }
 
   async function performSwitch(org: OrgRecord) {
-    await setActiveOrg(org.id);
-    pushToast({ level: "success", title: t("orgs.toasts.switchOk", { name: org.name }) });
+    if (!isOrgSelectable(org, orgsState)) {
+      pushToast({ level: "danger", title: t("orgs.offlineDisabled"), body: org.name });
+      return;
+    }
+    try {
+      await setActiveOrg(org.id);
+      pushToast({ level: "success", title: t("orgs.toasts.switchOk", { name: org.name }) });
+    } catch (e) {
+      if (e instanceof OrgOfflineError) {
+        pushToast({ level: "danger", title: t("orgs.offlineDisabled"), body: org.name });
+      } else {
+        pushToast({ level: "danger", title: String(e) });
+      }
+    }
   }
 
   async function performSignOut() {
@@ -139,30 +159,43 @@ export default function OrganizationsPage() {
             {orgs.length === 0 && (
               <p className="text-body p-4 text-text-muted">{t("orgs.empty")}</p>
             )}
-            {orgs.map((org) => (
-              <button
-                key={org.id}
-                type="button"
-                onClick={() => setSelectedId(org.id)}
-                className={cn(
-                  "flex w-full items-center gap-2.5 border-b border-border-subtle px-3 py-2.5 text-left transition-colors last:border-b-0",
-                  selectedId === org.id ? "bg-accent-soft" : "hover:bg-surface-hover",
-                )}
-              >
-                <OrgAvatar org={org} size={28} />
-                <div className="min-w-0 flex-1">
-                  <p className="text-body truncate font-medium text-text">{org.name}</p>
-                  <p className="text-caption truncate text-text-muted">
-                    {org.server_kind === "local" ? t("orgs.kind.local") : org.server_url ?? ""}
-                  </p>
-                </div>
-                {org.id === activeId && (
-                  <span className="text-tiny rounded-sm bg-accent-soft px-1.5 py-0.5 font-semibold uppercase tracking-wider text-accent">
-                    {t("orgs.active")}
-                  </span>
-                )}
-              </button>
-            ))}
+            {orgs.map((org) => {
+              const selectable = isOrgSelectable(org, orgsState);
+              return (
+                <button
+                  key={org.id}
+                  type="button"
+                  onClick={() => setSelectedId(org.id)}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 border-b border-border-subtle px-3 py-2.5 text-left transition-colors last:border-b-0",
+                    selectedId === org.id ? "bg-accent-soft" : "hover:bg-surface-hover",
+                    !selectable && "opacity-60",
+                  )}
+                  title={selectable ? undefined : t("orgs.offlineDisabled")}
+                >
+                  <OrgAvatar org={org} size={28} dim={!selectable} />
+                  <div className="min-w-0 flex-1">
+                    <p className={cn("text-body truncate font-medium", selectable ? "text-text" : "text-text-muted")}>
+                      {org.name}
+                    </p>
+                    <p className="text-caption truncate text-text-muted">
+                      {org.server_kind === "local" ? t("orgs.kind.local") : org.server_url ?? ""}
+                    </p>
+                  </div>
+                  {!selectable && (
+                    <span className="text-tiny inline-flex items-center gap-1 rounded-sm bg-surface px-1.5 py-0.5 font-semibold uppercase tracking-wider text-text-faint">
+                      <span className="h-1.5 w-1.5 rounded-full bg-danger" />
+                      {t("orgs.status.offline")}
+                    </span>
+                  )}
+                  {selectable && org.id === activeId && (
+                    <span className="text-tiny rounded-sm bg-accent-soft px-1.5 py-0.5 font-semibold uppercase tracking-wider text-accent">
+                      {t("orgs.active")}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -178,6 +211,7 @@ export default function OrganizationsPage() {
               org={selected}
               isActive={selected.id === activeId}
               healthState={health[selected.id]}
+              selectable={isOrgSelectable(selected, orgsState)}
               membersCount={memberCounts[selected.id]}
               onSwitch={() => performSwitch(selected)}
               onRecheck={() => recheck(selected)}
@@ -215,11 +249,11 @@ export default function OrganizationsPage() {
   );
 }
 
-function OrgAvatar({ org, size = 28 }: { org: OrgRecord; size?: number }) {
+function OrgAvatar({ org, size = 28, dim = false }: { org: OrgRecord; size?: number; dim?: boolean }) {
   const bg = org.accent_color ?? (org.server_kind === "local" ? "#71717a" : "#0ea5e9");
   return (
     <span
-      className="grid shrink-0 place-items-center rounded-md text-white"
+      className={cn("grid shrink-0 place-items-center rounded-md text-white", dim && "grayscale opacity-70")}
       style={{ background: bg, height: size, width: size }}
     >
       {org.server_kind === "local" ? (
@@ -235,6 +269,7 @@ function DetailPanel({
   org,
   isActive,
   healthState,
+  selectable,
   membersCount,
   onSwitch,
   onRecheck,
@@ -245,6 +280,7 @@ function DetailPanel({
   org: OrgRecord;
   isActive: boolean;
   healthState?: HealthState;
+  selectable: boolean;
   membersCount?: number;
   onSwitch: () => void;
   onRecheck: () => void;
@@ -317,7 +353,13 @@ function DetailPanel({
       {/* Actions */}
       <div className="flex flex-wrap items-center gap-2">
         {!isActive && (
-          <Button variant="primary" size="sm" onClick={onSwitch}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onSwitch}
+            disabled={!selectable}
+            title={selectable ? undefined : t("orgs.offlineDisabled")}
+          >
             <Check className="h-3.5 w-3.5" /> {t("orgs.switchTo")}
           </Button>
         )}

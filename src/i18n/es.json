@@ -408,6 +408,7 @@
     "active": "Activa",
     "switchTo": "Cambiar a esta",
     "currentlyActive": "Organización activa",
+    "offlineDisabled": "Sin conexión — no se puede activar",
     "membersLabel": "Miembros",
     "edit": "Editar",
     "recheck": "Verificar conexión",
