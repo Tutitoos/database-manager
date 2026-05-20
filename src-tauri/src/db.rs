@@ -11,21 +11,6 @@ pub struct Database {
     conn: Arc<Mutex<Connection>>,
 }
 
-fn mark_dirty(
-    conn: &Connection,
-    entity_type: &str,
-    entity_id: &str,
-    local_updated_at: &str,
-    deleted_at: Option<&str>,
-) -> Result<(), String> {
-    conn.execute(
-        "INSERT INTO sync_state (entity_type, entity_id, local_updated_at, dirty, deleted_at) VALUES (?1, ?2, ?3, 1, ?4) ON CONFLICT(entity_type, entity_id) DO UPDATE SET local_updated_at = excluded.local_updated_at, dirty = 1, deleted_at = COALESCE(excluded.deleted_at, sync_state.deleted_at)",
-        params![entity_type, entity_id, local_updated_at, deleted_at],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
 fn map_connection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ConnectionRecord> {
     Ok(ConnectionRecord {
         id: row.get(0)?,
@@ -45,6 +30,94 @@ fn map_connection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ConnectionRec
         created_at: row.get(14)?,
         updated_at: row.get(15)?,
     })
+}
+
+/// First-run seeding for the multi-org system:
+///   • Always ensure a "Local" org (id=1 conceptually, no server) exists.
+///   • If the legacy `sync.server_url` setting exists, create a "Default" org
+///     bound to it and migrate any orphan connections/credentials/groups under it.
+fn seed_default_orgs(conn: &Connection) -> Result<(), String> {
+    let now = Utc::now().to_rfc3339();
+    let local_id: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM organizations WHERE server_kind = 'local' LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let local_id = match local_id {
+        Some(id) => id,
+        None => {
+            conn.execute(
+                "INSERT INTO organizations (name, server_url, server_kind, accent_color, position, created_at, updated_at) VALUES (?1, NULL, 'local', ?2, 0, ?3, ?3)",
+                params!["Local", "#71717a", now],
+            )
+            .map_err(|e| e.to_string())?;
+            conn.last_insert_rowid()
+        }
+    };
+
+    let legacy_url: Option<String> = conn
+        .query_row(
+            "SELECT value_json FROM app_settings WHERE key = 'sync.server_url'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .and_then(|raw| serde_json::from_str::<String>(&raw).ok())
+        .filter(|s| !s.trim().is_empty());
+
+    let default_id: Option<i64> = if let Some(url) = legacy_url {
+        let existing: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM organizations WHERE server_url = ?1",
+                params![url],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        match existing {
+            Some(id) => Some(id),
+            None => {
+                conn.execute(
+                    "INSERT INTO organizations (name, server_url, server_kind, accent_color, position, created_at, updated_at) VALUES (?1, ?2, 'manual', ?3, 1, ?4, ?4)",
+                    params!["Default", url, "#0ea5e9", now],
+                )
+                .map_err(|e| e.to_string())?;
+                Some(conn.last_insert_rowid())
+            }
+        }
+    } else {
+        None
+    };
+
+    // Backfill: rows without org_id go to Default (if exists) else Local.
+    let target_id = default_id.unwrap_or(local_id);
+    for table in ["connections", "credentials", "connection_groups"] {
+        let sql = format!("UPDATE {table} SET org_id = ?1 WHERE org_id IS NULL");
+        conn.execute(&sql, params![target_id]).map_err(|e| e.to_string())?;
+    }
+
+    // Persist active_org_id default if unset.
+    let active: Option<String> = conn
+        .query_row(
+            "SELECT value_json FROM app_settings WHERE key = 'app.active_org_id'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if active.is_none() {
+        conn.execute(
+            "INSERT OR IGNORE INTO app_settings (key, value_json, updated_at) VALUES ('app.active_org_id', ?1, ?2)",
+            params![target_id.to_string(), now],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
 }
 
 fn add_column_if_missing(
@@ -151,15 +224,6 @@ pub struct AppUserRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncEnvelope {
-    pub entity_type: String,
-    pub entity_id: String,
-    pub updated_at: String,
-    pub deleted_at: Option<String>,
-    pub ciphertext: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginDbRecord {
     pub id: String,
     pub name: String,
@@ -169,6 +233,31 @@ pub struct PluginDbRecord {
     pub enabled: bool,
     pub installed_at: String,
     pub updated_at: String,
+}
+
+fn map_app_user_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AppUserRecord> {
+    Ok(AppUserRecord {
+        user_id: row.get(0)?,
+        email: row.get(1)?,
+        name: row.get(2)?,
+        avatar_url: row.get(3)?,
+        linked_providers: row.get(4)?,
+        master_key_enc_blob: row.get(5)?,
+        session_token_ref: row.get(6)?,
+        last_synced_at: row.get(7)?,
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrgRowLite {
+    pub id: i64,
+    pub name: String,
+    pub server_url: Option<String>,
+    pub server_kind: String,
+    pub accent_color: Option<String>,
+    pub remote_id: Option<String>,
+    pub role: Option<String>,
+    pub cert_fingerprint: Option<String>,
 }
 
 impl Database {
@@ -186,7 +275,125 @@ impl Database {
             conn: Arc::new(Mutex::new(conn)),
         };
         db.migrate()?;
+        db.maybe_apply_server_first_wipe()?;
+        db.maybe_apply_passphrase_purge()?;
         Ok(db)
+    }
+
+    /// Post-passphrase-removal cleanup. Installs that ran the v2 wipe and
+    /// then *re-set* a passphrase via the old WelcomePage flow have residual
+    /// `auth.passphrase_salt` / `auth.master_key_wrapped` rows lying around.
+    /// Drop them once; the keychain entry under `master-key` is left to age
+    /// out naturally (keyring crate doesn't expose a "delete all under
+    /// service" sweep without enumerating accounts).
+    fn maybe_apply_passphrase_purge(&self) -> Result<(), String> {
+        self.with_conn(|conn| {
+            let done: Option<String> = conn
+                .query_row(
+                    "SELECT value_json FROM app_settings WHERE key = 'app.passphrase_purged'",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|e| e.to_string())?;
+            if done.is_some() {
+                return Ok(());
+            }
+            conn.execute_batch(
+                r#"
+                DELETE FROM app_settings WHERE key LIKE 'auth.passphrase_salt%';
+                DELETE FROM app_settings WHERE key LIKE 'auth.master_key_wrapped%';
+                DELETE FROM app_settings WHERE key LIKE 'auth.biometry_enabled%';
+                "#,
+            )
+            .map_err(|e| e.to_string())?;
+            crate::keychain::delete("master-key");
+            let now = Utc::now().to_rfc3339();
+            conn.execute(
+                "INSERT INTO app_settings (key, value_json, updated_at) VALUES ('app.passphrase_purged', ?1, ?2) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at",
+                params![format!("\"{now}\""), now],
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+    }
+
+    /// Server-first refactor migration: once the user has acknowledged the
+    /// export modal (F0), drop all legacy data tables that have moved to the
+    /// server. Idempotent — checks an `app_settings` flag so it only runs
+    /// once.
+    ///
+    /// Preserves only the cross-boot settings the UI needs to bootstrap:
+    /// theme/locale/zoom/shortcuts. **Wipes** legacy data tables AND the
+    /// `organizations` catalog + `app.active_org_id` setting so the user
+    /// lands on WelcomePage with a clean slate. Legacy "Default" rows
+    /// pointing at the old `sync.server_url` would otherwise survive and
+    /// pollute the org switcher.
+    fn maybe_apply_server_first_wipe(&self) -> Result<(), String> {
+        self.with_conn(|conn| {
+            let acked: Option<String> = conn
+                .query_row(
+                    "SELECT value_json FROM app_settings WHERE key = 'app.migration_export_acked'",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|e| e.to_string())?;
+            if acked.is_none() {
+                return Ok(());
+            }
+            // Versioned wipe flag. Bumping the suffix re-runs the wipe so
+            // installs that ran an earlier (partial) wipe still get the new
+            // sweep — e.g. when we extend the DROP list to include
+            // `organizations` after legacy "Default" rows survived.
+            let already_wiped: Option<String> = conn
+                .query_row(
+                    "SELECT value_json FROM app_settings WHERE key = 'app.server_first_wiped.v2'",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|e| e.to_string())?;
+            if already_wiped.is_some() {
+                return Ok(());
+            }
+            // NOTE: `plugins` + `plugin_settings` are NOT dropped — they are
+            // the PluginManager's local runtime cache (enabled flag, settings
+            // overrides), not user data, and the manager queries them at boot
+            // before migrate() recreates them. Dropping them would panic on
+            // first launch with "no such table: plugins".
+            conn.execute_batch(
+                r#"
+                DROP TABLE IF EXISTS connections;
+                DROP TABLE IF EXISTS connection_groups;
+                DROP TABLE IF EXISTS credentials;
+                DROP TABLE IF EXISTS sessions;
+                DROP TABLE IF EXISTS sync_state;
+                DROP TABLE IF EXISTS app_user;
+                DROP TABLE IF EXISTS organizations;
+                DROP TABLE IF EXISTS sync_outbox;
+                DELETE FROM app_settings WHERE key IN (
+                    'app.active_org_id',
+                    'sync.server_url',
+                    'app.discovered_servers',
+                    'auth.passphrase_salt',
+                    'auth.master_key_wrapped',
+                    'local.admin_token'
+                );
+                DELETE FROM app_settings WHERE key LIKE 'auth.passphrase_salt.org_%';
+                DELETE FROM app_settings WHERE key LIKE 'auth.master_key_wrapped.org_%';
+                DELETE FROM app_settings WHERE key LIKE 'auth.biometry_enabled.org_%';
+                "#,
+            )
+            .map_err(|e| e.to_string())?;
+            let now = Utc::now().to_rfc3339();
+            conn.execute(
+                "INSERT INTO app_settings (key, value_json, updated_at) VALUES ('app.server_first_wiped.v2', ?1, ?2) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at",
+                params![format!("\"{now}\""), now],
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(())
+        })
     }
 
     fn migrate(&self) -> Result<(), String> {
@@ -264,188 +471,199 @@ impl Database {
                     last_synced_at TEXT
                 );
 
-                CREATE TABLE IF NOT EXISTS sync_state (
-                    entity_type TEXT NOT NULL,
-                    entity_id TEXT NOT NULL,
-                    local_updated_at TEXT NOT NULL,
-                    remote_updated_at TEXT,
-                    dirty INTEGER NOT NULL DEFAULT 1,
-                    deleted_at TEXT,
-                    PRIMARY KEY (entity_type, entity_id)
+                CREATE TABLE IF NOT EXISTS organizations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    server_url TEXT,
+                    server_kind TEXT NOT NULL DEFAULT 'local',
+                    cert_fingerprint TEXT,
+                    accent_color TEXT,
+                    icon_url TEXT,
+                    version TEXT,
+                    last_health_check TEXT,
+                    last_health_ok INTEGER NOT NULL DEFAULT 0,
+                    user_email TEXT,
+                    user_id TEXT,
+                    role TEXT,
+                    vault_salt BLOB,
+                    vault_wrapped BLOB,
+                    position INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
                 );
-
-                CREATE INDEX IF NOT EXISTS idx_sync_state_dirty ON sync_state(dirty) WHERE dirty = 1;
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_org_server_url ON organizations(server_url) WHERE server_url IS NOT NULL;
                 "#,
             )
             .map_err(|error| error.to_string())?;
             add_column_if_missing(conn, "connections", "position", "INTEGER NOT NULL DEFAULT 0")?;
             add_column_if_missing(conn, "connections", "credential_id", "INTEGER REFERENCES credentials(id)")?;
             add_column_if_missing(conn, "connections", "deleted_at", "TEXT")?;
+            add_column_if_missing(conn, "connections", "notes", "TEXT NOT NULL DEFAULT ''")?;
+            add_column_if_missing(conn, "connections", "color", "TEXT")?;
+            add_column_if_missing(conn, "connections", "org_id", "INTEGER REFERENCES organizations(id)")?;
             add_column_if_missing(conn, "connection_groups", "deleted_at", "TEXT")?;
             add_column_if_missing(conn, "connection_groups", "parent_id", "INTEGER REFERENCES connection_groups(id)")?;
+            add_column_if_missing(conn, "connection_groups", "org_id", "INTEGER REFERENCES organizations(id)")?;
+            add_column_if_missing(conn, "credentials", "org_id", "INTEGER REFERENCES organizations(id)")?;
+            add_column_if_missing(conn, "organizations", "remote_id", "TEXT")?;
+            // Skip auto-seeding "Local" + "Default" orgs once the server-first
+            // wipe has run. From that point the WelcomePage is the only
+            // legitimate path to materialize an org, so the user has to pick
+            // Local-or-Remote explicitly.
+            let post_wipe: bool = conn
+                .query_row(
+                    "SELECT 1 FROM app_settings WHERE key = 'app.server_first_wiped.v2'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()
+                .map_err(|e| e.to_string())?
+                .is_some();
+            if !post_wipe {
+                seed_default_orgs(conn)?;
+            }
+            Ok(())
+        })
+    }
+
+    pub fn list_org_ids(&self) -> Result<Vec<i64>, String> {
+        self.with_conn(|conn| {
+            let mut stmt = conn
+                .prepare("SELECT id FROM organizations ORDER BY position ASC, id ASC")
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |row| row.get::<_, i64>(0))
+                .map_err(|e| e.to_string())?;
+            rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+        })
+    }
+
+    pub fn get_org(&self, id: i64) -> Result<Option<OrgRowLite>, String> {
+        self.with_conn(|conn| {
+            conn.query_row(
+                "SELECT id, name, server_url, server_kind, accent_color, remote_id, role, cert_fingerprint FROM organizations WHERE id = ?1",
+                params![id],
+                |row| Ok(OrgRowLite {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    server_url: row.get(2)?,
+                    server_kind: row.get(3)?,
+                    accent_color: row.get(4)?,
+                    remote_id: row.get(5)?,
+                    role: row.get(6)?,
+                    cert_fingerprint: row.get(7)?,
+                }),
+            )
+            .optional()
+            .map_err(|e| e.to_string())
+        })
+    }
+
+    pub fn set_org_remote_id(&self, id: i64, remote: &str) -> Result<(), String> {
+        self.with_conn(|conn| {
+            conn.execute(
+                "UPDATE organizations SET remote_id = ?1, updated_at = ?2 WHERE id = ?3",
+                params![remote, Utc::now().to_rfc3339(), id],
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+    }
+
+    pub fn set_org_user_link(&self, id: i64, user_id: &str, user_email: &str) -> Result<(), String> {
+        self.with_conn(|conn| {
+            conn.execute(
+                "UPDATE organizations SET user_id = ?1, user_email = ?2, updated_at = ?3 WHERE id = ?4",
+                params![user_id, user_email, Utc::now().to_rfc3339(), id],
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+    }
+
+    pub fn set_org_cert_fingerprint(&self, id: i64, fingerprint: &str) -> Result<(), String> {
+        self.with_conn(|conn| {
+            conn.execute(
+                "UPDATE organizations SET cert_fingerprint = ?1, updated_at = ?2 WHERE id = ?3",
+                params![fingerprint, Utc::now().to_rfc3339(), id],
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+    }
+
+    pub fn set_org_health(&self, id: i64, ok: bool) -> Result<(), String> {
+        self.with_conn(|conn| {
+            conn.execute(
+                "UPDATE organizations SET last_health_ok = ?1, last_health_check = ?2 WHERE id = ?3",
+                params![if ok { 1 } else { 0 }, Utc::now().to_rfc3339(), id],
+            )
+            .map_err(|e| e.to_string())?;
             Ok(())
         })
     }
 
     pub fn list_connections(&self) -> Result<Vec<ConnectionRecord>, String> {
+        let org_id = self.active_org_id()?;
         self.with_conn(|conn| {
             let mut stmt = conn
                 .prepare(
                     "SELECT id, name, plugin_id, host, port, database, username, password, ssl_mode, settings_json, group_id, enabled, position, credential_id, created_at, updated_at
-                     FROM connections WHERE deleted_at IS NULL ORDER BY position ASC, updated_at DESC",
+                     FROM connections WHERE deleted_at IS NULL AND COALESCE(org_id, ?1) = ?1 ORDER BY position ASC, updated_at DESC",
                 )
                 .map_err(|error| error.to_string())?;
             let rows = stmt
-                .query_map([], |row| Ok(map_connection_row(row)?))
+                .query_map(params![org_id], |row| map_connection_row(row))
                 .map_err(|error| error.to_string())?;
             rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())
         })
     }
 
-    pub fn create_connection(&self, input: ConnectionInput) -> Result<ConnectionRecord, String> {
-        let now = Utc::now().to_rfc3339();
+    /// Returns the currently active organization id. Falls back to the lowest
+    /// `local` org id if the setting is missing or invalid.
+    pub fn active_org_id(&self) -> Result<i64, String> {
         self.with_conn(|conn| {
-            let next_position: i64 = conn
+            let raw: Option<String> = conn
                 .query_row(
-                    "SELECT COALESCE(MAX(position), -1) + 1 FROM connections WHERE COALESCE(group_id, 0) = COALESCE(?1, 0)",
-                    params![input.group_id],
+                    "SELECT value_json FROM app_settings WHERE key = 'app.active_org_id'",
+                    [],
                     |row| row.get(0),
                 )
-                .map_err(|error| error.to_string())?;
-            conn.execute(
-                "INSERT INTO connections (name, plugin_id, host, port, database, username, password, ssl_mode, settings_json, group_id, enabled, position, credential_id, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
-                params![
-                    input.name,
-                    input.plugin_id,
-                    input.host,
-                    input.port,
-                    input.database,
-                    input.username,
-                    input.password,
-                    input.ssl_mode,
-                    input.settings_json,
-                    input.group_id,
-                    if input.enabled { 1 } else { 0 },
-                    next_position,
-                    input.credential_id,
-                    now,
-                    now
-                ],
+                .optional()
+                .map_err(|e| e.to_string())?;
+            if let Some(raw) = raw {
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
+                    let id = match parsed {
+                        serde_json::Value::Number(n) => n.as_i64(),
+                        serde_json::Value::String(s) => s.parse::<i64>().ok(),
+                        _ => None,
+                    };
+                    if let Some(id) = id {
+                        return Ok(id);
+                    }
+                }
+            }
+            conn.query_row(
+                "SELECT id FROM organizations WHERE server_kind = 'local' ORDER BY id ASC LIMIT 1",
+                [],
+                |row| row.get(0),
             )
-            .map_err(|error| error.to_string())?;
-            let id = conn.last_insert_rowid();
-            mark_dirty(conn, "connection", &id.to_string(), &now, None)?;
-            self.get_connection_by_id_locked(conn, id)
-        })
-    }
-
-    pub fn update_connection(
-        &self,
-        id: i64,
-        input: ConnectionInput,
-    ) -> Result<ConnectionRecord, String> {
-        let now = Utc::now().to_rfc3339();
-        self.with_conn(|conn| {
-            let rows = conn.execute(
-                "UPDATE connections SET name = ?1, plugin_id = ?2, host = ?3, port = ?4, database = ?5, username = ?6, password = ?7, ssl_mode = ?8, settings_json = ?9, group_id = ?10, enabled = ?11, credential_id = ?12, updated_at = ?13 WHERE id = ?14",
-                params![
-                    input.name,
-                    input.plugin_id,
-                    input.host,
-                    input.port,
-                    input.database,
-                    input.username,
-                    input.password,
-                    input.ssl_mode,
-                    input.settings_json,
-                    input.group_id,
-                    if input.enabled { 1 } else { 0 },
-                    input.credential_id,
-                    now,
-                    id
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-            if rows == 0 {
-                return Err(format!("connection not found: {id}"));
-            }
-            mark_dirty(conn, "connection", &id.to_string(), &now, None)?;
-            self.get_connection_by_id_locked(conn, id)
-        })
-    }
-
-    pub fn reorder_connections(&self, ids: &[i64]) -> Result<(), String> {
-        let now = Utc::now().to_rfc3339();
-        self.with_conn(|conn| {
-            for (idx, id) in ids.iter().enumerate() {
-                conn.execute(
-                    "UPDATE connections SET position = ?1, updated_at = ?2 WHERE id = ?3",
-                    params![idx as i64, now, id],
-                )
-                .map_err(|error| error.to_string())?;
-                mark_dirty(conn, "connection", &id.to_string(), &now, None)?;
-            }
-            Ok(())
-        })
-    }
-
-    pub fn move_connection_to_group(
-        &self,
-        connection_id: i64,
-        group_id: Option<i64>,
-        position: i64,
-    ) -> Result<(), String> {
-        let now = Utc::now().to_rfc3339();
-        self.with_conn(|conn| {
-            conn.execute(
-                "UPDATE connections SET position = ?1, group_id = ?2, updated_at = ?3 WHERE id = ?4",
-                params![position, group_id, now, connection_id],
-            )
-            .map_err(|error| error.to_string())?;
-            mark_dirty(conn, "connection", &connection_id.to_string(), &now, None)?;
-            Ok(())
-        })
-    }
-
-    pub fn attach_credential_to_connection(
-        &self,
-        connection_id: i64,
-        credential_id: Option<i64>,
-    ) -> Result<(), String> {
-        let now = Utc::now().to_rfc3339();
-        self.with_conn(|conn| {
-            let rows = if credential_id.is_some() {
-                conn.execute(
-                    "UPDATE connections SET credential_id = ?1, password = '', updated_at = ?2 WHERE id = ?3",
-                    params![credential_id, now, connection_id],
-                )
-            } else {
-                conn.execute(
-                    "UPDATE connections SET credential_id = NULL, updated_at = ?1 WHERE id = ?2",
-                    params![now, connection_id],
-                )
-            }
-            .map_err(|error| error.to_string())?;
-            if rows == 0 {
-                return Err(format!("connection not found: {connection_id}"));
-            }
-            mark_dirty(conn, "connection", &connection_id.to_string(), &now, None)?;
-            Ok(())
+            .map_err(|e| e.to_string())
         })
     }
 
     // ── Groups ────────────────────────────────────────────────────────────────
 
     pub fn list_groups(&self) -> Result<Vec<GroupRecord>, String> {
+        let org_id = self.active_org_id()?;
         self.with_conn(|conn| {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, name, parent_id, sort_order, created_at, updated_at FROM connection_groups WHERE deleted_at IS NULL ORDER BY sort_order ASC, name ASC",
+                    "SELECT id, name, parent_id, sort_order, created_at, updated_at FROM connection_groups WHERE deleted_at IS NULL AND COALESCE(org_id, ?1) = ?1 ORDER BY sort_order ASC, name ASC",
                 )
                 .map_err(|e| e.to_string())?;
             let rows = stmt
-                .query_map([], |row| {
+                .query_map(params![org_id], |row| {
                     Ok(GroupRecord {
                         id: row.get(0)?,
                         name: row.get(1)?,
@@ -457,124 +675,21 @@ impl Database {
                 })
                 .map_err(|e| e.to_string())?;
             rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
-        })
-    }
-
-    pub fn create_group(
-        &self,
-        name: &str,
-        parent_id: Option<i64>,
-    ) -> Result<GroupRecord, String> {
-        let now = Utc::now().to_rfc3339();
-        self.with_conn(|conn| {
-            let next: i64 = conn
-                .query_row(
-                    "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM connection_groups",
-                    [],
-                    |row| row.get(0),
-                )
-                .map_err(|e| e.to_string())?;
-            conn.execute(
-                "INSERT INTO connection_groups (name, parent_id, sort_order, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![name, parent_id, next, now, now],
-            )
-            .map_err(|e| e.to_string())?;
-            let id = conn.last_insert_rowid();
-            mark_dirty(conn, "group", &id.to_string(), &now, None)?;
-            Ok(GroupRecord {
-                id,
-                name: name.to_string(),
-                parent_id,
-                sort_order: next,
-                created_at: now.clone(),
-                updated_at: now,
-            })
-        })
-    }
-
-    pub fn update_group(&self, id: i64, name: &str) -> Result<GroupRecord, String> {
-        let now = Utc::now().to_rfc3339();
-        self.with_conn(|conn| {
-            let rows = conn
-                .execute(
-                    "UPDATE connection_groups SET name = ?1, updated_at = ?2 WHERE id = ?3",
-                    params![name, now, id],
-                )
-                .map_err(|e| e.to_string())?;
-            if rows == 0 {
-                return Err(format!("group not found: {id}"));
-            }
-            mark_dirty(conn, "group", &id.to_string(), &now, None)?;
-            conn.query_row(
-                "SELECT id, name, parent_id, sort_order, created_at, updated_at FROM connection_groups WHERE id = ?1",
-                params![id],
-                |row| {
-                    Ok(GroupRecord {
-                        id: row.get(0)?,
-                        name: row.get(1)?,
-                        parent_id: row.get(2)?,
-                        sort_order: row.get(3)?,
-                        created_at: row.get(4)?,
-                        updated_at: row.get(5)?,
-                    })
-                },
-            )
-            .map_err(|e| e.to_string())
-        })
-    }
-
-    pub fn delete_group(
-        &self,
-        id: i64,
-        reassign_to: Option<i64>,
-    ) -> Result<(), String> {
-        let now = Utc::now().to_rfc3339();
-        self.with_conn(|conn| {
-            conn.execute(
-                "UPDATE connections SET group_id = ?1, updated_at = ?2 WHERE group_id = ?3",
-                params![reassign_to, now, id],
-            )
-            .map_err(|e| e.to_string())?;
-            let rows = conn
-                .execute(
-                    "UPDATE connection_groups SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2",
-                    params![now, id],
-                )
-                .map_err(|e| e.to_string())?;
-            if rows == 0 {
-                return Err(format!("group not found: {id}"));
-            }
-            mark_dirty(conn, "group", &id.to_string(), &now, Some(&now))?;
-            Ok(())
-        })
-    }
-
-    pub fn reorder_groups(&self, ids: &[i64]) -> Result<(), String> {
-        let now = Utc::now().to_rfc3339();
-        self.with_conn(|conn| {
-            for (idx, id) in ids.iter().enumerate() {
-                conn.execute(
-                    "UPDATE connection_groups SET sort_order = ?1, updated_at = ?2 WHERE id = ?3",
-                    params![idx as i64, now, id],
-                )
-                .map_err(|e| e.to_string())?;
-                mark_dirty(conn, "group", &id.to_string(), &now, None)?;
-            }
-            Ok(())
         })
     }
 
     // ── Credentials ───────────────────────────────────────────────────────────
 
     pub fn list_credentials(&self) -> Result<Vec<CredentialRecord>, String> {
+        let org_id = self.active_org_id()?;
         self.with_conn(|conn| {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, name, username, encrypted_password, encrypted_meta, created_at, updated_at FROM credentials WHERE deleted_at IS NULL ORDER BY name ASC",
+                    "SELECT id, name, username, encrypted_password, encrypted_meta, created_at, updated_at FROM credentials WHERE deleted_at IS NULL AND COALESCE(org_id, ?1) = ?1 ORDER BY name ASC",
                 )
                 .map_err(|e| e.to_string())?;
             let rows = stmt
-                .query_map([], |row| {
+                .query_map(params![org_id], |row| {
                     Ok(CredentialRecord {
                         id: row.get(0)?,
                         name: row.get(1)?,
@@ -590,137 +705,72 @@ impl Database {
         })
     }
 
-    pub fn get_credential(&self, id: i64) -> Result<CredentialRecord, String> {
-        self.with_conn(|conn| {
-            conn.query_row(
-                "SELECT id, name, username, encrypted_password, encrypted_meta, created_at, updated_at FROM credentials WHERE id = ?1 AND deleted_at IS NULL",
-                params![id],
-                |row| {
-                    Ok(CredentialRecord {
-                        id: row.get(0)?,
-                        name: row.get(1)?,
-                        username: row.get(2)?,
-                        encrypted_password: row.get(3)?,
-                        encrypted_meta: row.get(4)?,
-                        created_at: row.get(5)?,
-                        updated_at: row.get(6)?,
-                    })
-                },
-            )
-            .map_err(|e| e.to_string())
-        })
-    }
+    // ── App user (one row per identity) ──────────────────────────────────────
 
-    pub fn create_credential(
-        &self,
-        name: &str,
-        username: &str,
-        encrypted_password: &str,
-        encrypted_meta: &str,
-    ) -> Result<CredentialRecord, String> {
-        let now = Utc::now().to_rfc3339();
-        self.with_conn(|conn| {
-            conn.execute(
-                "INSERT INTO credentials (name, username, encrypted_password, encrypted_meta, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
-                params![name, username, encrypted_password, encrypted_meta, now],
-            )
-            .map_err(|e| e.to_string())?;
-            let id = conn.last_insert_rowid();
-            mark_dirty(conn, "credential", &id.to_string(), &now, None)?;
-            Ok(CredentialRecord {
-                id,
-                name: name.to_string(),
-                username: username.to_string(),
-                encrypted_password: encrypted_password.to_string(),
-                encrypted_meta: encrypted_meta.to_string(),
-                created_at: now.clone(),
-                updated_at: now,
-            })
-        })
-    }
-
-    pub fn update_credential(
-        &self,
-        id: i64,
-        name: &str,
-        username: &str,
-        encrypted_password: Option<&str>,
-        encrypted_meta: Option<&str>,
-    ) -> Result<CredentialRecord, String> {
-        let now = Utc::now().to_rfc3339();
-        self.with_conn(|conn| {
-            if let Some(pw) = encrypted_password {
-                conn.execute(
-                    "UPDATE credentials SET name = ?1, username = ?2, encrypted_password = ?3, encrypted_meta = COALESCE(?4, encrypted_meta), updated_at = ?5 WHERE id = ?6",
-                    params![name, username, pw, encrypted_meta, now, id],
-                )
-            } else {
-                conn.execute(
-                    "UPDATE credentials SET name = ?1, username = ?2, encrypted_meta = COALESCE(?3, encrypted_meta), updated_at = ?4 WHERE id = ?5",
-                    params![name, username, encrypted_meta, now, id],
-                )
-            }
-            .map_err(|e| e.to_string())?;
-            mark_dirty(conn, "credential", &id.to_string(), &now, None)?;
-            self.get_credential_locked(conn, id)
-        })
-    }
-
-    pub fn delete_credential(&self, id: i64) -> Result<(), String> {
-        let now = Utc::now().to_rfc3339();
-        self.with_conn(|conn| {
-            conn.execute(
-                "UPDATE credentials SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2",
-                params![now, id],
-            )
-            .map_err(|e| e.to_string())?;
-            mark_dirty(conn, "credential", &id.to_string(), &now, Some(&now))?;
-            Ok(())
-        })
-    }
-
-    fn get_credential_locked(
-        &self,
-        conn: &Connection,
-        id: i64,
-    ) -> Result<CredentialRecord, String> {
-        conn.query_row(
-            "SELECT id, name, username, encrypted_password, encrypted_meta, created_at, updated_at FROM credentials WHERE id = ?1",
-            params![id],
-            |row| {
-                Ok(CredentialRecord {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    username: row.get(2)?,
-                    encrypted_password: row.get(3)?,
-                    encrypted_meta: row.get(4)?,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
-                })
-            },
-        )
-        .map_err(|e| e.to_string())
-    }
-
-    // ── App user (single row) ─────────────────────────────────────────────────
 
     pub fn get_app_user(&self) -> Result<Option<AppUserRecord>, String> {
+        // Resolve the user tied to the active org. Multiple rows can coexist
+        // (synthetic `__local__` + one OAuth identity per remote org), so the
+        // old `LIMIT 1` would return whichever row inserted first — usually
+        // the local one — even after the user signed into a remote.
+        let active_org = self.active_org_id().ok();
         self.with_conn(|conn| {
+            // 1. If the active org has `user_id` set (remote OAuth join), use
+            //    that exact row.
+            if let Some(org_id) = active_org {
+                // `user_id` column is NULL when the org has never been OAuth-
+                // linked (legacy seed, fresh local install). Using `String`
+                // here would surface NULLs as rusqlite errors, propagate up
+                // through `?`, and surface to JS as a rejected invoke — which
+                // makes the entire `auth_current_user` lookup return null
+                // even though the synthetic `__local__` row exists.
+                let linked: Option<String> = conn
+                    .query_row(
+                        "SELECT user_id FROM organizations WHERE id = ?1",
+                        params![org_id],
+                        |row| row.get::<_, Option<String>>(0),
+                    )
+                    .optional()
+                    .map_err(|e| e.to_string())?
+                    .flatten();
+                if let Some(uid) = linked.as_deref().filter(|s| !s.is_empty()) {
+                    let row = conn
+                        .query_row(
+                            "SELECT user_id, email, name, avatar_url, linked_providers, master_key_enc_blob, session_token_ref, last_synced_at FROM app_user WHERE user_id = ?1",
+                            params![uid],
+                            map_app_user_row,
+                        )
+                        .optional()
+                        .map_err(|e| e.to_string())?;
+                    if row.is_some() {
+                        return Ok(row);
+                    }
+                }
+                // 2. Local org with no linked `user_id` → use the synthetic.
+                let kind: Option<String> = conn
+                    .query_row(
+                        "SELECT server_kind FROM organizations WHERE id = ?1",
+                        params![org_id],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(|e| e.to_string())?;
+                if kind.as_deref() == Some("local") {
+                    return conn
+                        .query_row(
+                            "SELECT user_id, email, name, avatar_url, linked_providers, master_key_enc_blob, session_token_ref, last_synced_at FROM app_user WHERE user_id = '__local__'",
+                            [],
+                            map_app_user_row,
+                        )
+                        .optional()
+                        .map_err(|e| e.to_string());
+                }
+            }
+            // 3. No active org or remote without linked user → any row (legacy fallback).
             conn.query_row(
                 "SELECT user_id, email, name, avatar_url, linked_providers, master_key_enc_blob, session_token_ref, last_synced_at FROM app_user LIMIT 1",
                 [],
-                |row| {
-                    Ok(AppUserRecord {
-                        user_id: row.get(0)?,
-                        email: row.get(1)?,
-                        name: row.get(2)?,
-                        avatar_url: row.get(3)?,
-                        linked_providers: row.get(4)?,
-                        master_key_enc_blob: row.get(5)?,
-                        session_token_ref: row.get(6)?,
-                        last_synced_at: row.get(7)?,
-                    })
-                },
+                map_app_user_row,
             )
             .optional()
             .map_err(|e| e.to_string())
@@ -757,54 +807,6 @@ impl Database {
         })
     }
 
-    pub fn set_last_synced_at(&self, when: &str) -> Result<(), String> {
-        self.with_conn(|conn| {
-            conn.execute(
-                "UPDATE app_user SET last_synced_at = ?1",
-                params![when],
-            )
-            .map_err(|e| e.to_string())?;
-            Ok(())
-        })
-    }
-
-    // ── Sync state ────────────────────────────────────────────────────────────
-
-    pub fn list_dirty_sync(&self) -> Result<Vec<(String, String, String, Option<String>)>, String> {
-        self.with_conn(|conn| {
-            let mut stmt = conn
-                .prepare("SELECT entity_type, entity_id, local_updated_at, deleted_at FROM sync_state WHERE dirty = 1")
-                .map_err(|e| e.to_string())?;
-            let rows = stmt
-                .query_map([], |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, Option<String>>(3)?,
-                    ))
-                })
-                .map_err(|e| e.to_string())?;
-            rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
-        })
-    }
-
-    pub fn clear_dirty_sync(
-        &self,
-        entries: &[(String, String, String)],
-    ) -> Result<(), String> {
-        self.with_conn(|conn| {
-            for (entity_type, entity_id, remote_updated_at) in entries {
-                conn.execute(
-                    "UPDATE sync_state SET dirty = 0, remote_updated_at = ?1 WHERE entity_type = ?2 AND entity_id = ?3",
-                    params![remote_updated_at, entity_type, entity_id],
-                )
-                .map_err(|e| e.to_string())?;
-            }
-            Ok(())
-        })
-    }
-
     // ── App settings ──────────────────────────────────────────────────────────
 
     pub fn get_app_setting(&self, key: &str) -> Result<Option<String>, String> {
@@ -819,6 +821,65 @@ impl Database {
         })
     }
 
+    pub fn list_app_settings_for_export(&self) -> Result<Vec<(String, String)>, String> {
+        self.with_conn(|conn| {
+            let mut stmt = conn
+                .prepare("SELECT key, value_json FROM app_settings ORDER BY key")
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+                .map_err(|e| e.to_string())?;
+            let mut out = Vec::new();
+            for row in rows {
+                out.push(row.map_err(|e| e.to_string())?);
+            }
+            Ok(out)
+        })
+    }
+
+    pub fn schema_version(&self) -> Result<u32, String> {
+        self.with_conn(|conn| {
+            conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+                .map(|v| v as u32)
+                .map_err(|e| e.to_string())
+        })
+    }
+
+    /// True iff any legacy table (will be dropped in the upcoming migration)
+    /// contains at least one row. Used to decide whether to show the export
+    /// modal on app launch.
+    pub fn has_any_legacy_data(&self) -> Result<bool, String> {
+        self.with_conn(|conn| {
+            for table in &["connections", "credentials", "connection_groups"] {
+                let exists: i64 = conn
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+                        params![table],
+                        |row| row.get(0),
+                    )
+                    .map_err(|e| e.to_string())?;
+                if exists == 0 {
+                    continue;
+                }
+                let n: i64 = conn
+                    .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+                    .map_err(|e| e.to_string())?;
+                if n > 0 {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        })
+    }
+
+    pub fn delete_app_setting(&self, key: &str) -> Result<(), String> {
+        self.with_conn(|conn| {
+            conn.execute("DELETE FROM app_settings WHERE key = ?1", params![key])
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+    }
+
     pub fn set_app_setting(&self, key: &str, value_json: &str) -> Result<(), String> {
         let now = Utc::now().to_rfc3339();
         self.with_conn(|conn| {
@@ -827,24 +888,6 @@ impl Database {
                 params![key, value_json, now],
             )
             .map_err(|e| e.to_string())?;
-            mark_dirty(conn, "app_setting", key, &now, None)?;
-            Ok(())
-        })
-    }
-
-    pub fn delete_connection(&self, id: i64) -> Result<(), String> {
-        let now = Utc::now().to_rfc3339();
-        self.with_conn(|conn| {
-            let rows = conn
-                .execute(
-                    "UPDATE connections SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2",
-                    params![now, id],
-                )
-                .map_err(|error| error.to_string())?;
-            if rows == 0 {
-                return Err(format!("connection not found: {id}"));
-            }
-            mark_dirty(conn, "connection", &id.to_string(), &now, Some(&now))?;
             Ok(())
         })
     }
@@ -906,24 +949,7 @@ impl Database {
         Ok(dir)
     }
 
-    fn get_connection_by_id_locked(
-        &self,
-        conn: &Connection,
-        id: i64,
-    ) -> Result<ConnectionRecord, String> {
-        conn.query_row(
-            "SELECT id, name, plugin_id, host, port, database, username, password, ssl_mode, settings_json, group_id, enabled, position, credential_id, created_at, updated_at FROM connections WHERE id = ?1",
-            params![id],
-            |row| map_connection_row(row),
-        )
-        .map_err(|error| error.to_string())
-    }
-
-    pub fn get_connection(&self, id: i64) -> Result<ConnectionRecord, String> {
-        self.with_conn(|conn| self.get_connection_by_id_locked(conn, id))
-    }
-
-    fn with_conn<T>(&self, f: impl FnOnce(&Connection) -> Result<T, String>) -> Result<T, String> {
+    pub fn with_conn<T>(&self, f: impl FnOnce(&Connection) -> Result<T, String>) -> Result<T, String> {
         let guard = self
             .conn
             .lock()
@@ -985,6 +1011,16 @@ impl SessionsDb {
             )
             .optional()
             .map_err(|e| e.to_string())
+        })
+    }
+
+    /// Drop any cached UI session snapshot. Called by the server-first wipe
+    /// hook so stale "open tab" rows don't survive a reset.
+    pub fn clear_sessions(&self) -> Result<(), String> {
+        self.with_conn(|conn| {
+            conn.execute("DELETE FROM kv WHERE key = 'sessions'", [])
+                .map_err(|e| e.to_string())?;
+            Ok(())
         })
     }
 

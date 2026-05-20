@@ -10,13 +10,17 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Database Manager",
-        "width": 1280,
-        "height": 800,
-        "minWidth": 980,
-        "minHeight": 640
+        "width": 620,
+        "height": 520,
+        "minWidth": 480,
+        "minHeight": 360,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "transparent": true
       }
     ]
   },
@@ -29,6 +33,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/dbm-server"
     ],
     "resources": ["../plugins/**/*"],
     "linux": {
@@ -45,6 +52,12 @@
       "desktop": {
         "schemes": ["database-manager"]
       }
+    },
+    "updater": {
+      "endpoints": [
+        "https://github.com/Tutitoos/database-manager/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZBQzc5RUQxRjIzOEMwOTkKUldTWndEankwWjdIYWxTVDYxamMreUZBS1NPRTRyYWhHbkJwY2FseUI1WW9wSGdRVENBOSs3QjAK"
     }
   }
 }

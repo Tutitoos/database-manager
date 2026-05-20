@@ -1,7 +1,14 @@
+//! Server-first credential commands. The client no longer encrypts/stores
+//! credentials locally — the active org's server is the source of truth and
+//! handles at-rest encryption (AES-GCM, transparent over TLS).
+//!
+//! `materialize()` still resolves a `credential_id` on a `ConnectionInput`
+//! into `(username, password)` before handing the input to a plugin runtime;
+//! it just fetches via HTTP now instead of the local vault.
+
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::auth::{decrypt_password, encrypt_password};
 use crate::AppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,117 +28,130 @@ pub struct DecryptedCredential {
     pub password: String,
 }
 
-fn context_for(id: i64) -> String {
-    format!("credential.v1.{id}")
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ServerCredential {
+    id: i64,
+    org_id: String,
+    name: String,
+    kind: String,
+    username: Option<String>,
+    secret: Option<String>,
+    metadata_json: String,
+    created_at: String,
+    updated_at: String,
 }
 
-fn placeholder_context() -> &'static str {
-    "credential.v1.new"
+#[derive(Debug, Serialize)]
+struct CredentialInputPayload<'a> {
+    name: &'a str,
+    kind: &'a str,
+    username: Option<&'a str>,
+    secret: Option<&'a str>,
+    metadata_json: &'a str,
 }
 
 #[tauri::command]
-pub fn list_credentials_view(state: State<'_, AppState>) -> Result<Vec<CredentialView>, String> {
-    Ok(state
-        .db
-        .list_credentials()?
-        .into_iter()
-        .map(|c| CredentialView {
-            id: c.id,
-            name: c.name,
-            username: c.username,
-            created_at: c.created_at,
-            updated_at: c.updated_at,
-        })
-        .collect())
+pub async fn list_credentials_view(
+    state: State<'_, AppState>,
+) -> Result<Vec<CredentialView>, String> {
+    let rows: Vec<ServerCredential> = crate::commands::proxy_get(&state, "/api/credentials").await?;
+    Ok(rows.into_iter().map(into_view).collect())
 }
 
 #[tauri::command]
-pub fn create_credential(
+pub async fn create_credential(
     state: State<'_, AppState>,
     name: String,
     username: String,
     password: String,
 ) -> Result<CredentialView, String> {
-    let enc = encrypt_password(&state.auth.vault, placeholder_context(), &password)?;
-    let rec = state.db.create_credential(&name, &username, &enc, "{}")?;
-    // Re-encrypt under the real per-record context now that we have the id.
-    let pt = decrypt_password(&state.auth.vault, placeholder_context(), &rec.encrypted_password)?;
-    let final_enc = encrypt_password(&state.auth.vault, &context_for(rec.id), &pt)?;
-    let updated = state
-        .db
-        .update_credential(rec.id, &rec.name, &rec.username, Some(&final_enc), None)?;
-    Ok(CredentialView {
-        id: updated.id,
-        name: updated.name,
-        username: updated.username,
-        created_at: updated.created_at,
-        updated_at: updated.updated_at,
-    })
+    let payload = CredentialInputPayload {
+        name: &name,
+        kind: "password",
+        username: Some(username.as_str()),
+        secret: Some(password.as_str()),
+        metadata_json: "{}",
+    };
+    let row: ServerCredential =
+        crate::commands::proxy_send(&state, reqwest::Method::POST, "/api/credentials", Some(&payload))
+            .await?;
+    Ok(into_view(row))
 }
 
 #[tauri::command]
-pub fn update_credential(
+pub async fn update_credential(
     state: State<'_, AppState>,
     id: i64,
     name: String,
     username: String,
     password: Option<String>,
 ) -> Result<CredentialView, String> {
-    let encrypted = if let Some(pw) = password {
-        Some(encrypt_password(&state.auth.vault, &context_for(id), &pw)?)
-    } else {
-        None
+    let payload = CredentialInputPayload {
+        name: &name,
+        kind: "password",
+        username: Some(username.as_str()),
+        secret: password.as_deref(),
+        metadata_json: "{}",
     };
-    let rec =
-        state
-            .db
-            .update_credential(id, &name, &username, encrypted.as_deref(), None)?;
-    Ok(CredentialView {
-        id: rec.id,
-        name: rec.name,
-        username: rec.username,
-        created_at: rec.created_at,
-        updated_at: rec.updated_at,
-    })
+    let row: ServerCredential = crate::commands::proxy_send(
+        &state,
+        reqwest::Method::PATCH,
+        &format!("/api/credentials/{id}"),
+        Some(&payload),
+    )
+    .await?;
+    Ok(into_view(row))
 }
 
 #[tauri::command]
-pub fn delete_credential(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-    state.db.delete_credential(id)
+pub async fn delete_credential(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+    crate::commands::proxy_delete(&state, &format!("/api/credentials/{id}")).await
 }
 
 #[tauri::command]
-pub fn decrypt_credential(
+pub async fn decrypt_credential(
     state: State<'_, AppState>,
     id: i64,
 ) -> Result<DecryptedCredential, String> {
-    let rec = state.db.get_credential(id)?;
-    let password = decrypt_password(&state.auth.vault, &context_for(rec.id), &rec.encrypted_password)?;
+    let row: ServerCredential =
+        crate::commands::proxy_get(&state, &format!("/api/credentials/{id}")).await?;
     Ok(DecryptedCredential {
-        id: rec.id,
-        name: rec.name,
-        username: rec.username,
-        password,
+        id: row.id,
+        name: row.name,
+        username: row.username.clone().unwrap_or_default(),
+        password: row.secret.clone().unwrap_or_default(),
     })
 }
 
-pub fn resolve_credential_for_connection(
+fn into_view(row: ServerCredential) -> CredentialView {
+    CredentialView {
+        id: row.id,
+        name: row.name,
+        username: row.username.unwrap_or_default(),
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    }
+}
+
+pub async fn resolve_credential_for_connection(
     state: &AppState,
     credential_id: Option<i64>,
 ) -> Result<Option<(String, String)>, String> {
     let Some(id) = credential_id else {
         return Ok(None);
     };
-    let rec = state.db.get_credential(id)?;
-    let password = decrypt_password(&state.auth.vault, &context_for(rec.id), &rec.encrypted_password)?;
-    Ok(Some((rec.username, password)))
+    let row: ServerCredential =
+        crate::commands::proxy_get(state, &format!("/api/credentials/{id}")).await?;
+    Ok(Some((row.username.unwrap_or_default(), row.secret.unwrap_or_default())))
 }
 
-pub fn materialize(
+pub async fn materialize(
     state: &AppState,
     mut input: crate::db::ConnectionInput,
 ) -> Result<crate::db::ConnectionInput, String> {
-    if let Some((username, password)) = resolve_credential_for_connection(state, input.credential_id)? {
+    if let Some((username, password)) =
+        resolve_credential_for_connection(state, input.credential_id).await?
+    {
         input.username = username;
         input.password = password;
     }
