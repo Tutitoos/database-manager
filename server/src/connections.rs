@@ -115,6 +115,7 @@ async fn create(
 ) -> Result<Json<ConnectionRow>, (StatusCode, String)> {
     let user_id = require_auth(&state, &headers)?;
     require_writer(&state, &q.org_id, &user_id)?;
+    ensure_credential_in_org(&state, input.credential_id, &q.org_id)?;
     let enc = input
         .password
         .as_deref()
@@ -142,6 +143,7 @@ async fn update(
         .map_err(internal)?
         .ok_or((StatusCode::NOT_FOUND, "not found".into()))?;
     require_writer(&state, &existing.org_id, &user_id)?;
+    ensure_credential_in_org(&state, input.credential_id, &existing.org_id)?;
     let enc = input
         .password
         .as_deref()
@@ -154,6 +156,23 @@ async fn update(
         .update_org_connection(id, &input, enc.as_deref())
         .map_err(internal)?;
     Ok(Json(decrypt_row(row)))
+}
+
+fn ensure_credential_in_org(
+    state: &AppState,
+    credential_id: Option<i64>,
+    org_id: &str,
+) -> Result<(), (StatusCode, String)> {
+    let Some(cid) = credential_id else { return Ok(()) };
+    let cred = state
+        .store
+        .get_org_credential(cid)
+        .map_err(internal)?
+        .ok_or((StatusCode::BAD_REQUEST, "credential not found".into()))?;
+    if cred.org_id != org_id {
+        return Err((StatusCode::FORBIDDEN, "credential belongs to a different organization".into()));
+    }
+    Ok(())
 }
 
 async fn delete_one(
