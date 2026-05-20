@@ -1,5 +1,6 @@
 import { Database, Lock } from "lucide-react";
 import { siDatagrip, siDbeaver } from "simple-icons";
+import { useTranslation } from "react-i18next";
 import { Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { IMPORT_PROVIDERS, type ImportProviderInfo, type ImportSource } from "@/lib/import";
@@ -21,14 +22,13 @@ interface Props {
 }
 
 export function ImportProviderModal({ onClose, onSelect }: Props) {
+  const { t } = useTranslation();
   return (
     <Modal onClose={onClose}>
       <div className="w-full max-w-lg space-y-4 rounded-xl border border-border-subtle bg-surface-overlay p-5 shadow-md">
         <header className="space-y-1">
-          <h2 className="text-h2 text-text">Importar conexiones</h2>
-          <p className="text-body text-text-muted">
-            Elige desde dónde vienen los datos. Luego se abrirá el diálogo de archivo.
-          </p>
+          <h2 className="text-h2 text-text">{t("importModal.title")}</h2>
+          <p className="text-body text-text-muted">{t("importModal.description")}</p>
         </header>
 
         <div className="grid gap-2">
@@ -44,15 +44,19 @@ export function ImportProviderModal({ onClose, onSelect }: Props) {
               <ProviderIcon source={p.source} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-body font-medium text-text">{p.label}</span>
+                  <span className="text-body font-medium text-text">
+                    {t(`importModal.providers.${p.source}.label` as const, { defaultValue: p.label })}
+                  </span>
                   {p.encrypted && (
                     <span className="text-tiny inline-flex items-center gap-1 rounded-sm bg-warn-soft px-1.5 py-0.5 font-semibold uppercase tracking-wider text-warn">
                       <Lock className="h-3 w-3" />
-                      Encriptado
+                      {t("importModal.encrypted")}
                     </span>
                   )}
                 </div>
-                <p className="text-caption mt-0.5 text-text-muted">{p.description}</p>
+                <p className="text-caption mt-0.5 text-text-muted">
+                  {t(`importModal.providers.${p.source}.description` as const, { defaultValue: p.description })}
+                </p>
               </div>
             </button>
           ))}
@@ -60,7 +64,7 @@ export function ImportProviderModal({ onClose, onSelect }: Props) {
 
         <footer className="flex justify-end">
           <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancelar
+            {t("common.cancel")}
           </Button>
         </footer>
       </div>

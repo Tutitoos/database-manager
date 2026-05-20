@@ -3,6 +3,7 @@ import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dn
 import { CSS } from "@dnd-kit/utilities";
 import { Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 
 export interface SafariTab {
@@ -39,6 +40,7 @@ export function SafariTabsStrip({
   className?: string;
   reserveTrafficLights?: boolean;
 }) {
+  const { t } = useTranslation();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   function handleDragEnd(e: DragEndEvent) {
@@ -79,7 +81,7 @@ export function SafariTabsStrip({
             <button
               type="button"
               onClick={onNewTab}
-              title="Nueva pestaña"
+              title={t("shell.newTab")}
               data-tauri-drag-region="false"
               className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-text-faint transition-colors hover:bg-surface-hover hover:text-text"
             >

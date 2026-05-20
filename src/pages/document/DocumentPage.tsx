@@ -2,6 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Check, ChevronLeft, ChevronRight, Copy, FileText, Loader2, Pencil, RefreshCw, Trash2, X } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useSearchParams } from "@/lib/router-compat";
 import { useSessionsStore, type DocumentSession } from "@/store/sessions";
 import { mutedText, sectionBorder, surface } from "@/lib/styles";
@@ -357,6 +358,7 @@ function buildGetSuggestions(
 // ── Page ────────────────────────────────────────────────────────────────────
 
 function DocumentPage() {
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const connectionId = Number(searchParams.get("id"));
   const db = searchParams.get("db") ?? "";
@@ -589,7 +591,7 @@ function DocumentPage() {
         <div className="grid h-16 w-16 w-16 place-items-center rounded-2xl border border-border-subtle bg-surface-elevated/50 text-text-muted shadow-2xl backdrop-blur-sm relative">
           <FileText className="h-8 w-8 text-blue-400/50" />
         </div>
-        <h2 className="mt-6 text-h2 font-medium text-text relative">Selecciona una colección</h2>
+        <h2 className="mt-6 text-h2 font-medium text-text relative">{t("documentPage.selectCollection")}</h2>
         <p className="mt-2 max-w-sm text-h3 text-text-faint relative">
           Expande una base de datos en el panel izquierdo y haz clic en una colección para ver sus documentos.
         </p>
@@ -788,7 +790,7 @@ function DocumentPage() {
         <Modal onClose={() => !editorState.saving && setEditorState(null)}>
           <div className="flex max-h-[80vh] w-full max-w-3xl flex-col rounded-md border border-border-subtle bg-surface shadow-xl">
             <div className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
-              <h2 className="text-h3 font-medium text-text">Editar documento</h2>
+              <h2 className="text-h3 font-medium text-text">{t("documentPage.editDocument")}</h2>
               <button
                 className="rounded p-1 text-text-faint hover:bg-surface-hover hover:text-text"
                 onClick={() => setEditorState(null)}

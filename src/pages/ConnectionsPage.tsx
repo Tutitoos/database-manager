@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useNavigate, useSearchParams } from "@/lib/router-compat";
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { APP_EVENT, on as onBus } from "@/lib/app-bus";
 import { useSessionsStore } from "@/store/sessions";
@@ -92,6 +93,7 @@ type CredentialView = {
 };
 
 export default function ConnectionsPage() {
+  const { t } = useTranslation();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
   const [groups, setGroups] = useState<ConnectionGroup[]>([]);
@@ -343,6 +345,7 @@ function ConnectionsView(props: {
   onDeleteFolder: (id: number) => Promise<void>;
   onReorder: (ids: number[]) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const navigate = useNavigate();
   const { sessions, removeSession } = useSessionsStore();
@@ -415,14 +418,14 @@ function ConnectionsView(props: {
             <Database strokeWidth={1.5} className="h-3.5 w-3.5" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-h1 truncate text-text">Conexiones</h1>
+            <h1 className="text-h1 truncate text-text">{t("connectionsPage.title")}</h1>
             <p className={cn("text-caption truncate", mutedText)}>
-              {props.total} {props.total === 1 ? "conexión configurada" : "conexiones configuradas"}
+              {props.total} {props.total === 1 ? t("connectionsPage.summarySingular", { defaultValue: "conexión configurada" }) : t("connectionsPage.summaryPlural", { defaultValue: "conexiones configuradas" })}
             </p>
           </div>
         </div>
         <Button variant="primary" size="sm" onClick={props.onCreate}>
-          <Plus className="h-3.5 w-3.5" /> Nueva conexión
+          <Plus className="h-3.5 w-3.5" /> {t("connectionsPage.newConnection")}
         </Button>
       </header>
 
@@ -432,7 +435,7 @@ function ConnectionsView(props: {
           <Search className="pointer-events-none absolute left-3 top-2 h-3.5 w-3.5 text-text-faint" />
           <Input
             className="h-8 pl-8 text-body"
-            placeholder="Buscar por nombre, host o provider…"
+            placeholder={t("connectionsPage.searchPlaceholder")}
             value={props.query}
             onChange={(event) => props.setQuery(event.target.value)}
           />
@@ -441,7 +444,7 @@ function ConnectionsView(props: {
               type="button"
               onClick={() => props.setQuery("")}
               className="absolute right-2 top-2 text-text-faint hover:text-text"
-              title="Limpiar búsqueda"
+              title={t("common.clearSearch")}
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -450,7 +453,7 @@ function ConnectionsView(props: {
         <div className="flex h-8 shrink-0 items-center overflow-hidden rounded-md border border-border-subtle">
           <button
             type="button"
-            title="Vista cuadrícula"
+            title={t("connectionsPage.gridView")}
             onClick={() => setViewMode("grid")}
             className={cn(
               "grid h-full w-8 place-items-center transition-colors",
@@ -464,7 +467,7 @@ function ConnectionsView(props: {
           <span className="h-full w-px bg-border-subtle" />
           <button
             type="button"
-            title="Vista lista"
+            title={t("connectionsPage.listView")}
             onClick={() => setViewMode("list")}
             className={cn(
               "grid h-full w-8 place-items-center transition-colors",
@@ -726,6 +729,7 @@ function ConnectionCardBody({
   onDuplicate: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation();
   const status = useConnectionStatus(connection, true);
   return (
     <div className="flex h-full flex-col gap-3 pl-1">
@@ -758,21 +762,21 @@ function ConnectionCardBody({
 
       {/* Actions toolbar — secondary always visible */}
       <div className="mt-auto flex items-center gap-1 border-t border-border-subtle/60 pt-2">
-        <Button variant="ghost" size="icon" title="Probar conexión" onClick={onTest} disabled={testResult?.loading}>
+        <Button variant="ghost" size="icon" title={t("connectionsPage.testConnection")} onClick={onTest} disabled={testResult?.loading}>
           {testResult?.loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
         </Button>
-        <Button variant="ghost" size="icon" title="Editar" onClick={onEdit}>
+        <Button variant="ghost" size="icon" title={t("common.edit")} onClick={onEdit}>
           <Pencil className="h-3.5 w-3.5" />
         </Button>
-        <Button variant="ghost" size="icon" title="Duplicar" onClick={onDuplicate}>
+        <Button variant="ghost" size="icon" title={t("common.duplicate")} onClick={onDuplicate}>
           <Copy className="h-3.5 w-3.5" />
         </Button>
         {isOpen && (
-          <Button variant="ghost" size="icon" title="Cerrar tab" onClick={onClose}>
+          <Button variant="ghost" size="icon" title={t("connectionsPage.closeTab")} onClick={onClose}>
             <LogOut className="h-3.5 w-3.5" />
           </Button>
         )}
-        <Button variant="ghost" size="icon" title="Eliminar" onClick={onDelete}>
+        <Button variant="ghost" size="icon" title={t("common.delete")} onClick={onDelete}>
           <Trash2 className="h-3.5 w-3.5 text-danger" />
         </Button>
       </div>
@@ -847,6 +851,7 @@ function ConnectionRowBody({
   onDuplicate: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation();
   const status = useConnectionStatus(connection, true);
   return (
     <>
@@ -859,7 +864,7 @@ function ConnectionRowBody({
           <span className="truncate text-body font-medium text-text">{connection.name}</span>
           {isOpen && (
             <span className="text-tiny rounded-full bg-accent-soft px-1.5 py-0.5 font-medium text-accent">
-              abierto
+              {t("connectionsPage.opened", { defaultValue: "abierto" })}
             </span>
           )}
         </div>
@@ -873,19 +878,19 @@ function ConnectionRowBody({
         <TestBadge result={testResult} />
       </div>
       <div className="flex shrink-0 items-center gap-0.5 opacity-70 transition-opacity group-hover:opacity-100">
-        <Button variant="ghost" size="icon" title={isOpen ? "Abrir" : "Conectar"} onClick={onConnect}>
+        <Button variant="ghost" size="icon" title={isOpen ? t("connectionsPage.open", { defaultValue: "Abrir" }) : t("connectionsPage.connect", { defaultValue: "Conectar" })} onClick={onConnect}>
           {isOpen ? <ExternalLink className="h-3.5 w-3.5 text-accent" /> : <LogIn className="h-3.5 w-3.5 text-accent" />}
         </Button>
-        <Button variant="ghost" size="icon" title="Probar conexión" onClick={onTest} disabled={testResult?.loading}>
+        <Button variant="ghost" size="icon" title={t("connectionsPage.testConnection")} onClick={onTest} disabled={testResult?.loading}>
           {testResult?.loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
         </Button>
-        <Button variant="ghost" size="icon" title="Editar" onClick={onEdit}>
+        <Button variant="ghost" size="icon" title={t("common.edit")} onClick={onEdit}>
           <Pencil className="h-3.5 w-3.5" />
         </Button>
-        <Button variant="ghost" size="icon" title="Duplicar" onClick={onDuplicate}>
+        <Button variant="ghost" size="icon" title={t("common.duplicate")} onClick={onDuplicate}>
           <Copy className="h-3.5 w-3.5" />
         </Button>
-        <Button variant="ghost" size="icon" title="Eliminar" onClick={onDelete}>
+        <Button variant="ghost" size="icon" title={t("common.delete")} onClick={onDelete}>
           <Trash2 className="h-3.5 w-3.5 text-red-400" />
         </Button>
       </div>
@@ -894,6 +899,7 @@ function ConnectionRowBody({
 }
 
 function SortableArticle({ id, disabled, className, children }: { id: number; disabled?: boolean; className?: string; children: React.ReactNode }) {
+  const { t } = useTranslation();
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -910,8 +916,8 @@ function SortableArticle({ id, disabled, className, children }: { id: number; di
           ref={setActivatorNodeRef}
           {...attributes}
           {...listeners}
-          aria-label="Arrastrar"
-          title="Arrastrar para reordenar"
+          aria-label={t("connectionsPage.drag")}
+          title={t("connectionsPage.dragToReorder")}
           className="absolute left-1 top-1/2 z-10 -translate-y-1/2 rounded-md p-1 text-text-faint opacity-40 transition-opacity hover:bg-surface-hover/70 hover:text-text hover:opacity-100 group-hover:opacity-80 cursor-grab active:cursor-grabbing touch-none"
         >
           <GripVertical className="h-4 w-4" />
@@ -923,6 +929,7 @@ function SortableArticle({ id, disabled, className, children }: { id: number; di
 }
 
 function SortableRow({ id, disabled, className, children }: { id: number; disabled?: boolean; className?: string; children: React.ReactNode }) {
+  const { t } = useTranslation();
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -939,8 +946,8 @@ function SortableRow({ id, disabled, className, children }: { id: number; disabl
           ref={setActivatorNodeRef}
           {...attributes}
           {...listeners}
-          aria-label="Arrastrar"
-          title="Arrastrar para reordenar"
+          aria-label={t("connectionsPage.drag")}
+          title={t("connectionsPage.dragToReorder")}
           className="cursor-grab text-text-faint hover:text-text active:cursor-grabbing touch-none"
         >
           <GripVertical className="h-4 w-4" />
@@ -982,13 +989,14 @@ function FolderBar({
   setNewFolderName: (v: string) => void;
   dndDisabled: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <div className={cn("border-b px-5 py-2", panel, sectionBorder)}>
       <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
         <FolderTab
           active={activeGroupId === "__all__"}
           icon={<Layers className="h-3.5 w-3.5" />}
-          label="Todas"
+          label={t("connectionsPage.allFolders")}
           count={countAll}
           onClick={() => setActiveGroupId("__all__")}
         />
@@ -998,7 +1006,7 @@ function FolderBar({
             <FolderTab
               active={activeGroupId === null}
               icon={<Inbox className="h-3.5 w-3.5" />}
-              label="Sin carpeta"
+              label={t("connectionsPage.noFolder")}
               count={countNoGroup}
               onClick={() => setActiveGroupId(null)}
             />
@@ -1014,7 +1022,7 @@ function FolderBar({
             count={countByGroup.get(g.id) ?? 0}
             onClick={() => setActiveGroupId(g.id)}
             onRename={async () => {
-              const next = window.prompt("Nuevo nombre", g.name);
+              const next = window.prompt(t("connectionsPage.renamePrompt", { defaultValue: "Nuevo nombre" }), g.name);
               if (next && next.trim() && next.trim() !== g.name) await onRename(g.id, next.trim());
             }}
             onDelete={() => onDelete(g)}
@@ -1025,7 +1033,7 @@ function FolderBar({
             <Input
               autoFocus
               className="h-8 w-44 text-body"
-              placeholder="Nombre de la carpeta…"
+              placeholder={t("connectionsPage.folderNamePlaceholder")}
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
               onKeyDown={async (e) => {
@@ -1050,10 +1058,10 @@ function FolderBar({
           <button
             onClick={() => setCreatingFolder(true)}
             className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-dashed border-border-strong/60 px-2 text-[11px] text-text-muted transition-colors hover:border-border-strong hover:bg-surface-elevated/60 hover:text-text"
-            title="Crear carpeta"
+            title={t("connectionsPage.createFolder")}
           >
             <FolderPlus className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Nueva carpeta</span>
+            <span className="hidden sm:inline">{t("connectionsPage.newFolder")}</span>
           </button>
         )}
         {dndDisabled && activeGroupId === "__all__" && groups.length > 0 && (
@@ -1084,6 +1092,7 @@ function FolderTab({
   onRename?: () => void;
   onDelete?: () => void;
 }) {
+  const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   return (
     <div className="group/tab relative shrink-0">
@@ -1115,7 +1124,7 @@ function FolderTab({
               setMenuOpen((x) => !x);
             }}
             className="ml-0.5 rounded p-0.5 text-text-faint opacity-0 transition-opacity hover:bg-surface-hover hover:text-text group-hover/tab:opacity-100"
-            title="Más"
+            title={t("common.more")}
           >
             <MoreHorizontal className="h-3.5 w-3.5" />
           </span>
@@ -1174,6 +1183,7 @@ function ConnectionDialog(props: {
   const [submitMode, setSubmitMode] = useState<ValidationMode | null>(null);
   const [loadingDatabases, setLoadingDatabases] = useState(false);
   const [databaseLoadError, setDatabaseLoadError] = useState("");
+  const { t } = useTranslation();
   const [loadedDatabases, setLoadedDatabases] = useState<string[]>([]);
   const [selectedDatabases, setSelectedDatabases] = useState<Set<string>>(new Set());
   const [collectionsPerDb, setCollectionsPerDb] = useState<Record<string, string[]>>({});
@@ -1443,7 +1453,7 @@ function ConnectionDialog(props: {
           {/* Header */}
           <header className={cn("flex h-12 items-center gap-3 border-b px-5", panel, sectionBorder)}>
             <h2 className="text-h2 font-semibold text-text">
-              {props.editing ? "Editar conexión" : "Nueva conexión"}
+              {props.editing ? t("connectionsPage.editConnection") : t("connectionsPage.newConnection")}
             </h2>
             {props.editing && (
               <Badge className="border-border-subtle bg-surface-elevated text-text-muted">{provider.name}</Badge>
@@ -1452,7 +1462,7 @@ function ConnectionDialog(props: {
               type="button"
               onClick={() => props.onOpenChange(false)}
               className="ml-auto text-text-faint transition hover:text-text"
-              aria-label="Cerrar"
+              aria-label={t("common.close")}
             >
               <X className="h-4 w-4" />
             </button>
@@ -1460,7 +1470,7 @@ function ConnectionDialog(props: {
 
           {/* Provider picker (horizontal cards) + Name */}
           <div className={cn("border-b px-5 py-4", panel, sectionBorder)}>
-            <label className="text-overline mb-2 block">Proveedor</label>
+            <label className="text-overline mb-2 block">{t("connectionsPage.form.provider")}</label>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {props.plugins.map((plugin) => {
                 const isActive = plugin.id === props.form.plugin_id;
@@ -1496,10 +1506,10 @@ function ConnectionDialog(props: {
               })}
             </div>
 
-            <label className="text-overline mb-1.5 mt-4 block">Nombre</label>
+            <label className="text-overline mb-1.5 mt-4 block">{t("connectionsPage.form.name")}</label>
             <Input
               autoFocus
-              placeholder="Ej. Production · Postgres"
+              placeholder={t("connectionsPage.form.namePlaceholder")}
               value={props.form.name}
               onChange={(event) => update("name", event.target.value)}
               onBlur={() => touch("name")}
@@ -1537,7 +1547,7 @@ function ConnectionDialog(props: {
                       touch={touch}
                     />
                     <div className="mx-auto mt-4 w-full max-w-190">
-                      <FormSection title="Carpeta" description="Agrupa esta conexión dentro de una carpeta para organizar tus proyectos.">
+                      <FormSection title={t("connectionsPage.form.folder")} description={t("connectionsPage.form.folderDescription")}>
                         <select
                           className="h-9 w-full rounded-md border border-border-strong bg-[#0a0a0a] px-3 text-h3 text-text outline-none hover:border-border-strong focus:border-border-strong"
                           value={props.form.group_id === null || props.form.group_id === undefined ? "" : String(props.form.group_id)}
@@ -1546,7 +1556,7 @@ function ConnectionDialog(props: {
                             update("group_id", v === "" ? null : Number(v));
                           }}
                         >
-                          <option value="">Sin carpeta</option>
+                          <option value="">{t("connectionsPage.noFolder")}</option>
                           {props.groups.map((g) => (
                             <option key={g.id} value={g.id}>
                               {g.name}
@@ -1623,15 +1633,15 @@ function ConnectionDialog(props: {
                 <div className="flex w-full items-center justify-between gap-3">
                   <Button variant="secondary" size="sm" onClick={handleTest} disabled={props.busy}>
                     {props.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
-                    Probar
+                    {t("connectionsPage.test")}
                   </Button>
                   <div className="flex gap-2">
                     <Button variant="secondary" size="sm" onClick={() => props.onOpenChange(false)} disabled={props.busy}>
-                      Cancelar
+                      {t("common.cancel")}
                     </Button>
                     <Button variant="primary" size="sm" onClick={handleSave} disabled={props.busy}>
                       {props.busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                      {props.editing ? "Guardar cambios" : "Crear conexión"}
+                      {props.editing ? t("connectionsPage.saveChanges") : t("connectionsPage.createConnection")}
                     </Button>
                   </div>
                 </div>

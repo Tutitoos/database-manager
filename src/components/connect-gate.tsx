@@ -7,6 +7,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { PROVIDER_UI, ProviderIcon } from "@/lib/providers";
@@ -28,6 +29,7 @@ type ConnectGateCtx = {
 const Ctx = createContext<ConnectGateCtx | null>(null);
 
 export function ConnectGateProvider({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { addSession } = useSessionsStore();
   const [state, setState] = useState<ConnectingState | null>(null);
@@ -86,14 +88,14 @@ export function ConnectGateProvider({ children }: { children: React.ReactNode })
             {state.status === "checking" ? (
               <div className="flex items-center gap-2 rounded-md border border-accent/30 bg-accent-soft/40 p-3 text-body text-text-muted">
                 <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
-                <span>Comprobando host, credenciales y base de datos…</span>
+                <span>{t("connectGate.loading")}</span>
               </div>
             ) : (
               <>
                 <div className="space-y-1 rounded-md border border-danger/40 bg-danger-soft p-3">
                   <div className="flex items-center gap-2 text-body font-medium text-danger">
                     <XCircle className="h-4 w-4 shrink-0" />
-                    <span>No se pudo conectar</span>
+                    <span>{t("connectGate.failed")}</span>
                   </div>
                   <p className="break-words font-mono text-tiny text-danger/80">
                     {state.error ?? "Error desconocido."}
@@ -101,7 +103,7 @@ export function ConnectGateProvider({ children }: { children: React.ReactNode })
                 </div>
                 <div className="flex items-center justify-end gap-2">
                   <Button variant="secondary" size="sm" onClick={() => setState(null)}>
-                    Cancelar
+                    {t("common.cancel")}
                   </Button>
                   <Button
                     variant="primary"

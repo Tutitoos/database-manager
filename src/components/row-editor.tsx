@@ -1,5 +1,6 @@
 import { Code2, Copy, Rows3, RotateCcw, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/modal";
 import { Select } from "@/components/ui/select";
@@ -117,6 +118,7 @@ export function RowEditor({
   onCancel,
   onSave,
 }: Props) {
+  const { t } = useTranslation();
   const isInsert = mode === "insert";
   const infoByName = useMemo(() => {
     const map = new Map<string, ColumnInfo>();
@@ -200,29 +202,29 @@ export function RowEditor({
     const hasDefault = info?.default != null;
     const empty = isNullish(v);
     if (empty) {
-      if (!nullable && !hasDefault) return "Requerido";
+      if (!nullable && !hasDefault) return t("rowEditor.validation.required");
       return null;
     }
     switch (k) {
       case "number":
-        if (typeof v === "boolean") return "Se esperaba un número";
-        if (typeof v === "string" && Number.isNaN(Number(v))) return "Número inválido";
+        if (typeof v === "boolean") return t("rowEditor.validation.expectNumber");
+        if (typeof v === "string" && Number.isNaN(Number(v))) return t("rowEditor.validation.invalidNumber");
         return null;
       case "boolean":
-        if (typeof v !== "boolean") return "Se esperaba true / false / null";
+        if (typeof v !== "boolean") return t("rowEditor.validation.expectBoolean");
         return null;
       case "json":
         if (typeof v === "string") {
-          try { JSON.parse(v); } catch { return "JSON inválido"; }
+          try { JSON.parse(v); } catch { return t("rowEditor.validation.invalidJson"); }
         }
         return null;
       case "uuid":
         if (typeof v === "string" && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) {
-          return "UUID inválido";
+          return t("rowEditor.validation.invalidUuid");
         }
         return null;
       case "date":
-        if (typeof v === "string" && Number.isNaN(Date.parse(v))) return "Fecha inválida";
+        if (typeof v === "string" && Number.isNaN(Date.parse(v))) return t("rowEditor.validation.invalidDate");
         return null;
       default:
         return null;
@@ -242,7 +244,7 @@ export function RowEditor({
     const errors: { col: string; message: string }[] = [];
     const unknownKeys: string[] = [];
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      errors.push({ col: "_root", message: "El payload debe ser un objeto JSON" });
+      errors.push({ col: "_root", message: t("rowEditor.validation.rootMustBeObject") });
       return { errors, unknown: unknownKeys };
     }
     const obj = parsed as Record<string, RowValue>;
@@ -317,7 +319,7 @@ export function RowEditor({
     const payload = view === "json" ? safeParse(jsonDraft) ?? buildPayload() : buildPayload();
     const sql = buildInsertSql(table, payload);
     navigator.clipboard.writeText(sql).catch(() => undefined);
-    pushToast({ level: "success", title: "SQL copiado", body: sql.slice(0, 100) + (sql.length > 100 ? "…" : "") });
+    pushToast({ level: "success", title: t("rowEditor.copySqlOk"), body: sql.slice(0, 100) + (sql.length > 100 ? "…" : "") });
   }
 
   useEffect(() => {
@@ -332,7 +334,7 @@ export function RowEditor({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const title = isInsert ? "Insertar fila" : "Editar fila";
+  const title = isInsert ? t("rowEditor.insertTitle") : t("rowEditor.editTitle");
   const hasMetadata = columnsInfo.length > 0;
 
   return (
@@ -363,7 +365,7 @@ export function RowEditor({
                   view === "form" ? "bg-accent-soft text-accent" : "text-text-muted hover:bg-surface-hover",
                 )}
               >
-                <Rows3 className="h-3 w-3" /> Form
+                <Rows3 className="h-3 w-3" /> {t("rowEditor.toggleForm")}
               </button>
               <button
                 type="button"
@@ -373,12 +375,12 @@ export function RowEditor({
                   view === "json" ? "bg-accent-soft text-accent" : "text-text-muted hover:bg-surface-hover",
                 )}
               >
-                <Code2 className="h-3 w-3" /> JSON
+                <Code2 className="h-3 w-3" /> {t("rowEditor.toggleJson")}
               </button>
             </div>
-            <IconBtn title="Copiar como INSERT SQL" onClick={copyAsSql}><Copy className="h-3.5 w-3.5" /></IconBtn>
-            <IconBtn title="Restablecer" onClick={handleReset}><RotateCcw className="h-3.5 w-3.5" /></IconBtn>
-            <IconBtn title="Cerrar" onClick={onCancel} disabled={saving}><X className="h-3.5 w-3.5" /></IconBtn>
+            <IconBtn title={t("rowEditor.iconLabels.copySql")} onClick={copyAsSql}><Copy className="h-3.5 w-3.5" /></IconBtn>
+            <IconBtn title={t("rowEditor.iconLabels.reset")} onClick={handleReset}><RotateCcw className="h-3.5 w-3.5" /></IconBtn>
+            <IconBtn title={t("rowEditor.iconLabels.close")} onClick={onCancel} disabled={saving}><X className="h-3.5 w-3.5" /></IconBtn>
           </div>
         </header>
 
@@ -439,7 +441,7 @@ export function RowEditor({
                         <span
                           className="text-tiny ml-auto inline-flex cursor-pointer items-center gap-1 rounded-md bg-surface px-1.5 py-0.5 font-semibold uppercase tracking-wide text-text-faint hover:text-text-muted"
                           onClick={() => clearToNull(col)}
-                          title="Click para limpiar"
+                          title={t("rowEditor.clickToClear")}
                         >
                           <span className="h-1.5 w-1.5 rounded-full bg-text-faint" />
                           null
@@ -461,21 +463,25 @@ export function RowEditor({
                 );
               })}
               {editable.length === 0 && (
-                <p className="text-body p-4 text-text-muted">Esta tabla no tiene columnas editables.</p>
+                <p className="text-body p-4 text-text-muted">{t("rowEditor.validation.noEditable")}</p>
               )}
             </div>
             {(isInsert && pkColumn) || (!hasMetadata && editable.length > 0) ? (
               <div className="mt-4 rounded-md border border-border-subtle bg-surface px-3 py-2 text-caption text-text-muted">
                 {isInsert && pkColumn && (
-                  <p>
-                    La columna <span className="font-mono text-text">{pkColumn}</span> la asigna la base de datos.
-                  </p>
+                  <p
+                    dangerouslySetInnerHTML={{
+                      __html: t("rowEditor.pkAutoAssigned", {
+                        pk: `<span class="font-mono text-text">${pkColumn}</span>`,
+                      }),
+                    }}
+                  />
                 )}
                 {!hasMetadata && editable.length > 0 && (
-                  <p>Sin metadatos del plugin — validación parcial.</p>
+                  <p>{t("rowEditor.noMetadata")}</p>
                 )}
                 {hasMetadata && (
-                  <p>Vacío = NULL. Los campos requeridos no admiten vacío.</p>
+                  <p>{t("rowEditor.emptyMeansNull")}</p>
                 )}
               </div>
             ) : null}
@@ -507,8 +513,8 @@ export function RowEditor({
                   <ul className="space-y-0.5">
                     {jsonValidation.errors.map((e, i) => (
                       <li key={i} className="flex items-start gap-2 text-danger">
-                        <span className="text-[10px] uppercase tracking-wide opacity-70">error</span>
-                        <span className="font-mono text-text">{e.col === "_root" ? "(raíz)" : e.col}</span>
+                        <span className="text-[10px] uppercase tracking-wide opacity-70">{t("rowEditor.panel.errorTag")}</span>
+                        <span className="font-mono text-text">{e.col === "_root" ? t("rowEditor.panel.rootKey") : e.col}</span>
                         <span className="text-text-muted">·</span>
                         <span>{e.message}</span>
                       </li>
@@ -519,9 +525,9 @@ export function RowEditor({
                   <ul className="mt-1 space-y-0.5">
                     {jsonValidation.unknown.map((k) => (
                       <li key={k} className="flex items-start gap-2 text-warn">
-                        <span className="text-[10px] uppercase tracking-wide opacity-70">warn</span>
+                        <span className="text-[10px] uppercase tracking-wide opacity-70">{t("rowEditor.panel.warnTag")}</span>
                         <span className="font-mono text-text">{k}</span>
-                        <span>columna desconocida (se ignorará en el envío)</span>
+                        <span>{t("rowEditor.panel.unknownColumn")}</span>
                       </li>
                     ))}
                   </ul>
@@ -540,13 +546,13 @@ export function RowEditor({
         {/* Footer */}
         <footer className="flex items-center justify-between gap-2 border-t border-border-subtle px-6 py-4">
           <span className="text-caption text-text-faint">
-            <kbd className="rounded border border-border-subtle bg-surface px-1.5 py-0.5 font-mono">⌘S</kbd> guardar ·
-            <kbd className="ml-1 rounded border border-border-subtle bg-surface px-1.5 py-0.5 font-mono">Esc</kbd> cerrar
+            <kbd className="rounded border border-border-subtle bg-surface px-1.5 py-0.5 font-mono">⌘S</kbd> {t("rowEditor.shortcuts.save")} ·
+            <kbd className="ml-1 rounded border border-border-subtle bg-surface px-1.5 py-0.5 font-mono">Esc</kbd> {t("rowEditor.shortcuts.close")}
           </span>
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={onCancel} disabled={saving}>Cancelar</Button>
+            <Button variant="secondary" size="sm" onClick={onCancel} disabled={saving}>{t("common.cancel")}</Button>
             <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
-              {saving ? "Guardando…" : "Guardar"}
+              {saving ? `${t("common.save")}…` : t("common.save")}
             </Button>
           </div>
         </footer>

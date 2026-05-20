@@ -2,6 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronLeft, ChevronRight, Copy, Download, Loader2, Pencil, Plus, RefreshCw, Table, Trash2, X, XCircle, Zap } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useSearchParams } from "@/lib/router-compat";
 import { useSessionsStore, type SqlSession } from "@/store/sessions";
 import { mutedText, panel, sectionBorder, surface } from "@/lib/styles";
@@ -96,6 +97,7 @@ function buildSqlGetSuggestions(
 }
 
 function SqlPage() {
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const connectionId = Number(searchParams.get("id"));
   const db = searchParams.get("db") ?? "";
@@ -491,7 +493,7 @@ function SqlPage() {
         <div className="grid h-16 w-16 place-items-center rounded-2xl border border-border-subtle bg-surface-elevated/50 text-text-muted shadow-2xl backdrop-blur-sm relative">
           <Table className="h-8 w-8 text-blue-400/50" />
         </div>
-        <h2 className="mt-6 text-h2 font-medium text-text relative">Selecciona una tabla</h2>
+        <h2 className="mt-6 text-h2 font-medium text-text relative">{t("sqlPage.selectTable")}</h2>
         <p className="mt-2 max-w-sm text-h3 text-text-faint relative">
           Expande una base de datos en el panel izquierdo y haz clic en una tabla para ver sus datos.
         </p>
@@ -622,7 +624,7 @@ function SqlPage() {
           <>
             <span className="text-text-faint">·</span>
             <div className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-accent/40 bg-accent-soft pl-2.5 pr-1 text-body">
-              <span className="font-medium text-accent">Fila {selectedRowIdx + 1}</span>
+              <span className="font-medium text-accent">{t("sqlPage.rowIndex", { n: selectedRowIdx + 1 })}</span>
               <span className="mx-1 h-4 w-px bg-accent/30" />
               <button
                 onClick={() => copyRowJson(result.rows[selectedRowIdx])}
@@ -745,11 +747,11 @@ function SqlPage() {
         <div className={cn("shrink-0 border-b", sectionBorder)}>
           <div className="flex items-center justify-between border-b border-border-subtle/50 px-4 py-2">
             <div className="flex items-center gap-3 text-[10px]">
-              <span className="font-semibold uppercase tracking-wider text-text-faint">Explain</span>
+              <span className="font-semibold uppercase tracking-wider text-text-faint">{t("sqlPage.explainSection")}</span>
               {explainData && (
                 <>
-                  <span className="text-text-muted">Planning <span className="text-text">{explainData.planning_ms.toFixed(2)}ms</span></span>
-                  <span className="text-text-muted">Execution <span className={cn("font-medium", explainData.execution_ms > 5000 ? "text-red-400" : explainData.execution_ms > 1000 ? "text-amber-400" : "text-emerald-400")}>{explainData.execution_ms >= 1000 ? `${(explainData.execution_ms / 1000).toFixed(2)}s` : `${explainData.execution_ms.toFixed(2)}ms`}</span></span>
+                  <span className="text-text-muted">{t("sqlPage.planning")} <span className="text-text">{explainData.planning_ms.toFixed(2)}ms</span></span>
+                  <span className="text-text-muted">{t("sqlPage.execution")} <span className={cn("font-medium", explainData.execution_ms > 5000 ? "text-red-400" : explainData.execution_ms > 1000 ? "text-amber-400" : "text-emerald-400")}>{explainData.execution_ms >= 1000 ? `${(explainData.execution_ms / 1000).toFixed(2)}s` : `${explainData.execution_ms.toFixed(2)}ms`}</span></span>
                 </>
               )}
               {explainLoading && <Loader2 className="h-3 w-3 animate-spin text-text-faint" />}
@@ -798,7 +800,7 @@ function SqlPage() {
               {/* Full plan */}
               <div className="p-3">
                 <details>
-                  <summary className="cursor-pointer text-[9px] font-semibold uppercase tracking-wider text-text-faint hover:text-text-muted">Plan completo</summary>
+                  <summary className="cursor-pointer text-[9px] font-semibold uppercase tracking-wider text-text-faint hover:text-text-muted">{t("sqlPage.fullPlan")}</summary>
                   <pre className="mt-2 max-h-48 max-w-sm overflow-auto rounded border border-border-subtle bg-surface p-2 text-[9px] text-text-muted">{JSON.stringify(explainData.plan, null, 2)}</pre>
                 </details>
               </div>

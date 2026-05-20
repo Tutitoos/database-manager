@@ -3,7 +3,196 @@
     "back": "Atrás",
     "data": "Datos",
     "queries": "Consultas",
-    "metrics": "Métricas"
+    "metrics": "Métricas",
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "saveChanges": "Guardar cambios",
+    "close": "Cerrar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "duplicate": "Duplicar",
+    "create": "Crear",
+    "new": "Nuevo",
+    "search": "Buscar",
+    "clearSearch": "Limpiar búsqueda",
+    "more": "Más",
+    "name": "Nombre",
+    "loading": "Cargando…"
+  },
+  "rowEditor": {
+    "insertTitle": "Insertar fila",
+    "editTitle": "Editar fila",
+    "validation": {
+      "required": "Requerido",
+      "expectNumber": "Se esperaba un número",
+      "invalidNumber": "Número inválido",
+      "expectBoolean": "Se esperaba true / false / null",
+      "invalidJson": "JSON inválido",
+      "invalidUuid": "UUID inválido",
+      "invalidDate": "Fecha inválida",
+      "rootMustBeObject": "El payload debe ser un objeto JSON",
+      "noEditable": "Esta tabla no tiene columnas editables."
+    },
+    "noMetadata": "Sin metadatos del plugin — validación parcial.",
+    "emptyMeansNull": "Vacío = NULL. Los campos requeridos no admiten vacío.",
+    "pkAutoAssigned": "La columna {{pk}} la asigna la base de datos.",
+    "clickToClear": "Click para limpiar",
+    "copySqlOk": "SQL copiado",
+    "toggleForm": "Form",
+    "toggleJson": "JSON",
+    "shortcuts": {
+      "save": "guardar",
+      "close": "cerrar"
+    },
+    "panel": {
+      "errorTag": "error",
+      "warnTag": "warn",
+      "rootKey": "(raíz)",
+      "unknownColumn": "columna desconocida (se ignorará en el envío)"
+    },
+    "iconLabels": {
+      "copySql": "Copiar como INSERT SQL",
+      "reset": "Restablecer",
+      "close": "Cerrar"
+    }
+  },
+  "importModal": {
+    "title": "Importar conexiones",
+    "description": "Elige desde dónde vienen los datos. Luego se abrirá el diálogo de archivo.",
+    "encrypted": "Encriptado",
+    "providers": {
+      "native": {
+        "label": "Database Manager",
+        "description": "Archivos exportados desde esta app (JSON con schema database-manager.*)."
+      },
+      "dbeaver": {
+        "label": "DBeaver",
+        "description": "Workspace JSON (Window → Export → Project)."
+      },
+      "datagrip": {
+        "label": "JetBrains DataGrip",
+        "description": ".idea/dataSources.xml. Las contraseñas no se exportan."
+      },
+      "dataflare": {
+        "label": "DataFlare",
+        "description": "Export JSON con providers (postgresql/mysql/mongodb/redis)."
+      },
+      "tableplus": {
+        "label": "TablePlus",
+        "description": "Archivos .tpc están encriptados — usa “Export connection → JSON (plain)”."
+      }
+    }
+  },
+  "queryTimings": {
+    "lastQuery": "Última query",
+    "totalSuffix": "total",
+    "noHistory": "Sin historial.",
+    "relativeNow": "ahora",
+    "relativeSecondsAgo": "hace {{seconds}}s",
+    "relativeMinutesAgo": "hace {{minutes}}m",
+    "tooltip": "Detalle de tiempos · DB / Cliente",
+    "db": "DB",
+    "render": "Render",
+    "ui": "UI"
+  },
+  "connectionsPage": {
+    "title": "Conexiones",
+    "newConnection": "Nueva conexión",
+    "editConnection": "Editar conexión",
+    "createConnection": "Crear conexión",
+    "saveChanges": "Guardar cambios",
+    "searchPlaceholder": "Buscar por nombre, host o provider…",
+    "gridView": "Vista cuadrícula",
+    "listView": "Vista lista",
+    "testConnection": "Probar conexión",
+    "test": "Probar",
+    "closeTab": "Cerrar tab",
+    "drag": "Arrastrar",
+    "dragToReorder": "Arrastrar para reordenar",
+    "allFolders": "Todas",
+    "noFolder": "Sin carpeta",
+    "folderNamePlaceholder": "Nombre de la carpeta…",
+    "createFolder": "Crear carpeta",
+    "newFolder": "Nueva carpeta",
+    "form": {
+      "provider": "Proveedor",
+      "name": "Nombre",
+      "namePlaceholder": "Ej. Production · Postgres",
+      "folder": "Carpeta",
+      "folderDescription": "Agrupa esta conexión dentro de una carpeta para organizar tus proyectos."
+    }
+  },
+  "settingsLayout": {
+    "general": "General",
+    "appearance": "Apariencia",
+    "organizations": "Organizaciones",
+    "localServer": "Local server",
+    "account": "Mi cuenta",
+    "connections": "Conexiones",
+    "credentials": "Credenciales",
+    "plugins": "Plugins",
+    "shortcuts": "Atajos"
+  },
+  "appLayout": {
+    "keychain": {
+      "saveFailed": "No se guardó en keychain",
+      "savedTouchId": "Clave guardada con Touch ID",
+      "savedKeychain": "Clave guardada en keychain",
+      "willPromptBiometry": "Próximo arranque pedirá huella.",
+      "autoUnlockActive": "Auto-unlock activo."
+    },
+    "session": {
+      "expired": "Sesión expirada",
+      "signInAgain": "Inicia sesión de nuevo."
+    },
+    "updates": {
+      "versionAvailable": "Versión {{version}} disponible",
+      "newVersionBody": "Hay una nueva versión disponible.",
+      "upToDate": "Estás al día",
+      "checkFailed": "No se pudo comprobar"
+    }
+  },
+  "sqlPage": {
+    "selectTable": "Selecciona una tabla",
+    "rowIndex": "Fila {{n}}",
+    "explainSection": "Explain",
+    "planning": "Planning",
+    "execution": "Execution",
+    "fullPlan": "Plan completo"
+  },
+  "sqlQueriesPage": {
+    "newScript": "Nuevo script",
+    "blank": "En blanco",
+    "scriptPrefix": "Script",
+    "doubleClickToRename": "Doble click para renombrar",
+    "rename": "Renombrar",
+    "closeOrEmpty": {
+      "close": "Cerrar",
+      "empty": "Vaciar"
+    },
+    "resultLimited": "Resultado limitado a {{count}} filas. Refina tu consulta para ver más.",
+    "rows": "filas",
+    "affected": "afectadas"
+  },
+  "redisPage": {
+    "selectKey": "Selecciona una clave",
+    "editValue": "Editar valor — {{key}}"
+  },
+  "documentPage": {
+    "selectCollection": "Selecciona una colección",
+    "editDocument": "Editar documento"
+  },
+  "connectGate": {
+    "loading": "Comprobando host, credenciales y base de datos…",
+    "failed": "No se pudo conectar"
+  },
+  "shell": {
+    "newTab": "Nueva pestaña",
+    "sidebarNoFolder": "Sin carpeta",
+    "unstableConnection": "Conexión inestable",
+    "statusBar": {
+      "orgUnreachable": "Servidor de la organización inaccesible. Cambia o repara la organización."
+    }
   },
   "nav": {
     "dashboard": "Inicio",

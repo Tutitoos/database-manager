@@ -18,6 +18,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { EditorView } from "@uiw/react-codemirror";
 import { format as formatSql } from "sql-formatter";
 
@@ -131,6 +132,7 @@ export default function SqlQueriesPage({
   insertRequest?: { token: number; sql: string };
   onConsumeInsertRequest?: () => void;
 }) {
+  const { t } = useTranslation();
   const { sessions, updateSession } = useSessionsStore();
   const stored = sessions[connection.id] as SqlSession | undefined;
 
@@ -165,7 +167,7 @@ export default function SqlQueriesPage({
     if (!stored) return;
     const id = makeScriptId();
     const sql = SQL_TEMPLATES[template];
-    const prefix = template === "blank" ? "Script" : TEMPLATE_LABELS[template];
+    const prefix = template === "blank" ? t("sqlQueriesPage.scriptPrefix") : TEMPLATE_LABELS[template];
     const name = uniqueName(prefix);
     updateSession(connection.id, {
       queryScripts: [...scripts, { id, name, sql }],
@@ -444,7 +446,7 @@ export default function SqlQueriesPage({
           trigger={
             <span
               className="ml-1 inline-flex h-7 items-center gap-1 rounded-md border border-border-subtle bg-surface px-2 text-[11px] text-text-muted transition-colors hover:border-border-strong hover:bg-surface-hover hover:text-text"
-              title="Nuevo script"
+              title={t("sqlQueriesPage.newScript")}
             >
               <Plus className="h-3 w-3" />
               <ChevronDown className="h-3 w-3 opacity-60" />
@@ -458,7 +460,7 @@ export default function SqlQueriesPage({
                 icon={<Plus className="h-3.5 w-3.5 text-accent" />}
                 onClick={() => { newScript("blank"); close(); }}
               >
-                En blanco
+                {t("sqlQueriesPage.blank")}
               </DropdownItem>
               <DropdownSeparator />
               {(["select", "insert", "update", "delete"] as const).map((k) => (
@@ -600,8 +602,8 @@ export default function SqlQueriesPage({
           {!running && result && (
             <span>
               {result.affected != null && result.columns.length === 0
-                ? `${result.affected} afectadas · `
-                : `${result.total} filas · `}
+                ? `${result.affected} ${t("sqlQueriesPage.affected")} · `
+                : `${result.total} ${t("sqlQueriesPage.rows")} · `}
               {result.query_ms} ms
               {result.was_capped && " · limitado"}
             </span>
@@ -708,6 +710,7 @@ function ResultsView({
   onCellClick: (v: ExecCell) => void;
   onOpenJson: (v: unknown) => void;
 }) {
+  const { t } = useTranslation();
   if (error) {
     return (
       <div className="h-full overflow-auto p-4">
@@ -773,6 +776,7 @@ function ResultsTable({
   onCellClick: (v: ExecCell) => void;
   onOpenJson: (v: unknown) => void;
 }) {
+  const { t } = useTranslation();
   const colKinds = useMemo<ColKind[]>(
     () => result.columns.map((_, i) => colKindFromType(result.column_types?.[i])),
     [result],
@@ -783,7 +787,7 @@ function ResultsTable({
       {(result.was_capped || result.extra_statements_discarded) && (
         <div className="text-caption shrink-0 border-b border-info/30 bg-info-soft px-3 py-1.5 text-info">
           {result.was_capped && (
-            <span>Resultado limitado a {result.total} filas (consulta sin LIMIT).</span>
+            <span>{t("sqlQueriesPage.resultLimited", { count: result.total })}</span>
           )}
           {result.extra_statements_discarded && (
             <span className="ml-2">Solo se ejecutó la primera sentencia; el resto fue ignorado.</span>
@@ -970,6 +974,7 @@ function ScriptTab({
   onClose: () => void;
   onRename: (name: string) => void;
 }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(script.name);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -1031,7 +1036,7 @@ function ScriptTab({
             "max-w-[12rem] truncate font-mono transition-colors",
             active ? "text-text" : "text-text-muted group-hover:text-text",
           )}
-          title="Doble click para renombrar"
+          title={t("sqlQueriesPage.doubleClickToRename")}
         >
           {script.name}
         </button>
@@ -1041,7 +1046,7 @@ function ScriptTab({
           type="button"
           onClick={() => setEditing(true)}
           className="text-text-faint opacity-0 transition-opacity hover:text-text group-hover:opacity-100"
-          title="Renombrar"
+          title={t("sqlQueriesPage.rename")}
         >
           <Pencil className="h-2.5 w-2.5" />
         </button>
@@ -1049,7 +1054,7 @@ function ScriptTab({
       <button
         type="button"
         onClick={onClose}
-        title={canClose ? "Cerrar" : "Vaciar"}
+        title={canClose ? t("sqlQueriesPage.closeOrEmpty.close") : t("sqlQueriesPage.closeOrEmpty.empty")}
         className={cn(
           "rounded-sm p-0.5 transition-all",
           active

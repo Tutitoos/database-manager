@@ -2,6 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Check, ChevronRight, Copy, Key, Loader2, X } from "lucide-react";
 import { Suspense, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useSearchParams } from "@/lib/router-compat";
 import { mutedText, sectionBorder, surface } from "@/lib/styles";
 import type { Connection, KeyValue } from "@/lib/types";
@@ -142,6 +143,7 @@ const TYPE_COLORS: Record<string, string> = {
 // ── Page ────────────────────────────────────────────────────────────────────
 
 function RedisPage() {
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const connectionId = Number(searchParams.get("id"));
   const db = searchParams.get("db") ?? "0";
@@ -287,7 +289,7 @@ function RedisPage() {
         <div className="grid h-16 w-16 place-items-center rounded-2xl border border-border-subtle bg-surface-elevated/50 text-text-muted shadow-2xl backdrop-blur-sm relative">
           <Key className="h-8 w-8 text-blue-400/50" />
         </div>
-        <h2 className="mt-6 text-h2 font-medium text-text relative">Selecciona una clave</h2>
+        <h2 className="mt-6 text-h2 font-medium text-text relative">{t("redisPage.selectKey")}</h2>
         <p className="mt-2 max-w-sm text-h3 text-text-faint relative">
           Selecciona una clave del panel izquierdo para explorar su contenido, tipo y tiempo de vida.
         </p>
@@ -389,7 +391,7 @@ function RedisPage() {
         <Modal onClose={() => !editor.saving && setEditor(null)}>
           <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-md border border-border-subtle bg-surface shadow-xl">
             <div className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
-              <h2 className="text-h3 font-medium text-text">Editar valor — {key}</h2>
+              <h2 className="text-h3 font-medium text-text">{t("redisPage.editValue", { key })}</h2>
               <button className="rounded p-1 text-text-faint hover:bg-surface-hover" onClick={() => setEditor(null)}>✕</button>
             </div>
             <div className="min-h-[40vh] flex-1 overflow-auto bg-surface">

@@ -77,10 +77,10 @@ export function StatusBar({ onCommand }: { onCommand?: () => void }) {
             type="button"
             onClick={retryHealth}
             className="flex items-center gap-1.5 rounded-sm bg-warning/15 px-2 py-0.5 text-warning hover:bg-warning/25"
-            title="Servidor de la organización inaccesible. Click para reintentar."
+            title={t("shell.statusBar.orgUnreachable")}
           >
             <CloudOff strokeWidth={1.5} className="h-3 w-3" />
-            <span className="text-[10px] font-medium">Sin conexión</span>
+            <span className="text-[10px] font-medium">{t("statusBar.offline", { defaultValue: "Sin conexión" })}</span>
           </button>
         )}
         <button

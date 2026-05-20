@@ -3,7 +3,196 @@
     "back": "Back",
     "data": "Data",
     "queries": "Queries",
-    "metrics": "Metrics"
+    "metrics": "Metrics",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saveChanges": "Save changes",
+    "close": "Close",
+    "delete": "Delete",
+    "edit": "Edit",
+    "duplicate": "Duplicate",
+    "create": "Create",
+    "new": "New",
+    "search": "Search",
+    "clearSearch": "Clear search",
+    "more": "More",
+    "name": "Name",
+    "loading": "Loading…"
+  },
+  "rowEditor": {
+    "insertTitle": "Insert row",
+    "editTitle": "Edit row",
+    "validation": {
+      "required": "Required",
+      "expectNumber": "Expected a number",
+      "invalidNumber": "Invalid number",
+      "expectBoolean": "Expected true / false / null",
+      "invalidJson": "Invalid JSON",
+      "invalidUuid": "Invalid UUID",
+      "invalidDate": "Invalid date",
+      "rootMustBeObject": "Payload must be a JSON object",
+      "noEditable": "This table has no editable columns."
+    },
+    "noMetadata": "No plugin metadata — partial validation.",
+    "emptyMeansNull": "Empty = NULL. Required fields don't allow empty.",
+    "pkAutoAssigned": "Column {{pk}} is assigned by the database.",
+    "clickToClear": "Click to clear",
+    "copySqlOk": "SQL copied",
+    "toggleForm": "Form",
+    "toggleJson": "JSON",
+    "shortcuts": {
+      "save": "save",
+      "close": "close"
+    },
+    "panel": {
+      "errorTag": "error",
+      "warnTag": "warn",
+      "rootKey": "(root)",
+      "unknownColumn": "unknown column (will be dropped on send)"
+    },
+    "iconLabels": {
+      "copySql": "Copy as INSERT SQL",
+      "reset": "Reset",
+      "close": "Close"
+    }
+  },
+  "importModal": {
+    "title": "Import connections",
+    "description": "Pick the source. The file dialog will open next.",
+    "encrypted": "Encrypted",
+    "providers": {
+      "native": {
+        "label": "Database Manager",
+        "description": "Files exported from this app (JSON with schema database-manager.*)."
+      },
+      "dbeaver": {
+        "label": "DBeaver",
+        "description": "Workspace JSON (Window → Export → Project)."
+      },
+      "datagrip": {
+        "label": "JetBrains DataGrip",
+        "description": ".idea/dataSources.xml. Passwords are not exported."
+      },
+      "dataflare": {
+        "label": "DataFlare",
+        "description": "JSON export with providers (postgresql/mysql/mongodb/redis)."
+      },
+      "tableplus": {
+        "label": "TablePlus",
+        "description": ".tpc files are encrypted — use “Export connection → JSON (plain)”."
+      }
+    }
+  },
+  "queryTimings": {
+    "lastQuery": "Last query",
+    "totalSuffix": "total",
+    "noHistory": "No history.",
+    "relativeNow": "now",
+    "relativeSecondsAgo": "{{seconds}}s ago",
+    "relativeMinutesAgo": "{{minutes}}m ago",
+    "tooltip": "Timing detail · DB / Client",
+    "db": "DB",
+    "render": "Render",
+    "ui": "UI"
+  },
+  "connectionsPage": {
+    "title": "Connections",
+    "newConnection": "New connection",
+    "editConnection": "Edit connection",
+    "createConnection": "Create connection",
+    "saveChanges": "Save changes",
+    "searchPlaceholder": "Search by name, host or provider…",
+    "gridView": "Grid view",
+    "listView": "List view",
+    "testConnection": "Test connection",
+    "test": "Test",
+    "closeTab": "Close tab",
+    "drag": "Drag",
+    "dragToReorder": "Drag to reorder",
+    "allFolders": "All",
+    "noFolder": "No folder",
+    "folderNamePlaceholder": "Folder name…",
+    "createFolder": "Create folder",
+    "newFolder": "New folder",
+    "form": {
+      "provider": "Provider",
+      "name": "Name",
+      "namePlaceholder": "e.g. Production · Postgres",
+      "folder": "Folder",
+      "folderDescription": "Group this connection inside a folder to organize your projects."
+    }
+  },
+  "settingsLayout": {
+    "general": "General",
+    "appearance": "Appearance",
+    "organizations": "Organizations",
+    "localServer": "Local server",
+    "account": "My account",
+    "connections": "Connections",
+    "credentials": "Credentials",
+    "plugins": "Plugins",
+    "shortcuts": "Shortcuts"
+  },
+  "appLayout": {
+    "keychain": {
+      "saveFailed": "Could not save to keychain",
+      "savedTouchId": "Key saved with Touch ID",
+      "savedKeychain": "Key saved in keychain",
+      "willPromptBiometry": "Next launch will prompt for biometrics.",
+      "autoUnlockActive": "Auto-unlock active."
+    },
+    "session": {
+      "expired": "Session expired",
+      "signInAgain": "Sign in again."
+    },
+    "updates": {
+      "versionAvailable": "Version {{version}} available",
+      "newVersionBody": "A new version is available.",
+      "upToDate": "You're up to date",
+      "checkFailed": "Could not check for updates"
+    }
+  },
+  "sqlPage": {
+    "selectTable": "Select a table",
+    "rowIndex": "Row {{n}}",
+    "explainSection": "Explain",
+    "planning": "Planning",
+    "execution": "Execution",
+    "fullPlan": "Full plan"
+  },
+  "sqlQueriesPage": {
+    "newScript": "New script",
+    "blank": "Blank",
+    "scriptPrefix": "Script",
+    "doubleClickToRename": "Double-click to rename",
+    "rename": "Rename",
+    "closeOrEmpty": {
+      "close": "Close",
+      "empty": "Empty"
+    },
+    "resultLimited": "Result limited to {{count}} rows. Refine your query to see more.",
+    "rows": "rows",
+    "affected": "affected"
+  },
+  "redisPage": {
+    "selectKey": "Select a key",
+    "editValue": "Edit value — {{key}}"
+  },
+  "documentPage": {
+    "selectCollection": "Select a collection",
+    "editDocument": "Edit document"
+  },
+  "connectGate": {
+    "loading": "Checking host, credentials and database…",
+    "failed": "Could not connect"
+  },
+  "shell": {
+    "newTab": "New tab",
+    "sidebarNoFolder": "No folder",
+    "unstableConnection": "Unstable connection",
+    "statusBar": {
+      "orgUnreachable": "Organization server unreachable. Switch or repair the organization."
+    }
   },
   "nav": {
     "dashboard": "Home",

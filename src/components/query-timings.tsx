@@ -1,5 +1,6 @@
 import { History, Server, Monitor } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 
 export type TimingEntry = {
@@ -23,11 +24,14 @@ function tone(ms: number): string {
   return "text-danger";
 }
 
-function relativeTime(at: number): string {
-  const diff = Math.max(0, Date.now() - at);
-  if (diff < 1000) return "ahora";
-  if (diff < 60_000) return `hace ${Math.floor(diff / 1000)}s`;
-  return `hace ${Math.floor(diff / 60_000)}m`;
+function useRelativeTime() {
+  const { t } = useTranslation();
+  return (at: number): string => {
+    const diff = Math.max(0, Date.now() - at);
+    if (diff < 1000) return t("queryTimings.relativeNow");
+    if (diff < 60_000) return t("queryTimings.relativeSecondsAgo", { seconds: Math.floor(diff / 1000) });
+    return t("queryTimings.relativeMinutesAgo", { minutes: Math.floor(diff / 60_000) });
+  };
 }
 
 export function QueryTimings({
@@ -40,6 +44,8 @@ export function QueryTimings({
   history: TimingEntry[];
 }) {
   const [open, setOpen] = useState(false);
+  const { t } = useTranslation();
+  const relativeTime = useRelativeTime();
   if (queryMs == null) return null;
   const total = (queryMs ?? 0) + (renderMs ?? 0);
 
@@ -48,16 +54,16 @@ export function QueryTimings({
       <button
         onClick={() => setOpen((v) => !v)}
         className="inline-flex items-center gap-1.5 text-body text-text-muted transition-colors hover:text-text"
-        title="Detalle de tiempos · DB / Cliente"
+        title={t("queryTimings.tooltip")}
       >
         <Server className="h-3 w-3 text-text-faint" />
-        <span className="text-text-faint">DB</span>
+        <span className="text-text-faint">{t("queryTimings.db")}</span>
         <span className={cn("font-mono", tone(queryMs))}>{fmt(queryMs)}</span>
         {renderMs != null && (
           <>
             <span className="text-text-faint">·</span>
             <Monitor className="h-3 w-3 text-text-faint" />
-            <span className="text-text-faint">UI</span>
+            <span className="text-text-faint">{t("queryTimings.ui")}</span>
             <span className={cn("font-mono", tone(renderMs))}>{fmt(renderMs)}</span>
           </>
         )}
@@ -69,14 +75,14 @@ export function QueryTimings({
           <div className="absolute right-0 top-full z-40 mt-1.5 w-[280px] overflow-hidden rounded-lg border border-border-subtle bg-surface-overlay shadow-xl">
             <div className="border-b border-border-subtle px-3 py-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-overline">Última query</span>
-                <span className="text-caption font-mono text-text-muted">{fmt(total)} total</span>
+                <span className="text-overline">{t("queryTimings.lastQuery")}</span>
+                <span className="text-caption font-mono text-text-muted">{fmt(total)} {t("queryTimings.totalSuffix")}</span>
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2">
-                <Pill icon={<Server className="h-3 w-3" />} label="DB" value={fmt(queryMs)} accent={tone(queryMs)} />
+                <Pill icon={<Server className="h-3 w-3" />} label={t("queryTimings.db")} value={fmt(queryMs)} accent={tone(queryMs)} />
                 <Pill
                   icon={<Monitor className="h-3 w-3" />}
-                  label="Render"
+                  label={t("queryTimings.render")}
                   value={renderMs != null ? fmt(renderMs) : "—"}
                   accent={renderMs != null ? tone(renderMs) : "text-text-faint"}
                 />
@@ -84,7 +90,7 @@ export function QueryTimings({
             </div>
             <div className="max-h-60 overflow-auto">
               {history.length === 0 ? (
-                <p className="text-caption px-3 py-3 text-text-faint">Sin historial.</p>
+                <p className="text-caption px-3 py-3 text-text-faint">{t("queryTimings.noHistory")}</p>
               ) : (
                 history
                   .slice()

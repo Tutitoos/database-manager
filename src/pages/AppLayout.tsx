@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Boxes } from "lucide-react";
 import { Outlet } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate, useSearchParams } from "@/lib/router-compat";
 import { SafariTabsStrip, TabContextMenu, type SafariTab } from "@/components/shell/SafariTabsStrip";
 import { ShellToolbar } from "@/components/shell/ShellToolbar";
@@ -40,6 +41,7 @@ export default function AppLayout() {
 
 function Shell() {
   useLocaleSync();
+  const { t } = useTranslation();
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -53,13 +55,13 @@ function Shell() {
   // Toast for keychain save outcomes (so user knows if Touch ID persisted).
   useEffect(() => {
     const u1 = listen<string>("vault:keychain-error", (e) => {
-      pushToast({ level: "danger", title: "No se guardó en keychain", body: String(e.payload), ttl: 8000 });
+      pushToast({ level: "danger", title: t("appLayout.keychain.saveFailed"), body: String(e.payload), ttl: 8000 });
     });
     const u2 = listen<boolean>("vault:keychain-saved", (e) => {
       pushToast({
         level: "success",
-        title: e.payload ? "Clave guardada con Touch ID" : "Clave guardada en keychain",
-        body: e.payload ? "Próximo arranque pedirá huella." : "Auto-unlock activo.",
+        title: e.payload ? t("appLayout.keychain.savedTouchId") : t("appLayout.keychain.savedKeychain"),
+        body: e.payload ? t("appLayout.keychain.willPromptBiometry") : t("appLayout.keychain.autoUnlockActive"),
       });
     });
     return () => {
@@ -144,9 +146,9 @@ function Shell() {
     const expiredP = listen("auth:session-expired", () => {
       pushToast({
         level: "warn",
-        title: "Sesión expirada",
-        body: "Inicia sesión de nuevo.",
-        action: { label: "Iniciar sesión", onClick: () => navigate("/login") },
+        title: t("appLayout.session.expired"),
+        body: t("appLayout.session.signInAgain"),
+        action: { label: t("appLayout.session.signInAction", { defaultValue: "Iniciar sesión" }), onClick: () => navigate("/login") },
         ttl: 12000,
       });
     });
@@ -251,16 +253,16 @@ function Shell() {
         if (found) {
           pushToast({
             level: "info",
-            title: `Versión ${found.version} disponible`,
-            body: "Hay una nueva versión de Database Manager lista para descargar.",
+            title: t("appLayout.updates.versionAvailable", { version: found.version }),
+            body: t("appLayout.updates.newVersionBody"),
             ttl: 12000,
-            action: { label: "Actualizar", onClick: () => void openReleasePage(found.url) },
+            action: { label: t("appLayout.updates.update", { defaultValue: "Actualizar" }), onClick: () => void openReleasePage(found.url) },
           });
         } else {
-          pushToast({ level: "success", title: "Estás al día", body: `Versión ${await currentVersion()}` });
+          pushToast({ level: "success", title: t("appLayout.updates.upToDate"), body: `${t("appLayout.updates.versionLabel", { defaultValue: "Versión" })} ${await currentVersion()}` });
         }
       } catch (e) {
-        pushToast({ level: "danger", title: "No se pudo comprobar", body: String(e) });
+        pushToast({ level: "danger", title: t("appLayout.updates.checkFailed"), body: String(e) });
       }
     },
   });
@@ -276,10 +278,10 @@ function Shell() {
         if (!found || cancelled) return;
         pushToast({
           level: "info",
-          title: `Versión ${found.version} disponible`,
-          body: "Hay una nueva versión de Database Manager lista para descargar.",
+          title: t("appLayout.updates.versionAvailable", { version: found.version }),
+          body: t("appLayout.updates.newVersionBody"),
           ttl: 15000,
-          action: { label: "Actualizar", onClick: () => void openReleasePage(found.url) },
+          action: { label: t("appLayout.updates.update", { defaultValue: "Actualizar" }), onClick: () => void openReleasePage(found.url) },
         });
       } catch { /* silent on boot */ }
     })();

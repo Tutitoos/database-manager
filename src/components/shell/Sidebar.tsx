@@ -121,7 +121,7 @@ export function Sidebar() {
     invoke("test_connection", { input: activeConnection }).catch((e) => {
       pushToast({
         level: "warn",
-        title: "Conexión inestable",
+        title: t("shell.unstableConnection"),
         body: String(e),
       });
     });
@@ -173,7 +173,7 @@ export function Sidebar() {
 
         {!activeConnection && (
         <Section title={t("sidebar.workspaces")} icon={<Folder strokeWidth={1.5} className="h-3 w-3" />}>
-          {[{ id: null, name: "Sin carpeta" } as { id: number | null; name: string }, ...groups]
+          {[{ id: null, name: t("shell.sidebarNoFolder") } as { id: number | null; name: string }, ...groups]
             .map((g) => {
               const list = byGroup.get(g.id) ?? [];
               const expanded = expandedWorkspaces.has(g.id);
