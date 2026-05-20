@@ -50,7 +50,8 @@ export default function MembersPage() {
 
   useEffect(() => {
     void load();
-  }, [orgId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, offline]);
 
   async function changeRole(m: Member, role: Member["role"]) {
     try {
