@@ -339,9 +339,77 @@ function toArray<T>(value: T | T[] | undefined): T[] {
   return Array.isArray(value) ? value : [value];
 }
 
-/** Top-level entry: takes raw file text, detects format, parses, returns the
- *  normalized bundle. Throws on parse / validation failure with a message the
- *  caller can surface to the user. */
+/** Caller-driven entry: the user has already picked the source via the import
+ *  modal, so we skip detection and run the matching parser. Use this when the
+ *  user explicitly chose the format. */
+export function parseAs(source: ImportSource, text: string): ImportBundle {
+  if (source === "datagrip") return parseDataGrip(text);
+  if (source === "tableplus") {
+    parseTablePlus(text);
+    throw new Error("unreachable");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("File is not valid JSON");
+  }
+  switch (source) {
+    case "native":
+      return parseNative(parsed);
+    case "dbeaver":
+      return parseDBeaver(parsed);
+    case "dataflare":
+      return parseDataFlare(parsed);
+    case "unknown":
+    default:
+      throw new Error("No parser for source: " + source);
+  }
+}
+
+export interface ImportProviderInfo {
+  source: Exclude<ImportSource, "unknown">;
+  label: string;
+  description: string;
+  extensions: string[];
+  encrypted?: boolean;
+}
+
+export const IMPORT_PROVIDERS: ImportProviderInfo[] = [
+  {
+    source: "native",
+    label: "Database Manager",
+    description: "Archivos exportados desde esta app (JSON con schema database-manager.*).",
+    extensions: ["json"],
+  },
+  {
+    source: "dbeaver",
+    label: "DBeaver",
+    description: "Workspace JSON (Window → Export → Project).",
+    extensions: ["json"],
+  },
+  {
+    source: "datagrip",
+    label: "JetBrains DataGrip",
+    description: ".idea/dataSources.xml. Las contraseñas no se exportan.",
+    extensions: ["xml"],
+  },
+  {
+    source: "dataflare",
+    label: "DataFlare",
+    description: "Export JSON con providers (postgresql/mysql/mongodb/redis).",
+    extensions: ["json"],
+  },
+  {
+    source: "tableplus",
+    label: "TablePlus",
+    description: "Archivos .tpc están encriptados — usa “Export connection → JSON (plain)”.",
+    extensions: ["json"],
+    encrypted: true,
+  },
+];
+
+/** Auto-detect entry kept for legacy uses + when the user selects "Auto". */
 export function parseImportFile(text: string): ImportBundle {
   let parsed: unknown = null;
   let isJson = false;

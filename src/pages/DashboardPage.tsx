@@ -8,7 +8,7 @@ import {
   Plus,
   Upload,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "@/lib/router-compat";
 import { pushToast } from "@/components/ui/toast";
@@ -19,8 +19,11 @@ import { ping, useConnectionStatus, type ConnStatus } from "@/lib/connection-sta
 import { useSessionsStore } from "@/store/sessions";
 import { useOrgs } from "@/store/orgs";
 import { useOpenConnection } from "@/components/connect-gate";
+import { ImportProviderModal } from "@/components/ImportProviderModal";
 import { saveJson } from "@/lib/save-file";
-import { parseImportFile, type ImportBundle, type ImportConnection } from "@/lib/import";
+import { parseAs, type ImportBundle, type ImportConnection, type ImportProviderInfo } from "@/lib/import";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { readTextFile } from "@tauri-apps/plugin-fs";
 import type { Connection, ConnectionGroup } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +35,7 @@ export default function DashboardPage() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [groups, setGroups] = useState<ConnectionGroup[]>([]);
   const [onlineCount, setOnlineCount] = useState(0);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const { orgs, activeId } = useOrgs();
   const activeOrg = orgs.find((o) => o.id === activeId) ?? null;
 
@@ -89,16 +92,26 @@ export default function DashboardPage() {
     pushToast({ level: "success", title: t("home.toasts.exported"), body: res.path ?? undefined });
   }
 
-  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
+  async function handleProviderSelected(provider: ImportProviderInfo) {
+    setImportModalOpen(false);
     try {
-      const text = await f.text();
-      const bundle = parseImportFile(text);
+      const path = await openDialog({
+        multiple: false,
+        directory: false,
+        filters: [
+          {
+            name: provider.label,
+            extensions: provider.extensions,
+          },
+        ],
+      });
+      if (!path || Array.isArray(path)) return;
+      const text = await readTextFile(path);
+      const bundle = parseAs(provider.source, text);
       const created = await applyImportBundle(bundle);
       await refresh();
       const body = [
-        `${created} ${created === 1 ? "conexión" : "conexiones"} desde ${bundle.source}`,
+        `${created} ${created === 1 ? "conexión" : "conexiones"} desde ${provider.label}`,
         ...bundle.warnings.slice(0, 3),
       ].join(" · ");
       pushToast({ level: "success", title: t("home.toasts.imported"), body });
@@ -107,8 +120,6 @@ export default function DashboardPage() {
       }
     } catch (err) {
       pushToast({ level: "danger", title: t("home.toasts.importFailed"), body: String(err) });
-    } finally {
-      e.target.value = "";
     }
   }
 
@@ -226,7 +237,7 @@ export default function DashboardPage() {
             icon={<Upload className="h-4 w-4" />}
             title={t("home.quickActions.import")}
             description={t("home.quickActions.importDescription")}
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => setImportModalOpen(true)}
           />
           <QuickAction
             icon={<Download className="h-4 w-4" />}
@@ -235,15 +246,13 @@ export default function DashboardPage() {
             onClick={handleExport}
           />
         </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="application/json,.json,text/xml,application/xml,.xml"
-          hidden
-          onChange={handleImportFile}
-        />
       </section>
-
+      {importModalOpen && (
+        <ImportProviderModal
+          onClose={() => setImportModalOpen(false)}
+          onSelect={handleProviderSelected}
+        />
+      )}
     </div>
   );
 }
