@@ -149,7 +149,9 @@
       "versionAvailable": "Version {{version}} available",
       "newVersionBody": "A new version is available.",
       "upToDate": "You're up to date",
-      "checkFailed": "Could not check for updates"
+      "checkFailed": "Could not check for updates",
+      "remindLater": "Remind me later",
+      "update": "Update"
     }
   },
   "sqlPage": {

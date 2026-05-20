@@ -149,7 +149,9 @@
       "versionAvailable": "Versión {{version}} disponible",
       "newVersionBody": "Hay una nueva versión disponible.",
       "upToDate": "Estás al día",
-      "checkFailed": "No se pudo comprobar"
+      "checkFailed": "No se pudo comprobar",
+      "remindLater": "Recordar más tarde",
+      "update": "Actualizar"
     }
   },
   "sqlPage": {

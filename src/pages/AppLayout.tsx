@@ -23,6 +23,7 @@ import { useSessionsStore, type Session } from "@/store/sessions";
 import { refreshOrgs } from "@/store/orgs";
 import { loadSettings } from "@/store/settings";
 import { currentVersion, findUpdate, openReleasePage } from "@/lib/updates";
+import { dismissUpdateToast, markBootCheckRan, setAvailableUpdate } from "@/store/updates";
 import { listen } from "@tauri-apps/api/event";
 
 const DASHBOARD_TAB_ID = "__dashboard";
@@ -267,8 +268,11 @@ function Shell() {
     },
   });
 
-  // Boot update check (gated by settings.notifyUpdates).
+  // Boot update check (gated by settings.notifyUpdates). The module-level
+  // `markBootCheckRan()` guard makes this idempotent against React StrictMode
+  // double-effect runs and HMR re-mounts of the layout.
   useEffect(() => {
+    if (!markBootCheckRan()) return;
     let cancelled = false;
     void (async () => {
       const cfg = await loadSettings();
@@ -276,12 +280,21 @@ function Shell() {
       try {
         const found = await findUpdate();
         if (!found || cancelled) return;
+        setAvailableUpdate(found);
         pushToast({
+          id: `update-${found.version}`,
           level: "info",
           title: t("appLayout.updates.versionAvailable", { version: found.version }),
           body: t("appLayout.updates.newVersionBody"),
-          ttl: 15000,
-          action: { label: t("appLayout.updates.update", { defaultValue: "Actualizar" }), onClick: () => void openReleasePage(found.url) },
+          ttl: 0,
+          action: {
+            label: t("appLayout.updates.update", { defaultValue: "Actualizar" }),
+            onClick: () => void openReleasePage(found.url),
+          },
+          secondaryAction: {
+            label: t("appLayout.updates.remindLater", { defaultValue: "Recordar más tarde" }),
+            onClick: dismissUpdateToast,
+          },
         });
       } catch { /* silent on boot */ }
     })();

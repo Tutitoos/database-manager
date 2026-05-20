@@ -11,12 +11,15 @@ export interface ToastInput {
   level?: ToastLevel;
   ttl?: number;
   action?: { label: string; onClick: () => void };
+  secondaryAction?: { label: string; onClick: () => void };
   onClick?: () => void;
 }
 
-export interface ToastItem extends Required<Omit<ToastInput, "ttl" | "action" | "onClick">> {
+export interface ToastItem
+  extends Required<Omit<ToastInput, "ttl" | "action" | "secondaryAction" | "onClick">> {
   ttl: number;
   action?: { label: string; onClick: () => void };
+  secondaryAction?: { label: string; onClick: () => void };
   onClick?: () => void;
 }
 
@@ -58,6 +61,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         level: input.level ?? "info",
         ttl: input.ttl ?? 3500,
         action: input.action,
+        secondaryAction: input.secondaryAction,
         onClick: input.onClick,
       };
       setItems((prev) => [...prev, next].slice(-6));
@@ -97,18 +101,35 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               <div className="min-w-0 flex-1 text-body">
                 {t.title && <p className="font-semibold text-text">{t.title}</p>}
                 {t.body && <p className="mt-0.5 text-text-muted">{t.body}</p>}
-                {t.action && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      t.action!.onClick();
-                      dismiss(t.id);
-                    }}
-                    className="text-body mt-1.5 inline-flex h-6 items-center rounded-md border border-current/30 bg-current/10 px-2 font-medium text-text hover:bg-current/20"
-                  >
-                    {t.action.label}
-                  </button>
+                {(t.action || t.secondaryAction) && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {t.action && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          t.action!.onClick();
+                          dismiss(t.id);
+                        }}
+                        className="text-body inline-flex h-6 items-center rounded-md border border-current/30 bg-current/10 px-2 font-medium text-text hover:bg-current/20"
+                      >
+                        {t.action.label}
+                      </button>
+                    )}
+                    {t.secondaryAction && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          t.secondaryAction!.onClick();
+                          dismiss(t.id);
+                        }}
+                        className="text-body inline-flex h-6 items-center rounded-md border border-border-subtle px-2 font-medium text-text-muted hover:bg-surface-hover hover:text-text"
+                      >
+                        {t.secondaryAction.label}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
               <button

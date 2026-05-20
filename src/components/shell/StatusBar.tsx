@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Database, Wifi, WifiOff, CloudOff } from "lucide-react";
+import { ArrowUpCircle, Database, Wifi, WifiOff, CloudOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "@/lib/router-compat";
 import { useSessionsStore } from "@/store/sessions";
@@ -7,6 +7,8 @@ import { useConnectionStatus } from "@/lib/connection-status";
 import { modSymbol } from "@/lib/shortcuts";
 import { useOrgs, fetchOrgHealth } from "@/store/orgs";
 import { useActiveOrgAccent } from "@/lib/use-active-org-accent";
+import { useUpdatesStore } from "@/store/updates";
+import { openReleasePage } from "@/lib/updates";
 
 export function StatusBar({ onCommand }: { onCommand?: () => void }) {
   const { t } = useTranslation();
@@ -72,6 +74,7 @@ export function StatusBar({ onCommand }: { onCommand?: () => void }) {
       )}
 
       <div className="ml-auto flex items-center gap-2">
+        <UpdateIndicator />
         {orgOnline === false && (
           <button
             type="button"
@@ -92,5 +95,22 @@ export function StatusBar({ onCommand }: { onCommand?: () => void }) {
         </button>
       </div>
     </footer>
+  );
+}
+
+function UpdateIndicator() {
+  const { t } = useTranslation();
+  const { available } = useUpdatesStore();
+  if (!available) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => void openReleasePage(available.url)}
+      className="flex items-center gap-1.5 rounded-sm bg-accent-soft px-2 py-0.5 text-accent hover:bg-accent-soft/70"
+      title={t("appLayout.updates.versionAvailable", { version: available.version })}
+    >
+      <ArrowUpCircle strokeWidth={1.5} className="h-3 w-3" />
+      <span className="text-[10px] font-medium">v{available.version}</span>
+    </button>
   );
 }
