@@ -783,6 +783,24 @@ impl PluginManager {
         })).await
     }
 
+    pub async fn get_columns_info(&self, input: &ConnectionInput, database: &str, table: &str) -> Result<Value, String> {
+        let process = {
+            let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard.get(&input.plugin_id).ok_or_else(|| format!("plugin not found: {}", input.plugin_id))?;
+            if !plugin.enabled { return Err(format!("plugin '{}' is disabled", input.plugin_id)); }
+            plugin.process.clone().ok_or_else(|| format!("plugin '{}' is not loaded", input.plugin_id))?
+        };
+        // Schemaless plugins (Mongo, Redis) don't implement this — surface an
+        // empty list so the frontend silently falls back to the looser form.
+        match process.call("get_columns_info", json!({
+            "params": { "driver": input.plugin_id, "host": input.host, "port": input.port, "database": input.database, "username": input.username, "password": input.password, "ssl_mode": input.ssl_mode },
+            "database": database, "table": table
+        })).await {
+            Ok(v) => Ok(v),
+            Err(_) => Ok(json!([])),
+        }
+    }
+
     pub async fn get_distinct_values(&self, input: &ConnectionInput, database: &str, table: &str, column: &str, search: &str) -> Result<Value, String> {
         let process = {
             let guard = self.plugins.lock().map_err(|_| "plugin lock poisoned".to_string())?;

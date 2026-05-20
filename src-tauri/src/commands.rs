@@ -396,6 +396,20 @@ pub async fn get_table_indexes(
 }
 
 #[tauri::command]
+pub async fn get_columns_info(
+    state: State<'_, AppState>,
+    input: ConnectionInput,
+    database: String,
+    table: String,
+) -> Result<Value, String> {
+    let input = credentials::materialize(&state, input).await?;
+    if let Some(v) = maybe_exec_remote(&state, &input.plugin_id, "get_columns_info", serde_json::json!({ "input": input, "database": database, "table": table })).await? {
+        return Ok(v);
+    }
+    state.plugins.get_columns_info(&input, &database, &table).await
+}
+
+#[tauri::command]
 pub async fn get_distinct_values(
     state: State<'_, AppState>,
     input: ConnectionInput,

@@ -527,6 +527,61 @@ async fn get_table_indexes(env: IndexEnvelope) -> anyhow::Result<Value> {
     Ok(Value::Array(list))
 }
 
+async fn get_columns_info(env: IndexEnvelope) -> anyhow::Result<Value> {
+    let client = connect(&env.params, &env.database).await?;
+    let (schema, table_name) = split_schema_table(&env.table);
+    // information_schema.columns gives us the form-relevant facets (type,
+    // nullable, default) and pg_index lets us mark the primary key column.
+    let rows = client
+        .query(
+            r#"
+            WITH pk AS (
+                SELECT a.attname AS name
+                FROM pg_index i
+                JOIN pg_class c   ON c.oid = i.indrelid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ANY(i.indkey)
+                WHERE n.nspname = $1 AND c.relname = $2 AND i.indisprimary
+            )
+            SELECT c.column_name,
+                   c.data_type,
+                   c.udt_name,
+                   c.is_nullable,
+                   c.column_default,
+                   c.character_maximum_length,
+                   (c.column_name IN (SELECT name FROM pk)) AS is_primary
+            FROM information_schema.columns c
+            WHERE c.table_schema = $1 AND c.table_name = $2
+            ORDER BY c.ordinal_position
+            "#,
+            &[&schema, &table_name],
+        )
+        .await?;
+    let list: Vec<Value> = rows
+        .into_iter()
+        .map(|r| {
+            let data_type: String = r.get(1);
+            let udt_name: String = r.get(2);
+            let display_type = if data_type == "USER-DEFINED" || data_type == "ARRAY" {
+                udt_name.clone()
+            } else {
+                data_type.clone()
+            };
+            json!({
+                "name": r.get::<_, String>(0),
+                "type": display_type,
+                "data_type": data_type,
+                "udt": udt_name,
+                "nullable": r.try_get::<_, String>(3).map(|s| s == "YES").unwrap_or(true),
+                "default": r.try_get::<_, Option<String>>(4).unwrap_or(None),
+                "max_length": r.try_get::<_, Option<i32>>(5).unwrap_or(None),
+                "primary": r.try_get::<_, bool>(6).unwrap_or(false),
+            })
+        })
+        .collect();
+    Ok(Value::Array(list))
+}
+
 async fn get_distinct_values(env: DistinctEnvelope) -> anyhow::Result<Value> {
     if !ident_safe(&env.column) {
         return Err(anyhow::anyhow!("invalid column name"));
@@ -1175,6 +1230,13 @@ impl Handler for PgHandler {
             },
             "get_table_indexes" => match serde_json::from_value::<IndexEnvelope>(req.params) {
                 Ok(env) => match get_table_indexes(env).await {
+                    Ok(v) => ok(id, v),
+                    Err(e) => fail(id, e.to_string()),
+                },
+                Err(e) => fail(id, e.to_string()),
+            },
+            "get_columns_info" => match serde_json::from_value::<IndexEnvelope>(req.params) {
+                Ok(env) => match get_columns_info(env).await {
                     Ok(v) => ok(id, v),
                     Err(e) => fail(id, e.to_string()),
                 },

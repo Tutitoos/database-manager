@@ -1,8 +1,9 @@
-import { Code2, Plus, Rows3, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Code2, Copy, RotateCcw, Rows3, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/modal";
 import { CodeEditor } from "@/components/code-editor";
+import { pushToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
 export type RowValue = string | number | boolean | null;
@@ -13,12 +14,26 @@ export interface ColumnMeta {
   indexed: boolean;
 }
 
+/** Plugin-supplied column shape (postgres today, others schemaless). */
+export interface ColumnInfo {
+  name: string;
+  type?: string;
+  data_type?: string;
+  udt?: string;
+  nullable?: boolean;
+  default?: string | null;
+  max_length?: number | null;
+  primary?: boolean;
+}
+
 interface Props {
   mode: "insert" | "edit";
   pkColumn?: string;
   pkValue?: string | number;
+  table: string;
   columns: string[];
   colMeta: Map<string, ColumnMeta>;
+  columnsInfo: ColumnInfo[];
   /** Initial values keyed by column name (used in edit mode). */
   initialValues: Record<string, RowValue>;
   saving: boolean;
@@ -27,20 +42,39 @@ interface Props {
   onSave: (values: Record<string, RowValue>) => void;
 }
 
-/**
- * Conventions baked in for inserts:
- * - The primary key is omitted entirely so the DB assigns it.
- * - Bookkeeping columns (`created_at`, `updated_at`, anything ending in `_at`)
- *   are pre-toggled to NULL so the DB default fires.
- */
+/** Pre-NULL bookkeeping columns when the DB will fill them via DEFAULT. */
 const AUTO_TIMESTAMP_RE = /(^|_)at$|^(created|updated|inserted|deleted)_at$/i;
+
+const NUMERIC_TYPES = new Set([
+  "smallint", "integer", "bigint", "int2", "int4", "int8",
+  "numeric", "decimal", "real", "double precision", "float4", "float8",
+  "smallserial", "serial", "bigserial",
+]);
+
+const BOOLEAN_TYPES = new Set(["boolean", "bool"]);
+const JSON_TYPES = new Set(["json", "jsonb"]);
+
+function isNumeric(t: string | undefined): boolean {
+  if (!t) return false;
+  return NUMERIC_TYPES.has(t.toLowerCase());
+}
+function isBoolean(t: string | undefined): boolean {
+  if (!t) return false;
+  return BOOLEAN_TYPES.has(t.toLowerCase());
+}
+function isJsonish(t: string | undefined): boolean {
+  if (!t) return false;
+  return JSON_TYPES.has(t.toLowerCase());
+}
 
 export function RowEditor({
   mode,
   pkColumn,
   pkValue,
+  table,
   columns,
   colMeta,
+  columnsInfo,
   initialValues,
   saving,
   error,
@@ -48,29 +82,75 @@ export function RowEditor({
   onSave,
 }: Props) {
   const isInsert = mode === "insert";
+
+  const infoByName = useMemo(() => {
+    const map = new Map<string, ColumnInfo>();
+    for (const c of columnsInfo) map.set(c.name, c);
+    return map;
+  }, [columnsInfo]);
+
   const editable = useMemo(() => {
     if (!isInsert) return columns;
     return columns.filter((c) => !(pkColumn && c === pkColumn));
   }, [columns, isInsert, pkColumn]);
 
-  const [view, setView] = useState<"form" | "json">("form");
-  const [values, setValues] = useState<Record<string, RowValue>>(() => {
-    const out: Record<string, RowValue> = {};
-    for (const c of editable) {
-      if (isInsert && AUTO_TIMESTAMP_RE.test(c)) {
-        out[c] = null;
-      } else {
-        const v = initialValues[c];
-        out[c] = v === undefined ? null : v;
+  const buildInitial = useMemo(() => {
+    return (): {
+      values: Record<string, RowValue>;
+      nulls: Record<string, boolean>;
+    } => {
+      const values: Record<string, RowValue> = {};
+      const nulls: Record<string, boolean> = {};
+      for (const c of editable) {
+        const info = infoByName.get(c);
+        const provided = initialValues[c];
+        if (!isInsert) {
+          values[c] = provided === undefined ? null : provided;
+          nulls[c] = provided === null || provided === undefined;
+          continue;
+        }
+        // Insert defaults: pre-mark NULL only when the column is nullable OR
+        // has a server-side DEFAULT, since either path lets the row succeed
+        // without an explicit value. AUTO_TIMESTAMP_RE catches the common
+        // created_at / updated_at convention even on schemas that report
+        // nullable=false without a default expression.
+        const nullable = info?.nullable !== false;
+        const hasDefault = info?.default != null;
+        const autoTs = AUTO_TIMESTAMP_RE.test(c);
+        const preNull = nullable || hasDefault || autoTs;
+        if (preNull) {
+          nulls[c] = true;
+          values[c] = null;
+        } else {
+          nulls[c] = false;
+          values[c] = defaultEmpty(info?.type);
+        }
       }
-    }
-    return out;
-  });
-  const [jsonDraft, setJsonDraft] = useState<string>(() => JSON.stringify(initialValues, null, 2));
+      return { values, nulls };
+    };
+  }, [editable, infoByName, initialValues, isInsert]);
+
+  const initial = useMemo(buildInitial, [buildInitial]);
+  const [values, setValues] = useState<Record<string, RowValue>>(initial.values);
+  const [nulls, setNulls] = useState<Record<string, boolean>>(initial.nulls);
+  const [view, setView] = useState<"form" | "json">("form");
+  const [jsonDraft, setJsonDraft] = useState<string>(() => JSON.stringify(initial.values, null, 2));
   const [jsonError, setJsonError] = useState<string | null>(null);
+  const [validation, setValidation] = useState<Record<string, string>>({});
+  const saveRef = useRef<() => void>(() => undefined);
 
   function setValue(col: string, value: RowValue) {
     setValues((prev) => ({ ...prev, [col]: value }));
+    setValidation((v) => ({ ...v, [col]: "" }));
+  }
+  function setNull(col: string, nextNull: boolean) {
+    setNulls((prev) => ({ ...prev, [col]: nextNull }));
+    if (nextNull) {
+      setValues((prev) => ({ ...prev, [col]: null }));
+    } else {
+      setValues((prev) => ({ ...prev, [col]: defaultEmpty(infoByName.get(col)?.type) }));
+    }
+    setValidation((v) => ({ ...v, [col]: "" }));
   }
 
   function switchTo(next: "form" | "json") {
@@ -82,13 +162,68 @@ export function RowEditor({
     } else {
       try {
         const parsed = JSON.parse(jsonDraft);
-        if (parsed && typeof parsed === "object") setValues(parsed);
+        if (parsed && typeof parsed === "object") {
+          setValues(parsed);
+          const nn: Record<string, boolean> = {};
+          for (const k of Object.keys(parsed)) nn[k] = parsed[k] === null;
+          setNulls(nn);
+        }
         setJsonError(null);
         setView("form");
       } catch (e) {
         setJsonError(String(e));
       }
     }
+  }
+
+  function validateForm(): Record<string, string> {
+    const errs: Record<string, string> = {};
+    for (const c of editable) {
+      const info = infoByName.get(c);
+      const isNull = nulls[c];
+      // NOT NULL guard: only when the plugin tells us nullable=false AND
+      // there's no default to fall back on.
+      const nullable = info?.nullable !== false;
+      const hasDefault = info?.default != null;
+      if (isNull && !nullable && !hasDefault) {
+        errs[c] = "No puede ser NULL";
+        continue;
+      }
+      if (isNull) continue;
+      const v = values[c];
+      const type = info?.type;
+      if (isNumeric(type) && typeof v === "string" && v.trim() === "") {
+        errs[c] = "Número requerido";
+        continue;
+      }
+      if (isNumeric(type) && typeof v === "string" && Number.isNaN(Number(v))) {
+        errs[c] = "Número inválido";
+        continue;
+      }
+      if (isJsonish(type) && typeof v === "string" && v.trim() !== "") {
+        try { JSON.parse(v); } catch { errs[c] = "JSON inválido"; }
+      }
+    }
+    return errs;
+  }
+
+  function buildPayload(): Record<string, RowValue> {
+    const out: Record<string, RowValue> = {};
+    for (const c of editable) {
+      if (nulls[c]) {
+        out[c] = null;
+        continue;
+      }
+      const info = infoByName.get(c);
+      const v = values[c];
+      if (isNumeric(info?.type) && typeof v === "string") {
+        const n = Number(v);
+        out[c] = Number.isFinite(n) ? n : v;
+      } else {
+        out[c] = v;
+      }
+    }
+    return out;
   }
 
   function handleSave() {
@@ -103,16 +238,54 @@ export function RowEditor({
       onSave(parsed);
       return;
     }
-    onSave(values);
+    const errs = validateForm();
+    setValidation(errs);
+    if (Object.keys(errs).length > 0) return;
+    onSave(buildPayload());
+  }
+  saveRef.current = handleSave;
+
+  function handleReset() {
+    const fresh = buildInitial();
+    setValues(fresh.values);
+    setNulls(fresh.nulls);
+    setValidation({});
+    setJsonDraft(JSON.stringify(fresh.values, null, 2));
+    setJsonError(null);
   }
 
+  function copyAsSql() {
+    const payload = view === "json"
+      ? safeParse(jsonDraft) ?? buildPayload()
+      : buildPayload();
+    const sql = buildInsertSql(table, payload);
+    navigator.clipboard.writeText(sql).catch(() => undefined);
+    pushToast({ level: "success", title: "SQL copiado", body: sql.slice(0, 80) + (sql.length > 80 ? "…" : "") });
+  }
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        saveRef.current();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const title = isInsert ? "Insertar fila" : `Editar fila — PK ${String(pkValue)}`;
+  const hasMetadata = columnsInfo.length > 0;
 
   return (
     <Modal onClose={() => !saving && onCancel()}>
-      <div className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-lg border border-border-subtle bg-surface-overlay shadow-xl">
+      <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-lg border border-border-subtle bg-surface-overlay shadow-xl">
         <header className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
-          <h2 className="text-h3 font-medium text-text">{title}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-h3 font-medium text-text">{title}</h2>
+            <span className="text-caption font-mono text-text-faint">{table}</span>
+          </div>
           <div className="flex items-center gap-1">
             <div className="flex overflow-hidden rounded-md border border-border-subtle bg-surface text-caption">
               <button
@@ -137,6 +310,22 @@ export function RowEditor({
               </button>
             </div>
             <button
+              type="button"
+              onClick={copyAsSql}
+              title="Copiar como INSERT SQL"
+              className="rounded p-1 text-text-faint hover:bg-surface-hover hover:text-text"
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={handleReset}
+              title="Restablecer"
+              className="rounded p-1 text-text-faint hover:bg-surface-hover hover:text-text"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+            <button
               className="rounded p-1 text-text-faint hover:bg-surface-hover hover:text-text"
               onClick={onCancel}
               disabled={saving}
@@ -147,64 +336,69 @@ export function RowEditor({
         </header>
 
         {view === "form" ? (
-          <div className="flex-1 overflow-auto">
-            <table className="w-full text-body">
-              <tbody>
-                {editable.map((col) => {
-                  const meta = colMeta.get(col);
-                  const value = values[col];
-                  const isNull = value === null;
-                  return (
-                    <tr key={col} className="border-b border-border-subtle last:border-b-0">
-                      <td className="w-1/3 max-w-[240px] px-4 py-2 align-top">
-                        <div className="flex items-center gap-1.5">
-                          <span className="truncate font-mono text-text">{col}</span>
-                          {meta?.primary && (
-                            <span className="text-tiny rounded-sm bg-accent-soft px-1 py-0.5 font-semibold uppercase tracking-wider text-accent">
-                              PK
-                            </span>
-                          )}
-                          {meta?.unique && !meta.primary && (
-                            <span className="text-tiny rounded-sm bg-surface px-1 py-0.5 font-semibold uppercase tracking-wider text-text-muted">
-                              UQ
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2">
-                        <FieldInput
-                          value={value}
-                          onChange={(v) => setValue(col, v)}
-                          disabled={isNull}
-                        />
-                      </td>
-                      <td className="w-20 px-3 py-2 text-right">
-                        <label className="text-caption inline-flex cursor-pointer items-center gap-1.5 text-text-muted">
-                          <input
-                            type="checkbox"
-                            checked={isNull}
-                            onChange={(e) => setValue(col, e.target.checked ? null : "")}
-                            className="h-3 w-3 accent-accent"
-                          />
-                          NULL
-                        </label>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {editable.length === 0 && (
-                  <tr>
-                    <td className="text-body p-6 text-text-muted">
-                      Esta tabla no tiene columnas editables.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+          <div className="flex-1 space-y-3 overflow-auto px-4 py-4">
+            {editable.map((col) => {
+              const meta = colMeta.get(col);
+              const info = infoByName.get(col);
+              const isNull = nulls[col];
+              const required = info?.nullable === false && info?.default == null;
+              const value = values[col];
+              const err = validation[col];
+              return (
+                <div key={col} className="space-y-1">
+                  <label className="flex items-center justify-between gap-2">
+                    <span className="text-body inline-flex items-center gap-1.5">
+                      <span className="font-mono text-text">{col}</span>
+                      {info?.type && (
+                        <span className="text-tiny rounded-sm bg-surface px-1.5 py-0.5 font-mono text-text-muted">
+                          {info.type}
+                        </span>
+                      )}
+                      {meta?.primary && (
+                        <span className="text-tiny rounded-sm bg-accent-soft px-1 py-0.5 font-semibold uppercase tracking-wider text-accent">
+                          PK
+                        </span>
+                      )}
+                      {meta?.unique && !meta.primary && (
+                        <span className="text-tiny rounded-sm bg-surface px-1 py-0.5 font-semibold uppercase tracking-wider text-text-muted">
+                          UQ
+                        </span>
+                      )}
+                      {required && <span className="text-tiny text-danger">*</span>}
+                    </span>
+                    <label className="text-caption inline-flex cursor-pointer items-center gap-1.5 text-text-muted">
+                      <input
+                        type="checkbox"
+                        checked={!!isNull}
+                        onChange={(e) => setNull(col, e.target.checked)}
+                        className="h-3 w-3 accent-accent"
+                      />
+                      NULL
+                    </label>
+                  </label>
+                  <FieldInput
+                    type={info?.type}
+                    value={value}
+                    onChange={(v) => setValue(col, v)}
+                    disabled={isNull}
+                    invalid={!!err}
+                    placeholder={info?.default != null ? `default: ${info.default}` : undefined}
+                  />
+                  {err && <p className="text-caption text-danger">{err}</p>}
+                </div>
+              );
+            })}
+            {editable.length === 0 && (
+              <p className="text-body p-4 text-text-muted">Esta tabla no tiene columnas editables.</p>
+            )}
             {isInsert && pkColumn && (
-              <p className="text-caption border-t border-border-subtle bg-surface-elevated px-4 py-2 text-text-muted">
-                <Plus className="mr-1 inline h-3 w-3 align-text-bottom" />
+              <p className="text-caption text-text-faint">
                 La columna <span className="font-mono text-text">{pkColumn}</span> la asigna la base de datos.
+              </p>
+            )}
+            {!hasMetadata && editable.length > 0 && (
+              <p className="text-caption text-text-faint">
+                Sin metadatos del plugin — los campos NOT NULL no se validarán automáticamente.
               </p>
             )}
           </div>
@@ -228,13 +422,19 @@ export function RowEditor({
           </div>
         )}
 
-        <footer className="flex justify-end gap-2 border-t border-border-subtle px-4 py-3">
-          <Button variant="secondary" size="sm" onClick={onCancel} disabled={saving}>
-            Cancelar
-          </Button>
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
-            {saving ? "Guardando…" : "Guardar"}
-          </Button>
+        <footer className="flex items-center justify-between gap-2 border-t border-border-subtle px-4 py-3">
+          <span className="text-caption text-text-faint">
+            <kbd className="rounded border border-border-subtle bg-surface px-1.5 py-0.5 font-mono">⌘S</kbd> guardar ·
+            <kbd className="ml-1 rounded border border-border-subtle bg-surface px-1.5 py-0.5 font-mono">Esc</kbd> cerrar
+          </span>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={onCancel} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
+              {saving ? "Guardando…" : "Guardar"}
+            </Button>
+          </div>
         </footer>
       </div>
     </Modal>
@@ -242,53 +442,58 @@ export function RowEditor({
 }
 
 function FieldInput({
+  type,
   value,
   onChange,
   disabled,
+  invalid,
+  placeholder,
 }: {
+  type: string | undefined;
   value: RowValue;
   onChange: (v: RowValue) => void;
   disabled: boolean;
+  invalid: boolean;
+  placeholder?: string;
 }) {
-  if (typeof value === "boolean") {
+  if (isBoolean(type) || typeof value === "boolean") {
+    const v = typeof value === "boolean" ? value : value === "true";
     return (
       <label className="text-body inline-flex items-center gap-2">
         <input
           type="checkbox"
-          checked={value}
+          checked={v}
           disabled={disabled}
           onChange={(e) => onChange(e.target.checked)}
           className="h-3.5 w-3.5 accent-accent"
         />
-        <span className="text-text-muted">{value ? "true" : "false"}</span>
+        <span className="text-text-muted">{v ? "true" : "false"}</span>
       </label>
     );
   }
-  if (typeof value === "number") {
+  if (isNumeric(type)) {
+    const str = value == null ? "" : String(value);
     return (
       <input
         type="number"
-        value={Number.isFinite(value) ? value : ""}
+        value={str}
         disabled={disabled}
-        onChange={(e) => {
-          const n = e.target.value === "" ? 0 : Number(e.target.value);
-          onChange(Number.isFinite(n) ? n : 0);
-        }}
-        className="text-body-mono w-full rounded border border-border-subtle bg-surface px-2 py-1 text-text disabled:opacity-40"
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(inputCls(invalid), "disabled:opacity-40")}
       />
     );
   }
   const str = value == null ? "" : String(value);
-  // Long values (JSON-ish or multi-line text) get a textarea automatically so
-  // the user doesn't lose context behind a single-line scroll.
-  if (str.length > 80 || str.includes("\n")) {
+  if (isJsonish(type) || str.length > 80 || str.includes("\n")) {
     return (
       <textarea
         value={str}
-        rows={Math.min(8, Math.max(2, str.split("\n").length))}
+        rows={Math.min(8, Math.max(3, str.split("\n").length))}
         disabled={disabled}
+        placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="text-body-mono w-full resize-y rounded border border-border-subtle bg-surface px-2 py-1 text-text disabled:opacity-40"
+        className={cn(inputCls(invalid), "resize-y disabled:opacity-40")}
       />
     );
   }
@@ -297,9 +502,46 @@ function FieldInput({
       type="text"
       value={str}
       disabled={disabled}
+      placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
-      placeholder={disabled ? "" : "—"}
-      className="text-body-mono w-full rounded border border-border-subtle bg-surface px-2 py-1 text-text disabled:opacity-40"
+      className={cn(inputCls(invalid), "disabled:opacity-40")}
     />
   );
+}
+
+function inputCls(invalid: boolean): string {
+  return cn(
+    "text-body-mono w-full rounded border bg-surface px-2 py-1 text-text outline-none transition-colors",
+    invalid ? "border-danger focus:border-danger" : "border-border-subtle focus:border-accent",
+  );
+}
+
+function defaultEmpty(type: string | undefined): RowValue {
+  if (isBoolean(type)) return false;
+  if (isNumeric(type)) return "";
+  return "";
+}
+
+function safeParse(s: string): Record<string, RowValue> | null {
+  try {
+    const v = JSON.parse(s);
+    return v && typeof v === "object" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildInsertSql(table: string, values: Record<string, RowValue>): string {
+  const entries = Object.entries(values).filter(([, v]) => v !== undefined);
+  if (entries.length === 0) return `INSERT INTO "${table}" DEFAULT VALUES;`;
+  const cols = entries.map(([k]) => `"${k}"`).join(", ");
+  const vals = entries
+    .map(([, v]) => {
+      if (v === null) return "NULL";
+      if (typeof v === "boolean") return v ? "TRUE" : "FALSE";
+      if (typeof v === "number") return String(v);
+      return `'${String(v).replace(/'/g, "''")}'`;
+    })
+    .join(", ");
+  return `INSERT INTO "${table}" (${cols}) VALUES (${vals});`;
 }

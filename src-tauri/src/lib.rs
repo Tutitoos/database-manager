@@ -218,6 +218,7 @@ pub fn run() {
             commands::get_db_metrics,
             commands::explain_query,
             commands::get_table_indexes,
+            commands::get_columns_info,
             commands::get_distinct_values,
             commands::redis_subscribe,
             commands::redis_unsubscribe,

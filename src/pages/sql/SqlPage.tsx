@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { AutocompleteInput, getWordAtPos, type GetSuggestions, type SuggestionItem, type SuggestionResult } from "@/components/autocomplete-input";
 import { Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
-import { RowEditor, type RowValue } from "@/components/row-editor";
+import { RowEditor, type ColumnInfo, type RowValue } from "@/components/row-editor";
 import { QueryTimings, type TimingEntry } from "@/components/query-timings";
 import {
   flexRender,
@@ -158,6 +158,7 @@ function SqlPage() {
     saving: boolean;
     error: string | null;
   } | null>(null);
+  const [columnsInfo, setColumnsInfo] = useState<ColumnInfo[]>([]);
   const [rowDelete, setRowDelete] = useState<{ pkValue: string | number } | null>(null);
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [selectedRowIdx, setSelectedRowIdx] = useState<number | null>(null);
@@ -365,6 +366,9 @@ function SqlPage() {
     invoke<IndexInfo[]>("get_table_indexes", { input: connection, database: db, table })
       .then(setIndexes)
       .catch(() => setIndexes([]));
+    invoke<ColumnInfo[]>("get_columns_info", { input: connection, database: db, table })
+      .then((info) => setColumnsInfo(Array.isArray(info) ? info : []))
+      .catch(() => setColumnsInfo([]));
   }, [connection, db, table]);
 
   useEffect(() => {
@@ -980,8 +984,10 @@ function SqlPage() {
           mode={rowEditor.pkValue === "" ? "insert" : "edit"}
           pkColumn={result.pk_column}
           pkValue={rowEditor.pkValue}
+          table={table}
           columns={result.columns}
           colMeta={colMeta}
+          columnsInfo={columnsInfo}
           initialValues={rowEditor.initial}
           saving={rowEditor.saving}
           error={rowEditor.error}
