@@ -345,8 +345,14 @@ export function RowEditor({
               const value = values[col];
               const err = validation[col];
               return (
-                <div key={col} className="space-y-1">
-                  <label className="flex items-center justify-between gap-2">
+                <div
+                  key={col}
+                  className={cn(
+                    "rounded-md border bg-surface-elevated transition-colors",
+                    err ? "border-danger/60" : "border-border-subtle",
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2 px-3 pb-1.5 pt-2">
                     <span className="text-body inline-flex items-center gap-1.5">
                       <span className="font-mono text-text">{col}</span>
                       {info?.type && (
@@ -364,9 +370,25 @@ export function RowEditor({
                           UQ
                         </span>
                       )}
-                      {required && <span className="text-tiny text-danger">*</span>}
+                      {required && (
+                        <span className="text-tiny font-semibold text-danger" title="NOT NULL">
+                          *
+                        </span>
+                      )}
                     </span>
-                    <label className="text-caption inline-flex cursor-pointer items-center gap-1.5 text-text-muted">
+                  </div>
+                  <div className="flex items-center gap-2 px-3 pb-2.5">
+                    <div className="flex-1">
+                      <FieldInput
+                        type={info?.type}
+                        value={value}
+                        onChange={(v) => setValue(col, v)}
+                        disabled={!!isNull}
+                        invalid={!!err}
+                        placeholder={info?.default != null ? `default: ${info.default}` : undefined}
+                      />
+                    </div>
+                    <label className="text-caption inline-flex shrink-0 cursor-pointer items-center gap-1.5 text-text-muted">
                       <input
                         type="checkbox"
                         checked={!!isNull}
@@ -375,16 +397,8 @@ export function RowEditor({
                       />
                       NULL
                     </label>
-                  </label>
-                  <FieldInput
-                    type={info?.type}
-                    value={value}
-                    onChange={(v) => setValue(col, v)}
-                    disabled={isNull}
-                    invalid={!!err}
-                    placeholder={info?.default != null ? `default: ${info.default}` : undefined}
-                  />
-                  {err && <p className="text-caption text-danger">{err}</p>}
+                  </div>
+                  {err && <p className="text-caption px-3 pb-2 text-danger">{err}</p>}
                 </div>
               );
             })}
