@@ -1661,16 +1661,21 @@ function ProviderGeneralFields({
   validation: Record<string, string>; onConnectionStringChange: (value: string) => void;
   update: ConnectionUpdater; updateSetting: SettingUpdater; touch: (field: ValidationField) => void;
 }) {
+  const { t } = useTranslation();
+  const csTitle = t("connectionsPage.form.connectionString");
+  const hostLabel = t("connectionsPage.form.host");
+  const portLabel = t("connectionsPage.form.port");
+  const serverTitle = t("connectionsPage.form.server");
   if (provider.id === "redis") {
     return (
       <div className="mx-auto grid w-full max-w-190 gap-5">
-        <FormSection title="Connection string" description="Pega una URL Redis para rellenar los campos automáticamente.">
-          <ModalField label="Connection string" value={connectionString} onChange={onConnectionStringChange} onBlur={() => touch("connectionString")} placeholder={provider.connectionPlaceholder} error={validation.connectionString} />
+        <FormSection title={csTitle} description={t("connectionsPage.form.connectionStringRedis")}>
+          <ModalField label={csTitle} value={connectionString} onChange={onConnectionStringChange} onBlur={() => touch("connectionString")} placeholder={provider.connectionPlaceholder} error={validation.connectionString} />
         </FormSection>
-        <FormSection title="Servidor">
+        <FormSection title={serverTitle}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
-            <ModalField label="Host" value={form.host} onChange={(value) => update("host", value)} onBlur={() => touch("host")} placeholder="localhost" error={validation.host} />
-            <ModalField label="Puerto" type="number" value={String(form.port ?? provider.defaultPort)} onChange={(value) => update("port", value ? Number(value) : null)} onBlur={() => touch("port")} error={validation.port} />
+            <ModalField label={hostLabel} value={form.host} onChange={(value) => update("host", value)} onBlur={() => touch("host")} placeholder="localhost" error={validation.host} />
+            <ModalField label={portLabel} type="number" value={String(form.port ?? provider.defaultPort)} onChange={(value) => update("port", value ? Number(value) : null)} onBlur={() => touch("port")} error={validation.port} />
           </div>
         </FormSection>
       </div>
@@ -1679,13 +1684,13 @@ function ProviderGeneralFields({
   if (provider.id === "mongodb") {
     return (
       <div className="mx-auto grid w-full max-w-190 gap-5">
-        <FormSection title="Connection string" description="Pega una URI MongoDB o MongoDB Atlas para rellenar servidor y credenciales.">
-          <ModalField label="Connection string" value={connectionString} onChange={onConnectionStringChange} onBlur={() => touch("connectionString")} placeholder={provider.connectionPlaceholder} error={validation.connectionString} />
+        <FormSection title={csTitle} description={t("connectionsPage.form.connectionStringMongo")}>
+          <ModalField label={csTitle} value={connectionString} onChange={onConnectionStringChange} onBlur={() => touch("connectionString")} placeholder={provider.connectionPlaceholder} error={validation.connectionString} />
         </FormSection>
-        <FormSection title="Servidor">
+        <FormSection title={serverTitle}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
-            <ModalField label="Host" value={form.host} onChange={(value) => update("host", value)} onBlur={() => touch("host")} placeholder="localhost" error={validation.host} />
-            <ModalField label="Puerto" type="number" value={String(form.port ?? provider.defaultPort)} onChange={(value) => update("port", value ? Number(value) : null)} onBlur={() => touch("port")} error={validation.port} />
+            <ModalField label={hostLabel} value={form.host} onChange={(value) => update("host", value)} onBlur={() => touch("host")} placeholder="localhost" error={validation.host} />
+            <ModalField label={portLabel} type="number" value={String(form.port ?? provider.defaultPort)} onChange={(value) => update("port", value ? Number(value) : null)} onBlur={() => touch("port")} error={validation.port} />
           </div>
         </FormSection>
       </div>
@@ -1694,17 +1699,17 @@ function ProviderGeneralFields({
   return (
     <div className="mx-auto grid w-full max-w-190 gap-5">
       {validation.name && <InlineError>{validation.name}</InlineError>}
-      <FormSection title="Connection string" description="Pega una URL PostgreSQL para rellenar host, puerto y credenciales.">
-        <ModalField label="Connection string" value={connectionString} onChange={onConnectionStringChange} onBlur={() => touch("connectionString")} placeholder={provider.connectionPlaceholder} error={validation.connectionString} />
+      <FormSection title={csTitle} description={t("connectionsPage.form.connectionStringPostgres")}>
+        <ModalField label={csTitle} value={connectionString} onChange={onConnectionStringChange} onBlur={() => touch("connectionString")} placeholder={provider.connectionPlaceholder} error={validation.connectionString} />
       </FormSection>
-      <FormSection title="Servidor">
+      <FormSection title={serverTitle}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
-          <ModalField label="Host" value={form.host} onChange={(value) => update("host", value)} onBlur={() => touch("host")} placeholder="localhost" error={validation.host} />
-          <ModalField label="Puerto" type="number" value={String(form.port ?? provider.defaultPort)} onChange={(value) => update("port", value ? Number(value) : null)} onBlur={() => touch("port")} error={validation.port} />
+          <ModalField label={hostLabel} value={form.host} onChange={(value) => update("host", value)} onBlur={() => touch("host")} placeholder="localhost" error={validation.host} />
+          <ModalField label={portLabel} type="number" value={String(form.port ?? provider.defaultPort)} onChange={(value) => update("port", value ? Number(value) : null)} onBlur={() => touch("port")} error={validation.port} />
         </div>
       </FormSection>
-      <FormSection title="Base de Datos">
-        <ModalField label="Base de datos" value={form.database} onChange={(value) => update("database", value)} onBlur={() => touch("database")} placeholder="Nombre de la base de datos" error={validation.database} />
+      <FormSection title={t("connectionsPage.form.database")}>
+        <ModalField label={t("connectionsPage.form.databaseLabel")} value={form.database} onChange={(value) => update("database", value)} onBlur={() => touch("database")} placeholder={t("connectionsPage.form.databaseNamePlaceholder")} error={validation.database} />
       </FormSection>
     </div>
   );
@@ -1719,11 +1724,12 @@ function CredentialPickerField({
   credentials: CredentialView[];
   update: ConnectionUpdater;
 }) {
+  const { t } = useTranslation();
   const selectedId = form.credential_id ?? null;
   return (
     <FormSection
-      title="Credencial guardada"
-      description="Reutiliza un usuario/contraseña guardado. Si seleccionas uno, los campos de abajo se ignoran al conectar."
+      title={t("connectionsPage.form.savedCredential")}
+      description={t("connectionsPage.form.savedCredentialDescription")}
     >
       <select
         className="h-9 w-full rounded-md border border-border-strong bg-[#0a0a0a] px-3 text-h3 text-text outline-none hover:border-border-strong focus:border-border-strong"
@@ -1733,7 +1739,7 @@ function CredentialPickerField({
           update("credential_id", v === "" ? null : Number(v));
         }}
       >
-        <option value="">— Introducir manualmente —</option>
+        <option value="">{t("connectionsPage.form.manualEntry", { defaultValue: "— Introducir manualmente —" })}</option>
         {credentials.map((c) => (
           <option key={c.id} value={c.id}>
             {c.name} ({c.username})
@@ -1741,9 +1747,9 @@ function CredentialPickerField({
         ))}
       </select>
       <p className="mt-1 text-[11px] text-text-faint">
-        ¿No ves credenciales? Créalas en{" "}
+        {t("connectionsPage.form.noCredentialsHint", { defaultValue: "¿No ves credenciales? Créalas en" })}{" "}
         <Link to="/settings/credentials" className="underline">
-          Ajustes → Credenciales
+          {t("connectionsPage.form.credentialsSettingsLink", { defaultValue: "Ajustes → Credenciales" })}
         </Link>
         .
       </p>
@@ -1758,15 +1764,18 @@ function ProviderAuthFields({
   credentials: CredentialView[];
   update: ConnectionUpdater; updateSetting: SettingUpdater;
 }) {
+  const { t } = useTranslation();
   const hasCredential = form.credential_id !== null && form.credential_id !== undefined;
+  const userPh = hasCredential ? t("connectionsPage.form.usingSavedCredential") : t("connectionsPage.form.enterUsername");
+  const passPh = hasCredential ? t("connectionsPage.form.usingSavedCredential") : t("connectionsPage.form.enterPassword");
   if (provider.id === "redis") {
     return (
       <div className="mx-auto grid w-full max-w-190 gap-5">
         <CredentialPickerField form={form} credentials={credentials} update={update} />
-        <FormSection title="Credenciales" description="Usuario opcional (Redis 6+ ACL). Contraseña opcional según configuración del servidor.">
+        <FormSection title={t("connectionsPage.form.credentials")} description={t("connectionsPage.form.credentialsRedisDescription")}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <ModalField label="Usuario (opcional)" value={form.username} onChange={(value) => update("username", value)} placeholder={hasCredential ? "(usando credencial)" : "Ingresa el nombre de usuario"} />
-            <ModalField label="Contraseña (opcional)" type="password" value={form.password} onChange={(value) => update("password", value)} placeholder={hasCredential ? "(usando credencial)" : "Ingresa la contraseña"} trailing={<Eye className="h-3.5 w-3.5" />} />
+            <ModalField label={t("connectionsPage.form.userOptional")} value={form.username} onChange={(value) => update("username", value)} placeholder={userPh} />
+            <ModalField label={t("connectionsPage.form.passwordOptional")} type="password" value={form.password} onChange={(value) => update("password", value)} placeholder={passPh} trailing={<Eye className="h-3.5 w-3.5" />} />
           </div>
         </FormSection>
       </div>
@@ -1776,10 +1785,10 @@ function ProviderAuthFields({
     return (
       <div className="mx-auto grid w-full max-w-190 gap-5">
         <CredentialPickerField form={form} credentials={credentials} update={update} />
-        <FormSection title="Credenciales">
+        <FormSection title={t("connectionsPage.form.credentials")}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <ModalField label="Usuario" value={form.username} onChange={(value) => update("username", value)} placeholder={hasCredential ? "(usando credencial)" : "Ingresa el nombre de usuario"} />
-            <ModalField label="Contraseña" type="password" value={form.password} onChange={(value) => update("password", value)} placeholder={hasCredential ? "(usando credencial)" : "Ingresa la contraseña"} trailing={<Eye className="h-3.5 w-3.5" />} />
+            <ModalField label={t("connectionsPage.form.user")} value={form.username} onChange={(value) => update("username", value)} placeholder={userPh} />
+            <ModalField label={t("connectionsPage.form.password")} type="password" value={form.password} onChange={(value) => update("password", value)} placeholder={passPh} trailing={<Eye className="h-3.5 w-3.5" />} />
           </div>
         </FormSection>
         <FormSection title="Autenticación MongoDB">
@@ -1799,10 +1808,10 @@ function ProviderAuthFields({
   return (
     <div className="mx-auto grid w-full max-w-190 gap-5">
       <CredentialPickerField form={form} credentials={credentials} update={update} />
-      <FormSection title="Credenciales">
+      <FormSection title={t("connectionsPage.form.credentials")}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <ModalField label="Usuario" value={form.username} onChange={(value) => update("username", value)} placeholder={hasCredential ? "(usando credencial)" : "Ingresa el nombre de usuario"} />
-          <ModalField label="Contraseña" type="password" value={form.password} onChange={(value) => update("password", value)} placeholder={hasCredential ? "(usando credencial)" : "Ingresa la contraseña"} trailing={<Eye className="h-3.5 w-3.5" />} />
+          <ModalField label={t("connectionsPage.form.user")} value={form.username} onChange={(value) => update("username", value)} placeholder={userPh} />
+          <ModalField label={t("connectionsPage.form.password")} type="password" value={form.password} onChange={(value) => update("password", value)} placeholder={passPh} trailing={<Eye className="h-3.5 w-3.5" />} />
         </div>
       </FormSection>
     </div>
@@ -1810,6 +1819,7 @@ function ProviderAuthFields({
 }
 
 function ProviderAdvancedFields({ provider, settings, updateSetting }: { provider: ProviderUi; settings: Record<string, unknown>; updateSetting: SettingUpdater }) {
+  const { t } = useTranslation();
   if (provider.id !== "mongodb") {
     return (
       <div className="mx-auto grid w-full max-w-190 gap-5">
@@ -1821,7 +1831,7 @@ function ProviderAdvancedFields({ provider, settings, updateSetting }: { provide
   }
   return (
     <div className="mx-auto grid w-full max-w-190 gap-5">
-      <FormSection title="Driver settings" description="Opciones menos frecuentes del driver MongoDB.">
+      <FormSection title={t("connectionsPage.form.driverSettings")} description={t("connectionsPage.form.driverSettingsMongoDescription")}>
         <ModalField label="Replica Set" value={String(settings.replicaSet ?? "")} onChange={(value) => updateSetting("replicaSet", value)} placeholder="Replica set name (optional)" />
         <FormOptions>
           <ModalCheckbox label="Enable MongoDB Atlas Stable API v1 for cluster connections" checked={Boolean(settings.useAtlasStableAPI)} onChange={(checked) => updateSetting("useAtlasStableAPI", checked)} />
@@ -1847,6 +1857,7 @@ function DatabaseCollectionSelector({
   onSelectAllCollections: (database: string) => void; onClearAllCollections: (database: string) => void;
   onActiveDbTabChange: (database: string) => void;
 }) {
+  const { t } = useTranslation();
   const collectionLabel = provider.id === "postgresql" ? "tablas" : "colecciones";
   const collectionLabelCap = provider.id === "postgresql" ? "Tablas" : "Colecciones";
 
@@ -1855,7 +1866,7 @@ function DatabaseCollectionSelector({
       <FormSection title="Cargar Bases de Datos" description="Haz click en 'Cargar bases' para obtener todas las bases de datos disponibles en esta conexión.">
         <Button onClick={onLoadDatabases} disabled={loadingDatabases} className="w-fit border-border-strong bg-[#0a0a0a] text-text hover:bg-surface-elevated">
           {loadingDatabases ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Database className="h-4 w-4 mr-2" />}
-          {loadingDatabases ? "Cargando..." : "Cargar bases"}
+          {loadingDatabases ? t("connectionsPage.form.loadingDatabases") : t("connectionsPage.form.loadDatabases")}
         </Button>
         {databaseLoadError && (
           <p className="mt-2 rounded-md border border-red-900/60 bg-red-950/20 px-3 py-2 text-body text-red-200">{databaseLoadError}</p>
@@ -1920,7 +1931,7 @@ function DatabaseCollectionSelector({
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-body font-medium text-text-muted">{(collectionsPerDb[activeDbTab] || []).length} {collectionLabel}</span>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => onSelectAllCollections(activeDbTab)} className="h-7 px-2 text-body border-border-strong bg-transparent text-text hover:bg-surface-hover">Seleccionar todas</Button>
+                        <Button size="sm" variant="ghost" onClick={() => onSelectAllCollections(activeDbTab)} className="h-7 px-2 text-body border-border-strong bg-transparent text-text hover:bg-surface-hover">{t("connectionsPage.form.selectAll")}</Button>
                         <Button size="sm" variant="ghost" onClick={() => onClearAllCollections(activeDbTab)} className="h-7 px-2 text-body border-border-strong bg-transparent text-text hover:bg-surface-hover">Limpiar</Button>
                         <Button size="sm" variant="ghost" onClick={() => onRefreshDatabase(activeDbTab)} className="h-7 px-2 text-body border-border-strong bg-transparent text-text hover:bg-surface-hover">Actualizar</Button>
                       </div>
@@ -1955,19 +1966,20 @@ function DatabaseCollectionSelector({
 }
 
 function PostgresSslFields({ form, settings, update, updateSetting }: { form: ConnectionInput; settings: Record<string, unknown>; update: ConnectionUpdater; updateSetting: SettingUpdater }) {
+  const { t } = useTranslation();
   return (
     <div className="mx-auto grid w-full max-w-190 gap-5">
-      <FormSection title="Modo SSL" description="Configura cómo debe negociar PostgreSQL una conexión cifrada.">
+      <FormSection title={t("connectionsPage.ssl.title", { defaultValue: "Modo SSL" })} description={t("connectionsPage.ssl.description", { defaultValue: "Configura cómo debe negociar PostgreSQL una conexión cifrada." })}>
         <ModalSelect
-          label="Modo SSL"
+          label={t("connectionsPage.ssl.title", { defaultValue: "Modo SSL" })}
           value={form.ssl_mode || "prefer"}
           onChange={(value) => update("ssl_mode", value)}
           options={[
-            { value: "disable", label: "Deshabilitado" },
-            { value: "prefer", label: "Preferido" },
-            { value: "require", label: "Requerido" },
-            { value: "verify-ca", label: "Verificar CA" },
-            { value: "verify-full", label: "Verificar completo" }
+            { value: "disable", label: t("connectionsPage.ssl.disable", { defaultValue: "Deshabilitado" }) },
+            { value: "prefer", label: t("connectionsPage.ssl.prefer", { defaultValue: "Preferido" }) },
+            { value: "require", label: t("connectionsPage.ssl.require", { defaultValue: "Requerido" }) },
+            { value: "verify-ca", label: t("connectionsPage.ssl.verifyCa", { defaultValue: "Verificar CA" }) },
+            { value: "verify-full", label: t("connectionsPage.form.sslVerifyFull") }
           ]}
         />
       </FormSection>
@@ -1983,6 +1995,7 @@ function PostgresSslFields({ form, settings, update, updateSetting }: { form: Co
 }
 
 function SshFields({ settings, updateSetting }: { settings: Record<string, unknown>; updateSetting: SettingUpdater }) {
+  const { t } = useTranslation();
   const mode = String(settings.sshMode ?? "existing");
   const enabled = Boolean(settings.sshEnabled);
   return (
@@ -2001,7 +2014,7 @@ function SshFields({ settings, updateSetting }: { settings: Record<string, unkno
         />
       </FormSection>
       {mode === "existing" ? (
-        <FormSection title="Conexión existente">
+        <FormSection title={t("connectionsPage.form.existingConnection")}>
           <ModalSelect label="Seleccionar conexión SSH" value={String(settings.sshConnectionId ?? "")} onChange={(value) => updateSetting("sshConnectionId", value)} options={[{ value: "", label: "No hay conexiones SSH disponibles" }]} />
         </FormSection>
       ) : (

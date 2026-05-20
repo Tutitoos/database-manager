@@ -135,7 +135,35 @@
       "name": "Nombre",
       "namePlaceholder": "Ej. Production · Postgres",
       "folder": "Carpeta",
-      "folderDescription": "Agrupa esta conexión dentro de una carpeta para organizar tus proyectos."
+      "folderDescription": "Agrupa esta conexión dentro de una carpeta para organizar tus proyectos.",
+      "connectionString": "Connection string",
+      "connectionStringRedis": "Pega una URL Redis para rellenar los campos automáticamente.",
+      "connectionStringMongo": "Pega una URI MongoDB o MongoDB Atlas para rellenar servidor y credenciales.",
+      "connectionStringPostgres": "Pega una URL PostgreSQL para rellenar host, puerto y credenciales.",
+      "server": "Servidor",
+      "host": "Host",
+      "port": "Puerto",
+      "database": "Base de Datos",
+      "databaseLabel": "Base de datos",
+      "databaseNamePlaceholder": "Nombre de la base de datos",
+      "savedCredential": "Credencial guardada",
+      "savedCredentialDescription": "Reutiliza un usuario/contraseña guardado. Si seleccionas uno, los campos de abajo se ignoran al conectar.",
+      "credentials": "Credenciales",
+      "credentialsRedisDescription": "Usuario opcional (Redis 6+ ACL). Contraseña opcional según configuración del servidor.",
+      "userOptional": "Usuario (opcional)",
+      "passwordOptional": "Contraseña (opcional)",
+      "user": "Usuario",
+      "password": "Contraseña",
+      "usingSavedCredential": "(usando credencial)",
+      "enterUsername": "Ingresa el nombre de usuario",
+      "enterPassword": "Ingresa la contraseña",
+      "driverSettings": "Driver settings",
+      "driverSettingsMongoDescription": "Opciones menos frecuentes del driver MongoDB.",
+      "loadDatabases": "Cargar bases",
+      "loadingDatabases": "Cargando...",
+      "sslVerifyFull": "Verificar completo",
+      "existingConnection": "Conexión existente",
+      "selectAll": "Seleccionar todas"
     }
   },
   "generalSettings": {
@@ -255,6 +283,9 @@
   "redisPage": {
     "selectKey": "Selecciona una clave",
     "editValue": "Editar valor — {{key}}"
+  },
+  "redisPubSub": {
+    "noSubscriptions": "Sin suscripciones activas."
   },
   "documentPage": {
     "selectCollection": "Selecciona una colección",

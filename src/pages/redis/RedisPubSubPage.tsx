@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { MessageSquare, Plus, Send, Radio } from "lucide-react";
@@ -18,6 +19,7 @@ interface Message {
 }
 
 export default function RedisPubSubPage({ connection }: { connection: Connection }) {
+  const { t } = useTranslation();
   const { sessions, updateSession } = useSessionsStore();
   const stored = sessions[connection.id] as RedisSession | undefined;
 
@@ -127,7 +129,7 @@ export default function RedisPubSubPage({ connection }: { connection: Connection
         <div className="flex-1 overflow-y-auto p-3 space-y-1">
           {channels.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border-strong p-6 text-center">
-              <p className="text-body text-text-faint">Sin suscripciones activas.</p>
+              <p className="text-body text-text-faint">{t("redisPubSub.noSubscriptions", { defaultValue: "Sin suscripciones activas." })}</p>
             </div>
           ) : (
             channels.map((channel) => (

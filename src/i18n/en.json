@@ -135,7 +135,35 @@
       "name": "Name",
       "namePlaceholder": "e.g. Production · Postgres",
       "folder": "Folder",
-      "folderDescription": "Group this connection inside a folder to organize your projects."
+      "folderDescription": "Group this connection inside a folder to organize your projects.",
+      "connectionString": "Connection string",
+      "connectionStringRedis": "Paste a Redis URL to auto-fill the fields.",
+      "connectionStringMongo": "Paste a MongoDB or MongoDB Atlas URI to auto-fill server and credentials.",
+      "connectionStringPostgres": "Paste a PostgreSQL URL to auto-fill host, port and credentials.",
+      "server": "Server",
+      "host": "Host",
+      "port": "Port",
+      "database": "Database",
+      "databaseLabel": "Database",
+      "databaseNamePlaceholder": "Database name",
+      "savedCredential": "Saved credential",
+      "savedCredentialDescription": "Reuse a stored user/password. If selected, the fields below are ignored when connecting.",
+      "credentials": "Credentials",
+      "credentialsRedisDescription": "Optional user (Redis 6+ ACL). Password optional depending on server config.",
+      "userOptional": "User (optional)",
+      "passwordOptional": "Password (optional)",
+      "user": "User",
+      "password": "Password",
+      "usingSavedCredential": "(using credential)",
+      "enterUsername": "Enter username",
+      "enterPassword": "Enter password",
+      "driverSettings": "Driver settings",
+      "driverSettingsMongoDescription": "Less frequent MongoDB driver options.",
+      "loadDatabases": "Load databases",
+      "loadingDatabases": "Loading...",
+      "sslVerifyFull": "Verify full",
+      "existingConnection": "Existing connection",
+      "selectAll": "Select all"
     }
   },
   "generalSettings": {
@@ -255,6 +283,9 @@
   "redisPage": {
     "selectKey": "Select a key",
     "editValue": "Edit value — {{key}}"
+  },
+  "redisPubSub": {
+    "noSubscriptions": "No active subscriptions."
   },
   "documentPage": {
     "selectCollection": "Select a collection",
