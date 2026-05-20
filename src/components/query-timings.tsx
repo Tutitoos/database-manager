@@ -71,8 +71,8 @@ export function QueryTimings({
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full z-40 mt-1.5 w-[280px] overflow-hidden rounded-lg border border-border-subtle bg-surface-overlay shadow-xl">
+          <div className="fixed inset-0 z-[80]" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-full z-[90] mt-1.5 w-[280px] overflow-hidden rounded-lg border border-border-subtle bg-surface-overlay shadow-2xl ring-1 ring-black/40 backdrop-blur">
             <div className="border-b border-border-subtle px-3 py-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-overline">{t("queryTimings.lastQuery")}</span>
