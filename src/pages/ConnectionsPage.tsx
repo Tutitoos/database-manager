@@ -1582,40 +1582,37 @@ function ConnectionDialog(props: {
                 )}
               </div>
 
-              <footer className={cn("flex h-auto min-h-[52px] flex-col gap-2 items-start justify-between border-t px-5 py-3", panel, sectionBorder)}>
+              <footer className={cn("flex flex-col gap-2 border-t px-5 py-3", panel, sectionBorder)}>
                 {props.status && (
-                  <div className={cn(
-                    "w-full rounded-md border p-3 text-body font-medium flex items-start gap-2 max-h-24 overflow-y-auto",
-                    props.statusOk
-                      ? "border-green-900/50 bg-green-950/30 text-green-300"
-                      : "border-red-900/50 bg-red-950/30 text-red-300"
-                  )}>
-                    {props.statusOk
-                      ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
-                      : <XCircle className="h-4 w-4 shrink-0 mt-0.5" />}
+                  <div
+                    className={cn(
+                      "flex max-h-24 w-full items-start gap-2 overflow-y-auto rounded-md border px-3 py-2 text-body font-medium",
+                      props.statusOk
+                        ? "border-success/40 bg-success-soft text-success"
+                        : "border-danger/40 bg-danger-soft text-danger",
+                    )}
+                  >
+                    {props.statusOk ? (
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                    ) : (
+                      <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    )}
                     <span className="break-words">{props.status}</span>
                   </div>
                 )}
-                <div className="flex w-full items-center gap-3">
-                  <Button onClick={handleTest} disabled={props.busy} className="h-9 border-border-strong bg-[#0a0a0a] text-text">
-                    {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                <div className="flex w-full items-center justify-between gap-3">
+                  <Button variant="secondary" size="sm" onClick={handleTest} disabled={props.busy}>
+                    {props.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
                     Probar
                   </Button>
-                  <div className="flex-1" />
                   <div className="flex gap-2">
-                    <Button onClick={() => props.onOpenChange(false)} className="h-9 border-border-strong bg-[#0a0a0a] text-text">
+                    <Button variant="secondary" size="sm" onClick={() => props.onOpenChange(false)} disabled={props.busy}>
                       Cancelar
                     </Button>
-                    <button
-                      type="button"
-                      onClick={handleSave}
-                      disabled={props.busy}
-                      className="inline-flex h-9 items-center gap-2 rounded-md px-4 text-h3 font-semibold text-text transition-all disabled:opacity-50"
-                      style={{ backgroundColor: provider.color, boxShadow: `0 4px 14px ${provider.color}40` }}
-                    >
-                      {props.busy && <Loader2 className="h-4 w-4 animate-spin" />}
-                      Guardar
-                    </button>
+                    <Button variant="primary" size="sm" onClick={handleSave} disabled={props.busy}>
+                      {props.busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      {props.editing ? "Guardar cambios" : "Crear conexión"}
+                    </Button>
                   </div>
                 </div>
               </footer>
