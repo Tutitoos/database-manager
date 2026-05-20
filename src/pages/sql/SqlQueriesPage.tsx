@@ -424,8 +424,8 @@ export default function SqlQueriesPage({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Tabs */}
-      <div className={cn("flex shrink-0 items-stretch gap-1 border-b bg-surface/40 px-2 pt-1.5", sectionBorder)}>
-        <div className="flex flex-1 items-center gap-0.5 overflow-x-auto">
+      <div className={cn("flex shrink-0 items-end gap-px border-b bg-surface-sunken/60 px-2 pt-2", sectionBorder)}>
+        <div className="flex flex-1 items-end gap-px overflow-x-auto">
           {scripts.map((s) => (
             <ScriptTab
               key={s.id}
@@ -442,19 +442,19 @@ export default function SqlQueriesPage({
           align="end"
           trigger={
             <span
-              className="inline-flex h-7 items-center gap-1 rounded-md border border-border-subtle bg-surface px-2 text-caption text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
+              className="ml-1 inline-flex h-7 items-center gap-1 rounded-md border border-border-subtle bg-surface px-2 text-[11px] text-text-muted transition-colors hover:border-border-strong hover:bg-surface-hover hover:text-text"
               title="Nuevo script"
             >
               <Plus className="h-3 w-3" />
-              <ChevronDown className="h-3 w-3" />
+              <ChevronDown className="h-3 w-3 opacity-60" />
             </span>
           }
-          className="w-[14rem]"
+          className="w-[15rem]"
         >
           {(close) => (
             <>
               <DropdownItem
-                icon={<Plus className="h-3.5 w-3.5" />}
+                icon={<Plus className="h-3.5 w-3.5 text-accent" />}
                 onClick={() => { newScript("blank"); close(); }}
               >
                 En blanco
@@ -463,22 +463,29 @@ export default function SqlQueriesPage({
               {(["select", "insert", "update", "delete"] as const).map((k) => (
                 <DropdownItem
                   key={k}
-                  icon={<FileCode2 className="h-3.5 w-3.5" />}
+                  icon={<FileCode2 className="h-3.5 w-3.5 text-sky-400" />}
                   onClick={() => { newScript(k); close(); }}
                 >
                   {TEMPLATE_LABELS[k]}
                 </DropdownItem>
               ))}
               <DropdownSeparator />
-              {(["create_table", "alter_table", "drop_table", "cte"] as const).map((k) => (
+              {(["create_table", "alter_table", "drop_table"] as const).map((k) => (
                 <DropdownItem
                   key={k}
-                  icon={<FileCode2 className="h-3.5 w-3.5" />}
+                  icon={<FileCode2 className="h-3.5 w-3.5 text-amber-400" />}
                   onClick={() => { newScript(k); close(); }}
                 >
                   {TEMPLATE_LABELS[k]}
                 </DropdownItem>
               ))}
+              <DropdownSeparator />
+              <DropdownItem
+                icon={<FileCode2 className="h-3.5 w-3.5 text-emerald-400" />}
+                onClick={() => { newScript("cte"); close(); }}
+              >
+                {TEMPLATE_LABELS.cte}
+              </DropdownItem>
             </>
           )}
         </Dropdown>
@@ -981,12 +988,23 @@ function ScriptTab({
   return (
     <div
       className={cn(
-        "group inline-flex h-7 shrink-0 items-center gap-1 rounded-t-md border border-b-0 px-2 text-caption transition-colors",
+        "group relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-t-md px-2.5 text-[11px] transition-all",
         active
-          ? "border-border-subtle bg-surface text-text"
-          : "border-transparent text-text-muted hover:bg-surface-hover hover:text-text",
+          ? "bg-surface text-text shadow-[0_-1px_0_0_var(--color-border-subtle)_inset,1px_0_0_0_var(--color-border-subtle),-1px_0_0_0_var(--color-border-subtle)]"
+          : "text-text-faint hover:bg-surface-hover/60 hover:text-text-muted",
       )}
     >
+      {/* Active indicator: thin accent line on top */}
+      {active && (
+        <span className="pointer-events-none absolute inset-x-0 top-0 h-[2px] rounded-full bg-accent" />
+      )}
+      <FileCode2
+        strokeWidth={1.5}
+        className={cn(
+          "h-3 w-3 shrink-0 transition-colors",
+          active ? "text-accent" : "text-text-faint",
+        )}
+      />
       {editing ? (
         <input
           ref={inputRef}
@@ -1000,14 +1018,18 @@ function ScriptTab({
               setEditing(false);
             }
           }}
-          className="h-5 w-28 rounded border border-border-subtle bg-surface-elevated px-1 text-caption text-text outline-none focus:border-accent"
+          className="h-5 w-28 rounded border border-accent/60 bg-surface-elevated px-1 text-[11px] text-text outline-none ring-1 ring-accent/20"
+          onClick={(e) => e.stopPropagation()}
         />
       ) : (
         <button
           type="button"
           onClick={onSelect}
           onDoubleClick={() => setEditing(true)}
-          className="max-w-[12rem] truncate font-mono"
+          className={cn(
+            "max-w-[12rem] truncate font-mono transition-colors",
+            active ? "text-text" : "text-text-muted group-hover:text-text",
+          )}
           title="Doble click para renombrar"
         >
           {script.name}
@@ -1017,19 +1039,24 @@ function ScriptTab({
         <button
           type="button"
           onClick={() => setEditing(true)}
-          className="opacity-0 group-hover:opacity-100 hover:text-text"
+          className="text-text-faint opacity-0 transition-opacity hover:text-text group-hover:opacity-100"
           title="Renombrar"
         >
-          <Pencil className="h-3 w-3" />
+          <Pencil className="h-2.5 w-2.5" />
         </button>
       )}
       <button
         type="button"
         onClick={onClose}
         title={canClose ? "Cerrar" : "Vaciar"}
-        className="rounded p-0.5 text-text-faint opacity-60 hover:bg-surface-hover hover:text-text hover:opacity-100"
+        className={cn(
+          "rounded-sm p-0.5 transition-all",
+          active
+            ? "text-text-faint hover:bg-surface-hover hover:text-text"
+            : "text-text-faint opacity-0 hover:bg-surface-hover hover:text-text group-hover:opacity-70 group-hover:hover:opacity-100",
+        )}
       >
-        <X className="h-3 w-3" />
+        <X className="h-2.5 w-2.5" />
       </button>
     </div>
   );
