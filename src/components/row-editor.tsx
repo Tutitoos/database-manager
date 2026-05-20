@@ -2,6 +2,7 @@ import { Code2, Copy, Rows3, RotateCcw, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/modal";
+import { Select } from "@/components/ui/select";
 import { CodeEditor } from "@/components/code-editor";
 import { pushToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
@@ -501,11 +502,21 @@ function FieldInput({
   // a real value distinct from "no value chosen".
   if (kind === "boolean") {
     const v = value === true ? "true" : value === false ? "false" : "null";
-    return <BoolSegmented value={v} onChange={(next) => {
-      if (next === "true") onChange(true);
-      else if (next === "false") onChange(false);
-      else onSetNull();
-    }} />;
+    return (
+      <Select
+        value={v}
+        onChange={(next) => {
+          if (next === "true") onChange(true);
+          else if (next === "false") onChange(false);
+          else onSetNull();
+        }}
+        options={[
+          { value: "true", label: "true" },
+          { value: "false", label: "false" },
+          { value: "null", label: "null" },
+        ]}
+      />
+    );
   }
   if (kind === "number") {
     return (
@@ -542,81 +553,6 @@ function FieldInput({
   );
 }
 
-function BoolSegmented({
-  value,
-  onChange,
-}: {
-  value: "true" | "false" | "null";
-  onChange: (next: "true" | "false" | "null") => void;
-}) {
-  // Tri-state switch styled like a native toggle, but with three discrete
-  // stops (false / null / true). The thumb slides along the track and picks
-  // up the colour of the current state; clicking the thumb or anywhere on
-  // the track cycles forward. Click a side label to jump there directly.
-  const order: Array<"false" | "null" | "true"> = ["false", "null", "true"];
-  const idx = order.indexOf(value);
-  const next = () => onChange(order[(idx + 1) % order.length]);
-
-  const thumbColor =
-    value === "true" ? "bg-emerald-400" :
-    value === "false" ? "bg-rose-400" :
-    "bg-text-faint";
-  const trackColor =
-    value === "true" ? "bg-emerald-500/15 border-emerald-500/30" :
-    value === "false" ? "bg-rose-500/15 border-rose-500/30" :
-    "bg-surface border-border-subtle";
-
-  return (
-    <div className="inline-flex items-center gap-3">
-      <button
-        type="button"
-        onClick={() => onChange("false")}
-        className={cn(
-          "text-[11px] font-mono transition-colors",
-          value === "false" ? "text-rose-300" : "text-text-faint hover:text-text-muted",
-        )}
-      >
-        false
-      </button>
-      <button
-        type="button"
-        onClick={next}
-        title="Click para alternar"
-        className={cn("relative h-5 w-12 rounded-full border transition-colors", trackColor)}
-      >
-        <span
-          className={cn(
-            "absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-all duration-150",
-            thumbColor,
-            value === "false" && "left-0.5",
-            value === "null" && "left-1/2 -translate-x-1/2",
-            value === "true" && "right-0.5",
-          )}
-        />
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange("true")}
-        className={cn(
-          "text-[11px] font-mono transition-colors",
-          value === "true" ? "text-emerald-300" : "text-text-faint hover:text-text-muted",
-        )}
-      >
-        true
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange("null")}
-        className={cn(
-          "text-[11px] font-mono italic transition-colors",
-          value === "null" ? "text-text-muted" : "text-text-faint hover:text-text-muted",
-        )}
-      >
-        null
-      </button>
-    </div>
-  );
-}
 
 function inputCls(invalid: boolean) {
   return cn(
