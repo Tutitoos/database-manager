@@ -800,6 +800,7 @@ function StatusPillDot({ pulse }: { pulse?: boolean }) {
 }
 
 function StatusBadge({ status, testResult }: { status: ConnStatus; testResult: TestResult }) {
+  const { t } = useTranslation();
   if (testResult && !testResult.loading) {
     return testResult.ok ? (
       <span className={cn(STATUS_PILL, "bg-success-soft text-success")}>
@@ -809,14 +810,14 @@ function StatusBadge({ status, testResult }: { status: ConnStatus; testResult: T
     ) : (
       <span className={cn(STATUS_PILL, "bg-danger-soft text-danger")}>
         <StatusPillDot />
-        Falló
+        {t("connectionsPage.status.failed")}
       </span>
     );
   }
   const map: Record<ConnStatus, { cls: string; label: string; pulse?: boolean }> = {
-    ok: { cls: "bg-success-soft text-success", label: "Activa" },
-    fail: { cls: "bg-danger-soft text-danger", label: "Offline" },
-    checking: { cls: "bg-info-soft text-info", label: "Comprobando", pulse: true },
+    ok: { cls: "bg-success-soft text-success", label: t("connectionsPage.status.active") },
+    fail: { cls: "bg-danger-soft text-danger", label: t("connectionsPage.status.offline") },
+    checking: { cls: "bg-info-soft text-info", label: t("connectionsPage.status.checking"), pulse: true },
     unknown: { cls: "bg-surface-sunken text-text-faint", label: "—" },
   };
   const s = map[status];

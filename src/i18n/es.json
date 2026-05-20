@@ -97,6 +97,17 @@
   },
   "connectionsPage": {
     "title": "Conexiones",
+    "summarySingular": "conexión configurada",
+    "summaryPlural": "conexiones configuradas",
+    "open": "Abrir",
+    "connect": "Conectar",
+    "opened": "abierto",
+    "status": {
+      "active": "Activa",
+      "offline": "Offline",
+      "checking": "Comprobando",
+      "failed": "Falló"
+    },
     "newConnection": "Nueva conexión",
     "editConnection": "Editar conexión",
     "createConnection": "Crear conexión",
