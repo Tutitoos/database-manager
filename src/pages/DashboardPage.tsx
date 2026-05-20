@@ -20,6 +20,7 @@ import { useSessionsStore } from "@/store/sessions";
 import { useOrgs } from "@/store/orgs";
 import { useOpenConnection } from "@/components/connect-gate";
 import { saveJson } from "@/lib/save-file";
+import { parseImportFile, type ImportBundle, type ImportConnection } from "@/lib/import";
 import type { Connection, ConnectionGroup } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -93,32 +94,69 @@ export default function DashboardPage() {
     if (!f) return;
     try {
       const text = await f.text();
-      const parsed = JSON.parse(text) as { connections?: Connection[] };
-      const list = parsed.connections ?? [];
-      for (const c of list) {
-        await invoke("create_connection", {
-          input: {
-            name: c.name,
-            plugin_id: c.plugin_id,
-            host: c.host,
-            port: c.port,
-            database: c.database,
-            username: c.username,
-            password: c.password ?? "",
-            ssl_mode: c.ssl_mode,
-            settings_json: c.settings_json,
-            group_id: c.group_id ?? null,
-            credential_id: c.credential_id ?? null,
-          },
-        });
-      }
+      const bundle = parseImportFile(text);
+      const created = await applyImportBundle(bundle);
       await refresh();
-      pushToast({ level: "success", title: t("home.toasts.imported"), body: String(list.length) });
+      const body = [
+        `${created} ${created === 1 ? "conexión" : "conexiones"} desde ${bundle.source}`,
+        ...bundle.warnings.slice(0, 3),
+      ].join(" · ");
+      pushToast({ level: "success", title: t("home.toasts.imported"), body });
+      if (bundle.warnings.length > 3) {
+        pushToast({ level: "warn", title: t("home.toasts.imported"), body: `+${bundle.warnings.length - 3} avisos más` });
+      }
     } catch (err) {
       pushToast({ level: "danger", title: t("home.toasts.importFailed"), body: String(err) });
     } finally {
       e.target.value = "";
     }
+  }
+
+  async function applyImportBundle(bundle: ImportBundle): Promise<number> {
+    // Resolve group_name → group_id by either reusing an existing group or
+    // creating it (parent flattening — DataGrip/DBeaver hierarchies are rare).
+    const groupIdByName = new Map<string, number>();
+    for (const g of groups) groupIdByName.set(g.name, g.id);
+    const wantedGroupNames = new Set<string>();
+    for (const c of bundle.connections) {
+      if (c.group_name) wantedGroupNames.add(c.group_name);
+    }
+    for (const name of wantedGroupNames) {
+      if (groupIdByName.has(name)) continue;
+      try {
+        const id = await invoke<number>("create_group", { name, parentId: null });
+        groupIdByName.set(name, id);
+      } catch {
+        // Skip groups we can't create — connection will land in "Sin carpeta".
+      }
+    }
+    let created = 0;
+    for (const c of bundle.connections) {
+      try {
+        await invoke("create_connection", { input: toConnectionInput(c, groupIdByName) });
+        created++;
+      } catch {
+        // Per-row failure already implies the row was rejected — surface the
+        // count later, no need to spam toasts.
+      }
+    }
+    return created;
+  }
+
+  function toConnectionInput(c: ImportConnection, groupIdByName: Map<string, number>) {
+    return {
+      name: c.name,
+      plugin_id: c.plugin_id,
+      host: c.host,
+      port: c.port ?? null,
+      database: c.database,
+      username: c.username,
+      password: c.password ?? "",
+      ssl_mode: c.ssl_mode ?? null,
+      settings_json: c.settings_json ?? "{}",
+      group_id: c.group_name ? groupIdByName.get(c.group_name) ?? null : null,
+      credential_id: c.credential_id ?? null,
+    };
   }
 
   const providerCounts = useMemo(() => {
@@ -200,7 +238,7 @@ export default function DashboardPage() {
         <input
           ref={fileInputRef}
           type="file"
-          accept="application/json,.json"
+          accept="application/json,.json,text/xml,application/xml,.xml"
           hidden
           onChange={handleImportFile}
         />
