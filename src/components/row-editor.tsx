@@ -352,30 +352,30 @@ export function RowEditor({
                       <span className="font-mono text-body font-medium text-text">{col}</span>
                       {info?.type && (
                         <span
-                          className={cn("text-tiny rounded px-1 py-0.5 font-mono lowercase", style.chip)}
+                          className={cn("rounded-sm px-1 py-px font-mono text-[10px] leading-none lowercase", style.chip)}
                           title={info.type}
                         >
                           {shortType(info.type)}
                         </span>
                       )}
                       {meta?.primary && (
-                        <span className="text-tiny rounded bg-accent-soft px-1 py-0.5 font-semibold uppercase tracking-wide text-accent">
+                        <span className="rounded-sm bg-accent-soft px-1 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-accent">
                           pk
                         </span>
                       )}
                       {meta?.unique && !meta.primary && (
-                        <span className="text-tiny rounded bg-surface px-1 py-0.5 font-semibold uppercase tracking-wide text-text-muted">
+                        <span className="rounded-sm bg-surface px-1 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-text-muted">
                           uq
                         </span>
                       )}
                       {required && (
-                        <span className="text-tiny rounded bg-danger-soft px-1 py-0.5 font-semibold uppercase tracking-wide text-danger">
+                        <span className="rounded-sm bg-danger-soft px-1 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-danger">
                           required
                         </span>
                       )}
                       {info?.default != null && (
-                        <span className="text-tiny truncate font-mono text-text-faint" title={`default: ${info.default}`}>
-                          default {info.default.length > 24 ? info.default.slice(0, 24) + "…" : info.default}
+                        <span className="truncate font-mono text-[10px] text-text-faint" title={`default: ${info.default}`}>
+                          default {info.default.length > 20 ? info.default.slice(0, 20) + "…" : info.default}
                         </span>
                       )}
                       {nullish && (
