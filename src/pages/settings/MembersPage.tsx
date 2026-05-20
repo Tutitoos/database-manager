@@ -7,7 +7,7 @@ import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/modal";
 import { pushToast } from "@/components/ui/toast";
-import { useOrgs } from "@/store/orgs";
+import { isOrgSelectable, useOrgs } from "@/store/orgs";
 
 interface Member {
   user_id: string;
@@ -24,8 +24,10 @@ export default function MembersPage() {
   const { t } = useTranslation();
   const params = useParams() as { orgId?: string };
   const orgId = Number(params.orgId);
-  const { orgs } = useOrgs();
+  const orgsState = useOrgs();
+  const { orgs } = orgsState;
   const org = orgs.find((o) => o.id === orgId);
+  const offline = org ? !isOrgSelectable(org, orgsState) : false;
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +35,7 @@ export default function MembersPage() {
 
   async function load() {
     if (!org || org.server_kind === "local") return;
+    if (offline) return;
     setLoading(true);
     setError(null);
     try {
@@ -72,6 +75,27 @@ export default function MembersPage() {
 
   if (!org) {
     return <p className="text-h3 text-text-muted">Organización no encontrada.</p>;
+  }
+
+  if (offline) {
+    return (
+      <div className="mx-auto flex max-w-3xl flex-col gap-4 pb-12">
+        <header className="flex items-center gap-3">
+          <Link to="/settings/organizations">
+            <Button variant="ghost" size="sm" aria-label={t("orgs.members.back")}>
+              <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
+            </Button>
+          </Link>
+          <div className="flex-1">
+            <h1 className="text-h1 text-text">{t("orgs.members.title", { name: org.name })}</h1>
+            <p className="text-body text-text-muted">{org.server_url}</p>
+          </div>
+        </header>
+        <div className="grid h-48 place-items-center rounded-lg border border-dashed border-border-subtle text-caption text-text-muted">
+          {t("orgs.offlineDisabled")}
+        </div>
+      </div>
+    );
   }
 
   return (

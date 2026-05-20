@@ -369,11 +369,17 @@ function DetailPanel({
           </span>
         )}
         {org.server_kind !== "local" && org.role && ["owner", "admin", "member", "viewer"].includes(org.role) && (
-          <Link to="/settings/organizations/$orgId/members" params={{ orgId: String(org.id) }}>
-            <Button variant="secondary" size="sm">
+          selectable ? (
+            <Link to="/settings/organizations/$orgId/members" params={{ orgId: String(org.id) }}>
+              <Button variant="secondary" size="sm">
+                <Users className="h-3.5 w-3.5" /> {t("orgs.membersLabel")}
+              </Button>
+            </Link>
+          ) : (
+            <Button variant="secondary" size="sm" disabled title={t("orgs.offlineDisabled")}>
               <Users className="h-3.5 w-3.5" /> {t("orgs.membersLabel")}
             </Button>
-          </Link>
+          )
         )}
         <Button variant="secondary" size="sm" onClick={onEdit}>
           <Edit3 className="h-3.5 w-3.5" /> {t("orgs.edit")}
