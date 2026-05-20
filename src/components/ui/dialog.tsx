@@ -9,9 +9,9 @@ export function Dialog({ open, title, children, onOpenChange }: { open: boolean;
 
   return (
     <Modal onClose={() => onOpenChange(false)}>
-      <div className="w-full max-w-xl rounded-lg border border-zinc-700/70 bg-[#0f0f10] shadow-[0_24px_80px_rgba(0,0,0,.65)]">
-        <div className="flex h-12 items-center justify-between border-b border-zinc-800/80 px-5">
-          <h2 className="text-sm font-semibold text-zinc-100">{title}</h2>
+      <div className="w-full max-w-xl rounded-lg border border-border-strong bg-[#0f0f10] shadow-[0_24px_80px_rgba(0,0,0,.65)]">
+        <div className="flex h-12 items-center justify-between border-b border-border-subtle px-5">
+          <h2 className="text-h3 font-semibold text-text">{title}</h2>
           <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)} aria-label="Cerrar">
             <X className="h-4 w-4" />
           </Button>

@@ -154,23 +154,20 @@ export function AutocompleteInput({
         <div
           style={{ position: "fixed", top: rect.top, left: rect.left, minWidth: rect.minWidth, maxWidth: window.innerWidth - rect.left - 12 }}
           ref={dropdownRef}
-          className="z-9999 max-h-52 overflow-y-auto rounded-lg border border-zinc-700/80 bg-zinc-900 shadow-2xl shadow-black/50"
+          className="z-9999 max-h-64 overflow-y-auto rounded-md border border-border-subtle bg-surface-overlay p-1 shadow-xl"
         >
           {suggestion.items.map((item, i) => (
             <button
               key={item.label}
               onMouseDown={(e) => { e.preventDefault(); handleSelect(item); }}
               className={cn(
-                "flex w-full items-center justify-between gap-3 whitespace-nowrap px-3 py-1.5 text-left transition-colors",
-                i === activeIdx ? "bg-zinc-700/80 text-white" : "text-zinc-300 hover:bg-zinc-800/60"
+                "relative flex w-full items-center whitespace-nowrap rounded-sm px-2 py-1 text-left transition-colors",
+                i === activeIdx
+                  ? "bg-accent/15 text-accent"
+                  : "text-text-muted hover:bg-surface-hover hover:text-text",
               )}
             >
-              <span className="font-mono text-xs">{item.label}</span>
-              {item.hint && (
-                <span className={cn("shrink-0 text-[10px]", item.color ?? "text-zinc-600")}>
-                  {item.hint}
-                </span>
-              )}
+              <span className="text-body font-mono">{item.label}</span>
             </button>
           ))}
         </div>,

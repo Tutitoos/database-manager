@@ -1,8 +1,10 @@
-import CodeMirror, { EditorView, type ReactCodeMirrorProps } from "@uiw/react-codemirror";
+import CodeMirror, { EditorView, type Extension, type ReactCodeMirrorProps } from "@uiw/react-codemirror";
 import { json } from "@codemirror/lang-json";
-import { sql, PostgreSQL, MySQL } from "@codemirror/lang-sql";
+import { sql, PostgreSQL, MySQL, type SQLConfig } from "@codemirror/lang-sql";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { useMemo } from "react";
+import { useResolvedTheme } from "@/lib/theme";
+import type { SchemaMap } from "@/lib/schema-cache";
 
 type Lang = "json" | "postgresql" | "mysql" | "sql";
 
@@ -11,6 +13,9 @@ type Props = Omit<ReactCodeMirrorProps, "extensions" | "theme"> & {
   className?: string;
   minHeight?: string;
   maxHeight?: string;
+  extraExtensions?: Extension[];
+  /** Schema for schema-aware autocomplete (tables + columns). */
+  schema?: SchemaMap;
 };
 
 const baseTheme = EditorView.theme({
@@ -40,24 +45,48 @@ const baseTheme = EditorView.theme({
   ".cm-cursor": { borderLeftColor: "rgb(244 244 245)" },
 });
 
+// Minimal light theme for CodeMirror — transparent background so it sits on
+// our token surfaces, with adjusted gutter/selection colors for readability.
+const lightTheme = EditorView.theme(
+  {
+    "&": { backgroundColor: "transparent" },
+    ".cm-gutters": {
+      backgroundColor: "rgba(0,0,0,0.03)",
+      borderRight: "1px solid rgba(0,0,0,0.06)",
+      color: "#a1a1aa",
+    },
+    ".cm-activeLineGutter, .cm-activeLine": { backgroundColor: "rgba(0,0,0,0.03)" },
+    ".cm-content": { color: "#0a0a0a" },
+    ".cm-selectionBackground": { backgroundColor: "rgba(14,165,233,0.20) !important" },
+    ".cm-cursor": { borderLeftColor: "#0a0a0a" },
+  },
+  { dark: false },
+);
+
 export function CodeEditor({
   lang = "json",
   className,
   minHeight = "200px",
   maxHeight,
+  extraExtensions,
+  schema,
   ...rest
 }: Props) {
+  const resolvedTheme = useResolvedTheme();
   const extensions = useMemo(() => {
-    if (lang === "json") return [json(), baseTheme];
-    if (lang === "postgresql") return [sql({ dialect: PostgreSQL }), baseTheme];
-    if (lang === "mysql") return [sql({ dialect: MySQL }), baseTheme];
-    return [sql(), baseTheme];
-  }, [lang]);
+    const sqlConfig: SQLConfig | undefined = schema ? { schema } : undefined;
+    const base: Extension[] =
+      lang === "json" ? [json(), baseTheme]
+      : lang === "postgresql" ? [sql({ dialect: PostgreSQL, ...(sqlConfig ?? {}) }), baseTheme]
+      : lang === "mysql" ? [sql({ dialect: MySQL, ...(sqlConfig ?? {}) }), baseTheme]
+      : [sql(sqlConfig), baseTheme];
+    return extraExtensions ? [...base, ...extraExtensions] : base;
+  }, [lang, extraExtensions, schema]);
 
   return (
     <CodeMirror
       {...rest}
-      theme={oneDark}
+      theme={resolvedTheme === "light" ? lightTheme : oneDark}
       extensions={extensions}
       className={className}
       basicSetup={{
@@ -65,7 +94,7 @@ export function CodeEditor({
         foldGutter: true,
         highlightActiveLine: true,
         highlightSelectionMatches: true,
-        autocompletion: false,
+        autocompletion: lang !== "json",
         bracketMatching: true,
         closeBrackets: true,
         indentOnInput: true,

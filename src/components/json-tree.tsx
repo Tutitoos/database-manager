@@ -35,18 +35,18 @@ export function parseJsonValue(raw: unknown): ParsedValue {
 }
 
 const KIND_COLOR: Record<string, string> = {
-  null: "text-zinc-600",
+  null: "text-text-faint",
   string: "text-green-400",
   number: "text-blue-400",
   boolean: "text-blue-400",
   objectid: "text-red-400",
   date: "text-cyan-400",
-  object: "text-zinc-500",
-  array: "text-zinc-500",
+  object: "text-text-faint",
+  array: "text-text-faint",
 };
 
 function InlineValue({ p }: { p: ParsedValue }) {
-  const color = KIND_COLOR[p.kind] ?? "text-zinc-300";
+  const color = KIND_COLOR[p.kind] ?? "text-text";
   switch (p.kind) {
     case "null": return <span className={color}>null</span>;
     case "string": return <span className={color}>&quot;{p.v}&quot;</span>;
@@ -73,14 +73,14 @@ function FieldRow({ fieldKey, raw, depth = 0 }: { fieldKey: string; raw: unknown
     <div style={{ paddingLeft: depth * 14 }}>
       <div className="flex items-center gap-1 py-px">
         {nested ? (
-          <button onClick={() => setOpen((x) => !x)} className="shrink-0 text-zinc-600 transition-colors hover:text-zinc-300">
+          <button onClick={() => setOpen((x) => !x)} className="shrink-0 text-text-faint transition-colors hover:text-text">
             <ChevronRight className={cn("h-3 w-3 transition-transform duration-100", open && "rotate-90")} />
           </button>
         ) : (
           <span className="w-3 shrink-0" />
         )}
-        <span className="text-zinc-200">{fieldKey}</span>
-        <span className="text-zinc-600"> : </span>
+        <span className="text-text">{fieldKey}</span>
+        <span className="text-text-faint"> : </span>
         <InlineValue p={p} />
       </div>
       {nested && open && entries.map(([k, v]) => (
@@ -96,7 +96,7 @@ export function JsonTree({ data, className }: { data: Record<string, unknown> | 
     : Object.entries(data);
 
   return (
-    <div className={cn("font-mono text-xs", className)}>
+    <div className={cn("font-mono text-body", className)}>
       {entries.map(([k, v]) => (
         <FieldRow key={k} fieldKey={k} raw={v} />
       ))}

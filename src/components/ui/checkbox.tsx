@@ -12,13 +12,13 @@ export function Checkbox({ className, label, id, ...props }: CheckboxProps) {
         id={id}
         type="checkbox"
         className={cn(
-          "h-4 w-4 cursor-pointer rounded border border-zinc-600 bg-zinc-900 accent-blue-500",
+          "h-4 w-4 cursor-pointer rounded border border-border-strong bg-surface-sunken accent-accent",
           "disabled:cursor-not-allowed disabled:opacity-50",
-          className
+          className,
         )}
         {...props}
       />
-      {label && <span className="text-sm text-zinc-300">{label}</span>}
+      {label && <span className="text-h3 text-text-muted">{label}</span>}
     </label>
   );
 }

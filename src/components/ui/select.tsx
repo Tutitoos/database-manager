@@ -38,23 +38,25 @@ export function Select({ value, onChange, options, className, placeholder, upwar
         type="button"
         onClick={() => setOpen(!open)}
         className={cn(
-          "h-9 w-full appearance-none rounded-lg border border-white/5 bg-black/40 pl-3 pr-8 text-sm text-zinc-200 flex items-center justify-between gap-2",
-          "shadow-inner outline-none transition-all",
-          "hover:border-white/10 hover:bg-white/5",
-          "focus:border-white/20 focus:ring-1 focus:ring-white/10",
+          "h-9 w-full appearance-none rounded-md border border-border-subtle bg-surface-sunken pl-3 pr-8 text-h3 text-text flex items-center justify-between gap-2",
+          "outline-none transition-all",
+          "hover:border-border-strong hover:bg-surface-hover",
+          "focus:border-border-focus focus:ring-1 focus:ring-accent-ring",
           "disabled:pointer-events-none disabled:opacity-50",
-          className
+          className,
         )}
       >
         <span className="truncate">{selectedOption ? selectedOption.label : placeholder}</span>
       </button>
-      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+      <ChevronDown strokeWidth={1.5} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-faint" />
 
       {open && (
-        <div className={cn(
-          "absolute left-0 min-w-full z-50 rounded-lg border border-white/5 bg-zinc-900/95 backdrop-blur-xl shadow-2xl p-1",
-          upward ? "bottom-full mb-1" : "top-full mt-1"
-        )}>
+        <div
+          className={cn(
+            "absolute left-0 min-w-full z-50 rounded-md border border-border-subtle bg-surface-overlay shadow-md p-1",
+            upward ? "bottom-full mb-1" : "top-full mt-1",
+          )}
+        >
           {options.map((option) => (
             <button
               key={option.value}
@@ -63,10 +65,10 @@ export function Select({ value, onChange, options, className, placeholder, upwar
                 setOpen(false);
               }}
               className={cn(
-                "w-full text-left px-3 py-1.5 text-xs rounded-md transition-colors",
+                "w-full text-left px-3 py-1.5 text-body rounded-sm transition-colors",
                 value === option.value
-                  ? "bg-blue-500/10 text-blue-400"
-                  : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+                  ? "bg-accent-soft text-text"
+                  : "text-text-muted hover:bg-surface-hover hover:text-text",
               )}
             >
               {option.label}

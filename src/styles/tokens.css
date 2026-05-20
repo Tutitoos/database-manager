@@ -1,0 +1,273 @@
+/* ============================================================
+   Design Tokens — semantic CSS vars
+   Driven by data-attributes on <html>:
+     data-theme:   "dark" | "light"   (system follow resolves to one)
+     data-accent:  "cyan" | "violet" | "emerald" | "amber" | "rose" | "indigo"
+     data-density: "compact" | "comfortable"
+   ============================================================ */
+
+:root {
+  /* Geometry — radius (sharp Linear-style) */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-fast: 120ms;
+  --duration-normal: 180ms;
+  --duration-slow: 260ms;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   THEME — Dark
+   ────────────────────────────────────────────────────────────── */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surfaces — vertical layering. Translucent so macOS vibrancy bleeds through
+     window edges; content surfaces stay near-opaque for readability. */
+  --bg: rgba(20, 20, 22, 0.55);          /* root tinted; vibrancy under */
+  --surface: rgba(28, 28, 30, 0.78);     /* sidebar / titlebar bands */
+  --surface-elevated: rgba(36, 36, 38, 0.92); /* cards */
+  --surface-overlay: rgba(36, 36, 38, 0.98);  /* modales */
+  --surface-sunken: rgba(0, 0, 0, 0.30);
+  --surface-hover: rgba(255, 255, 255, 0.06);
+  --surface-active: rgba(255, 255, 255, 0.10);
+
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.10);
+  --border-focus: var(--accent);
+
+  /* Text */
+  --text: #f5f5f5;
+  --text-muted: #a1a1aa;
+  --text-faint: #71717a;
+  --text-on-accent: #ffffff;
+
+  /* Semantic */
+  --success: #10b981;
+  --success-soft: rgba(16, 185, 129, 0.12);
+  --warn: #f59e0b;
+  --warn-soft: rgba(245, 158, 11, 0.12);
+  --danger: #ef4444;
+  --danger-soft: rgba(239, 68, 68, 0.14);
+  --info: #3b82f6;
+  --info-soft: rgba(59, 130, 246, 0.12);
+
+  /* Shadow tokens */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 24px 48px rgba(0, 0, 0, 0.55);
+  --shadow-overlay: 0 32px 64px rgba(0, 0, 0, 0.7);
+}
+
+/* ──────────────────────────────────────────────────────────────
+   THEME — Light
+   ────────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: rgba(245, 245, 247, 0.72);
+  --surface: rgba(255, 255, 255, 0.86);
+  --surface-elevated: rgba(255, 255, 255, 0.96);
+  --surface-overlay: rgba(255, 255, 255, 0.98);
+  --surface-sunken: rgba(0, 0, 0, 0.04);
+  --surface-hover: rgba(0, 0, 0, 0.04);
+  --surface-active: rgba(0, 0, 0, 0.08);
+
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-strong: rgba(0, 0, 0, 0.10);
+  --border-focus: var(--accent);
+
+  --text: #0a0a0a;
+  --text-muted: #52525b;
+  --text-faint: #a1a1aa;
+  --text-on-accent: #ffffff;
+
+  --success: #059669;
+  --success-soft: rgba(5, 150, 105, 0.10);
+  --warn: #d97706;
+  --warn-soft: rgba(217, 119, 6, 0.10);
+  --danger: #dc2626;
+  --danger-soft: rgba(220, 38, 38, 0.10);
+  --info: #2563eb;
+  --info-soft: rgba(37, 99, 235, 0.10);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 24px 48px rgba(0, 0, 0, 0.10);
+  --shadow-overlay: 0 32px 64px rgba(0, 0, 0, 0.14);
+}
+
+/* ──────────────────────────────────────────────────────────────
+   THEME — Midnight (pure black, high contrast)
+   ────────────────────────────────────────────────────────────── */
+[data-theme="midnight"] {
+  color-scheme: dark;
+  --bg: rgba(0, 0, 0, 0.92);
+  --surface: rgba(8, 8, 10, 0.92);
+  --surface-elevated: rgba(16, 16, 18, 0.96);
+  --surface-overlay: rgba(20, 20, 22, 0.98);
+  --surface-sunken: rgba(0, 0, 0, 0.65);
+  --surface-hover: rgba(255, 255, 255, 0.05);
+  --surface-active: rgba(255, 255, 255, 0.10);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --text: #ffffff;
+  --text-muted: #b8b8c0;
+  --text-faint: #6d6d76;
+  --text-on-accent: #000000;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   THEME — Sepia (warm paper)
+   ────────────────────────────────────────────────────────────── */
+[data-theme="sepia"] {
+  color-scheme: light;
+  --bg: #f5ecd9;
+  --surface: #f0e4c8;
+  --surface-elevated: #faf2dc;
+  --surface-overlay: #fdf8e7;
+  --surface-sunken: rgba(128, 92, 50, 0.08);
+  --surface-hover: rgba(128, 92, 50, 0.06);
+  --surface-active: rgba(128, 92, 50, 0.12);
+  --border-subtle: rgba(128, 92, 50, 0.15);
+  --border-strong: rgba(128, 92, 50, 0.30);
+  --text: #4b3a1f;
+  --text-muted: #7a6440;
+  --text-faint: #a89060;
+  --text-on-accent: #ffffff;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   THEME — Solarized (dark variant; Ethan Schoonover palette)
+   ────────────────────────────────────────────────────────────── */
+[data-theme="solarized"] {
+  color-scheme: dark;
+  --bg: #002b36;
+  --surface: #073642;
+  --surface-elevated: #0a4452;
+  --surface-overlay: #0e4f5e;
+  --surface-sunken: rgba(0, 0, 0, 0.25);
+  --surface-hover: rgba(255, 255, 255, 0.04);
+  --surface-active: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(147, 161, 161, 0.15);
+  --border-strong: rgba(147, 161, 161, 0.30);
+  --text: #fdf6e3;
+  --text-muted: #93a1a1;
+  --text-faint: #586e75;
+  --text-on-accent: #002b36;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   ACCENT — applied on top of theme (works for both)
+   Each accent ships 4 tones:
+     --accent       — primary buttons, focus rings, links
+     --accent-hover — hover state
+     --accent-soft  — subtle backgrounds (badge, selection)
+     --accent-ring  — translucent ring for focus halos
+   ────────────────────────────────────────────────────────────── */
+:root,
+[data-accent="cyan"] {
+  --accent: #0ea5e9;
+  --accent-hover: #38bdf8;
+  --accent-soft: rgba(14, 165, 233, 0.14);
+  --accent-ring: rgba(14, 165, 233, 0.35);
+}
+[data-accent="violet"] {
+  --accent: #7c3aed;
+  --accent-hover: #a78bfa;
+  --accent-soft: rgba(124, 58, 237, 0.14);
+  --accent-ring: rgba(124, 58, 237, 0.35);
+}
+[data-accent="emerald"] {
+  --accent: #10b981;
+  --accent-hover: #34d399;
+  --accent-soft: rgba(16, 185, 129, 0.14);
+  --accent-ring: rgba(16, 185, 129, 0.35);
+}
+[data-accent="amber"] {
+  --accent: #f59e0b;
+  --accent-hover: #fbbf24;
+  --accent-soft: rgba(245, 158, 11, 0.14);
+  --accent-ring: rgba(245, 158, 11, 0.35);
+}
+[data-accent="rose"] {
+  --accent: #f43f5e;
+  --accent-hover: #fb7185;
+  --accent-soft: rgba(244, 63, 94, 0.14);
+  --accent-ring: rgba(244, 63, 94, 0.35);
+}
+[data-accent="indigo"] {
+  --accent: #6366f1;
+  --accent-hover: #818cf8;
+  --accent-soft: rgba(99, 102, 241, 0.14);
+  --accent-ring: rgba(99, 102, 241, 0.35);
+}
+/* Custom hex accent set inline on :root via JS (--accent-custom-*). */
+[data-accent="custom"] {
+  --accent: var(--accent-custom, #0ea5e9);
+  --accent-hover: var(--accent-custom-hover, #38bdf8);
+  --accent-soft: var(--accent-custom-soft, rgba(14, 165, 233, 0.14));
+  --accent-ring: var(--accent-custom-ring, rgba(14, 165, 233, 0.35));
+}
+
+/* ──────────────────────────────────────────────────────────────
+   DENSITY — adjusts row heights + cell padding
+   ────────────────────────────────────────────────────────────── */
+/* Default = medium (Apple-leaning). Compact / comfortable opt-in via toggle. */
+:root {
+  --row-h: 32px;
+  --header-h: 40px;
+  --cell-px: 0.75rem;
+  --cell-py: 0.375rem;
+  --control-h-sm: 30px;
+  --control-h-md: 34px;
+  --control-h-lg: 40px;
+  --gap-sm: 0.5rem;
+  --gap-md: 0.75rem;
+}
+[data-density="compact"] {
+  --row-h: 28px;
+  --header-h: 36px;
+  --cell-px: 0.625rem;
+  --cell-py: 0.25rem;
+  --control-h-sm: 28px;
+  --control-h-md: 32px;
+  --control-h-lg: 36px;
+  --gap-sm: 0.375rem;
+  --gap-md: 0.625rem;
+}
+[data-density="comfortable"] {
+  --row-h: 36px;
+  --header-h: 44px;
+  --cell-px: 0.875rem;
+  --cell-py: 0.5rem;
+  --control-h-sm: 32px;
+  --control-h-md: 38px;
+  --control-h-lg: 44px;
+  --gap-sm: 0.5rem;
+  --gap-md: 0.75rem;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Reduced motion — respect user preference
+   ────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-normal: 0ms;
+    --duration-slow: 0ms;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

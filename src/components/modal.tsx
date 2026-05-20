@@ -27,7 +27,7 @@ export function Modal({
   return createPortal(
     <div
       className={cn(
-        "fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm",
+        "fixed inset-0 z-[100] flex items-center justify-center bg-surface-sunken p-4 backdrop-blur-sm",
         className,
       )}
       onMouseDown={(e) => {

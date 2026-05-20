@@ -3,6 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Area,
   AreaChart,
@@ -50,18 +51,18 @@ function fmtNum(n: number) {
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="flex flex-col gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-4 py-3">
-      <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">{label}</span>
-      <span className="text-lg font-semibold text-white">{value}</span>
-      {sub && <span className="text-[10px] text-zinc-600">{sub}</span>}
+    <div className="flex flex-col gap-1 rounded-lg border border-border-subtle bg-surface/60 px-4 py-3">
+      <span className="text-overline">{label}</span>
+      <span className="text-metric text-text">{value}</span>
+      {sub && <span className="text-caption text-text-faint">{sub}</span>}
     </div>
   );
 }
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col rounded-lg border border-zinc-800 bg-zinc-950/60 p-4">
-      <p className="mb-2 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{title}</p>
+    <div className="flex flex-col rounded-lg border border-border-subtle bg-surface/60 p-4">
+      <p className="text-overline mb-2 shrink-0">{title}</p>
       <div className="min-h-0 flex-1">{children}</div>
     </div>
   );
@@ -142,30 +143,31 @@ function PgMetricsView({ latest, series, topTables }: {
   series: PgPoint[];
   topTables: { schema: string; name: string; size: string; size_bytes: number }[];
 }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-3 px-4 pb-6 pt-4">
       <div className="grid shrink-0 grid-cols-4 gap-3">
         <StatCard
-          label="Tamaño DB"
+          label={t("metrics.pg.dbSize")}
           value={latest.db_size_bytes != null
             ? fmtSizeBin(latest.db_size_bytes as number)
             : ((latest.db_size as string) ?? "—")}
         />
         <StatCard
-          label="Conexiones"
+          label={t("metrics.pg.connections")}
           value={String(latest.active_connections)}
-          sub={latest.max_connections ? `de ${latest.max_connections} máx.` : undefined}
+          sub={latest.max_connections ? t("metrics.pg.maxOf", { n: latest.max_connections }) : undefined}
         />
         <StatCard
-          label="Cache hit (acum.)"
+          label={t("metrics.pg.cacheHit")}
           value={latest.cache_hit_ratio != null ? `${latest.cache_hit_ratio}%` : "—"}
-          sub={series.length > 0 ? `intervalo: ${series[series.length - 1].cache_pct}%` : undefined}
+          sub={series.length > 0 ? t("metrics.pg.intervalCache", { n: series[series.length - 1].cache_pct }) : undefined}
         />
-        <StatCard label="Tablas" value={String(latest.table_count ?? "—")} />
+        <StatCard label={t("metrics.pg.tables")} value={String(latest.table_count ?? "—")} />
       </div>
 
       <div className="min-h-96 flex-1 grid grid-cols-2 gap-3">
-        <ChartCard title="Conexiones activas">
+        <ChartCard title={t("metrics.pg.activeConnections")}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <defs>
@@ -183,7 +185,7 @@ function PgMetricsView({ latest, series, topTables }: {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Cache hit ratio (%) por intervalo">
+        <ChartCard title={t("metrics.pg.cacheRatioInterval")}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
@@ -195,7 +197,7 @@ function PgMetricsView({ latest, series, topTables }: {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Transacciones / s">
+        <ChartCard title={t("metrics.pg.tps")}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <defs>
@@ -213,7 +215,7 @@ function PgMetricsView({ latest, series, topTables }: {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Escrituras / s (ins+upd+del)">
+        <ChartCard title={t("metrics.pg.writes")}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <defs>
@@ -234,19 +236,19 @@ function PgMetricsView({ latest, series, topTables }: {
 
       {topTables.length > 0 && (
         <div className="shrink-0 mb-6">
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Tablas más grandes</p>
-          <div className="min-h-52 max-h-72 overflow-auto rounded-lg border border-zinc-800">
-            <table className="w-full text-xs">
+          <p className="mb-2 text-overline">{t("metrics.pg.topTables")}</p>
+          <div className="min-h-52 max-h-72 overflow-auto rounded-lg border border-border-subtle">
+            <table className="w-full text-body">
               <thead className="sticky top-0">
-                <tr className="border-b border-zinc-800 bg-zinc-900/90">
-                  <th className="px-3 py-2 text-left font-medium text-zinc-400">Tabla</th>
-                  <th className="px-3 py-2 text-right font-medium text-zinc-400">Tamaño</th>
+                <tr className="border-b border-border-subtle bg-surface-elevated/90">
+                  <th className="px-3 py-2 text-left font-medium text-text-muted">{t("metrics.pg.tableCol")}</th>
+                  <th className="px-3 py-2 text-right font-medium text-text-muted">{t("metrics.pg.sizeCol")}</th>
                 </tr>
               </thead>
               <tbody>
                 {topTables.map((t, i) => (
-                  <tr key={i} className="border-b border-zinc-800/40 hover:bg-zinc-900/40">
-                    <td className="px-3 py-2 font-mono text-zinc-300"><span className="text-zinc-600">{t.schema}.</span>{t.name}</td>
+                  <tr key={i} className="border-b border-border-subtle hover:bg-surface-elevated/40">
+                    <td className="px-3 py-2 font-mono text-text"><span className="text-text-faint">{t.schema}.</span>{t.name}</td>
                     <td className="px-3 py-2 text-right font-mono text-blue-300/80">{fmtSizeBin(t.size_bytes)}</td>
                   </tr>
                 ))}
@@ -316,17 +318,18 @@ function MongoMetricsView({ latest, series, collStats }: {
   series: MongoPoint[];
   collStats: { name: string; count: number }[];
 }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-3 px-4 pb-6 pt-4">
       <div className="grid shrink-0 grid-cols-4 gap-3">
-        {latest.data_size_bytes != null && <StatCard label="Datos" value={fmtBytes(latest.data_size_bytes)} />}
-        {latest.storage_size_bytes != null && <StatCard label="Almacenamiento" value={fmtBytes(latest.storage_size_bytes)} />}
-        <StatCard label="Conexiones" value={String(latest.active_connections)} sub={`${latest.available_connections} disponibles`} />
-        <StatCard label="Memoria RSS" value={`${latest.mem_resident_mb} MB`} sub={`${latest.mem_virtual_mb} MB virtual`} />
+        {latest.data_size_bytes != null && <StatCard label={t("metrics.mongo.data")} value={fmtBytes(latest.data_size_bytes)} />}
+        {latest.storage_size_bytes != null && <StatCard label={t("metrics.mongo.storage")} value={fmtBytes(latest.storage_size_bytes)} />}
+        <StatCard label={t("metrics.mongo.connections")} value={String(latest.active_connections)} sub={t("metrics.mongo.available", { n: latest.available_connections })} />
+        <StatCard label={t("metrics.mongo.memRss")} value={`${latest.mem_resident_mb} MB`} sub={t("metrics.mongo.virtual", { n: latest.mem_virtual_mb })} />
       </div>
 
       <div className="min-h-96 flex-1 grid grid-cols-2 gap-3">
-        <ChartCard title="Conexiones activas">
+        <ChartCard title={t("metrics.mongo.activeConnections")}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <defs>
@@ -344,7 +347,7 @@ function MongoMetricsView({ latest, series, collStats }: {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Memoria RSS (MB)">
+        <ChartCard title={t("metrics.mongo.memRssMb")}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <defs>
@@ -362,7 +365,7 @@ function MongoMetricsView({ latest, series, collStats }: {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Queries + Escrituras / s">
+        <ChartCard title={t("metrics.mongo.queriesWrites")}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
@@ -375,7 +378,7 @@ function MongoMetricsView({ latest, series, collStats }: {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Red KB/s">
+        <ChartCard title={t("metrics.mongo.networkKb")}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
@@ -391,19 +394,19 @@ function MongoMetricsView({ latest, series, collStats }: {
 
       {collStats.length > 0 && (
         <div className="shrink-0 mb-6">
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Colecciones</p>
-          <div className="min-h-52 max-h-72 overflow-auto rounded-lg border border-zinc-800">
-            <table className="w-full text-xs">
+          <p className="mb-2 text-overline">{t("metrics.mongo.collections")}</p>
+          <div className="min-h-52 max-h-72 overflow-auto rounded-lg border border-border-subtle">
+            <table className="w-full text-body">
               <thead className="sticky top-0">
-                <tr className="border-b border-zinc-800 bg-zinc-900/90">
-                  <th className="px-3 py-2 text-left font-medium text-zinc-400">Colección</th>
-                  <th className="px-3 py-2 text-right font-medium text-zinc-400">Documentos (~)</th>
+                <tr className="border-b border-border-subtle bg-surface-elevated/90">
+                  <th className="px-3 py-2 text-left font-medium text-text-muted">{t("metrics.mongo.collectionCol")}</th>
+                  <th className="px-3 py-2 text-right font-medium text-text-muted">{t("metrics.mongo.docsCol")}</th>
                 </tr>
               </thead>
               <tbody>
                 {collStats.map((c, i) => (
-                  <tr key={i} className="border-b border-zinc-800/40 hover:bg-zinc-900/40">
-                    <td className="px-3 py-2 font-mono text-zinc-300">{c.name}</td>
+                  <tr key={i} className="border-b border-border-subtle hover:bg-surface-elevated/40">
+                    <td className="px-3 py-2 font-mono text-text">{c.name}</td>
                     <td className="px-3 py-2 text-right font-mono text-blue-300/80">{fmtNum(c.count)}</td>
                   </tr>
                 ))}
@@ -473,6 +476,7 @@ function buildRedisSeries(snaps: RedisSnap[]): RedisPoint[] {
 }
 
 function RedisMetricsView({ latest, series, pubsubChannels }: { latest: RedisSnap; series: RedisPoint[]; pubsubChannels: string[] }) {
+  const { t } = useTranslation();
   const uptimeStr = latest.uptime_days > 0
     ? `${latest.uptime_days}d ${Math.floor((latest.uptime_seconds % 86400) / 3600)}h`
     : `${Math.floor(latest.uptime_seconds / 3600)}h ${Math.floor((latest.uptime_seconds % 3600) / 60)}m`;
@@ -481,25 +485,25 @@ function RedisMetricsView({ latest, series, pubsubChannels }: { latest: RedisSna
     <div className="flex flex-col gap-3 px-4 pb-6 pt-4">
       <div className="grid shrink-0 grid-cols-4 gap-3">
         <StatCard
-          label="Redis"
+          label={t("metrics.redis.redis")}
           value={`v${latest.redis_version}`}
           sub={`uptime: ${uptimeStr} · ${latest.role}`}
         />
         <StatCard
-          label="Memoria usada"
+          label={t("metrics.redis.memUsed")}
           value={latest.used_memory_human}
           sub={`pico: ${latest.used_memory_peak_human}`}
         />
-        <StatCard label="Total claves" value={fmtNum(latest.total_keys)} />
+        <StatCard label={t("metrics.redis.totalKeys")} value={fmtNum(latest.total_keys)} />
         <StatCard
-          label="Conexiones"
+          label={t("metrics.redis.connections")}
           value={String(latest.connected_clients)}
           sub={latest.blocked_clients > 0 ? `${latest.blocked_clients} bloqueadas` : undefined}
         />
       </div>
 
       <div className="min-h-96 flex-1 grid grid-cols-2 gap-3">
-        <ChartCard title="Memoria usada (MB)">
+        <ChartCard title={t("metrics.redis.memUsedMb")}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <defs>
@@ -517,7 +521,7 @@ function RedisMetricsView({ latest, series, pubsubChannels }: { latest: RedisSna
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Conexiones activas">
+        <ChartCard title={t("metrics.redis.activeConnections")}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <defs>
@@ -535,7 +539,7 @@ function RedisMetricsView({ latest, series, pubsubChannels }: { latest: RedisSna
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Comandos / s">
+        <ChartCard title={t("metrics.redis.commands")}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <defs>
@@ -553,7 +557,7 @@ function RedisMetricsView({ latest, series, pubsubChannels }: { latest: RedisSna
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Keyspace hit rate (%)">
+        <ChartCard title={t("metrics.redis.hitRate")}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
@@ -568,23 +572,23 @@ function RedisMetricsView({ latest, series, pubsubChannels }: { latest: RedisSna
 
       {(latest.pubsub_channels > 0 || pubsubChannels.length > 0) && (
         <div className="shrink-0 mb-6">
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Pub/Sub</p>
+          <p className="mb-2 text-overline">Pub/Sub</p>
           <div className="grid grid-cols-3 gap-3 mb-3">
-            <StatCard label="Canales activos" value={String(latest.pubsub_channels)} />
-            <StatCard label="Patrones" value={String(latest.pubsub_patterns)} />
-            {latest.pubsub_shardchannels > 0 && <StatCard label="Shard channels" value={String(latest.pubsub_shardchannels)} />}
+            <StatCard label={t("metrics.redis.channels")} value={String(latest.pubsub_channels)} />
+            <StatCard label={t("metrics.redis.patterns")} value={String(latest.pubsub_patterns)} />
+            {latest.pubsub_shardchannels > 0 && <StatCard label={t("metrics.redis.shardChannels")} value={String(latest.pubsub_shardchannels)} />}
           </div>
           {pubsubChannels.length > 0 && (
-            <div className="rounded-lg border border-zinc-800 overflow-hidden">
-              <table className="w-full text-xs">
+            <div className="rounded-lg border border-border-subtle overflow-hidden">
+              <table className="w-full text-body">
                 <thead className="sticky top-0">
-                  <tr className="border-b border-zinc-800 bg-zinc-900/90">
-                    <th className="px-3 py-2 text-left font-medium text-zinc-400">Canal suscrito</th>
+                  <tr className="border-b border-border-subtle bg-surface-elevated/90">
+                    <th className="px-3 py-2 text-left font-medium text-text-muted">{t("metrics.redis.subscribedChannel")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pubsubChannels.map((ch) => (
-                    <tr key={ch} className="border-b border-zinc-800/40 hover:bg-zinc-900/40">
+                    <tr key={ch} className="border-b border-border-subtle hover:bg-surface-elevated/40">
                       <td className="px-3 py-2 font-mono text-emerald-300/80">{ch}</td>
                     </tr>
                   ))}
@@ -601,6 +605,7 @@ function RedisMetricsView({ latest, series, pubsubChannels }: { latest: RedisSna
 // ── Main export ──────────────────────────────────────────────────────────────
 
 export function MetricsPanel({ connection, database, pubsubChannels = [] }: { connection: Connection; database: string; pubsubChannels?: string[] }) {
+  const { t } = useTranslation();
   const [snaps, setSnaps] = useState<Record<string, unknown>[]>([]);
   const [error, setError] = useState<string | null>(null);
   const firstRef = useRef(true);
@@ -633,21 +638,21 @@ export function MetricsPanel({ connection, database, pubsubChannels = [] }: { co
   return (
     <div className="flex h-full flex-col">
       <div className={cn("flex h-10 shrink-0 items-center gap-2 border-b px-4", sectionBorder)}>
-        <span className="text-xs text-zinc-500">{database}</span>
-        <span className="text-xs text-zinc-700">/</span>
-        <span className="text-xs font-medium text-zinc-200">Métricas</span>
-        {loading && <Loader2 className="ml-2 h-3.5 w-3.5 animate-spin text-zinc-500" />}
+        <span className="text-body text-text-faint">{database}</span>
+        <span className="text-body text-text-faint">/</span>
+        <span className="text-body font-medium text-text">{t("metrics.title")}</span>
+        {loading && <Loader2 className="ml-2 h-3.5 w-3.5 animate-spin text-text-faint" />}
         {!loading && (
-          <span className="ml-2 text-[10px] text-zinc-600">
+          <span className="text-caption ml-2 text-text-faint">
             actualiza cada {POLL_MS / 1000}s · {snaps.length} puntos
           </span>
         )}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        {error && <p className="p-4 text-xs text-red-400">{error}</p>}
+        {error && <p className="p-4 text-body text-red-400">{error}</p>}
         {loading && (
-          <div className={cn("flex h-full items-center justify-center text-xs", mutedText)}>
+          <div className={cn("flex h-full items-center justify-center text-body", mutedText)}>
             Cargando métricas...
           </div>
         )}

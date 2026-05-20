@@ -20,10 +20,10 @@ export function Tab({
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+        "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-body font-medium transition-colors",
         active
-          ? "bg-zinc-800 text-white"
-          : "text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300",
+          ? "bg-surface-hover text-text"
+          : "text-text-faint hover:bg-surface-hover hover:text-text",
         className
       )}
     >
@@ -47,10 +47,10 @@ export function TabLine({
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 border-b-2 pb-2 text-xs font-medium transition-colors",
+        "flex items-center gap-1.5 border-b-2 pb-2 text-body font-medium transition-colors",
         active
-          ? "border-blue-500 text-white"
-          : "border-transparent text-zinc-500 hover:text-zinc-300",
+          ? "border-blue-500 text-text"
+          : "border-transparent text-text-faint hover:text-text",
         className
       )}
     >
