@@ -564,7 +564,7 @@ function TriBtn({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex h-6 items-center rounded border px-2 text-[10px] font-semibold uppercase tracking-wide transition-colors",
+        "inline-flex h-5 items-center rounded-sm border px-1.5 text-[9px] font-semibold uppercase tracking-wide leading-none transition-colors",
         active ? activeCls : "border-border-subtle bg-surface text-text-faint hover:bg-surface-hover hover:text-text-muted",
       )}
     >
