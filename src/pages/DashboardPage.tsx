@@ -21,6 +21,7 @@ import { useOrgs } from "@/store/orgs";
 import { useOpenConnection } from "@/components/connect-gate";
 import { ImportProviderModal } from "@/components/ImportProviderModal";
 import { saveJson } from "@/lib/save-file";
+import { APP_EVENT, emit } from "@/lib/app-bus";
 import { parseAs, type ImportBundle, type ImportConnection, type ImportProviderInfo } from "@/lib/import";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
@@ -209,7 +210,15 @@ export default function DashboardPage() {
         {connections.length === 0 ? (
           <div className="px-4 py-8 text-center">
             <p className="text-body text-text-muted">{t("home.workspace.empty")}</p>
-            <Button variant="primary" size="sm" onClick={() => navigate("/connections")} className="mt-3">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                navigate("/connections");
+                setTimeout(() => emit(APP_EVENT.newConnection), 60);
+              }}
+              className="mt-3"
+            >
               <Plus className="h-3.5 w-3.5" /> {t("home.quickActions.newConnection")}
             </Button>
           </div>
@@ -230,7 +239,12 @@ export default function DashboardPage() {
             icon={<Plus className="h-4 w-4" />}
             title={t("home.quickActions.newConnection")}
             description={t("home.quickActions.newConnectionDescription")}
-            onClick={() => navigate("/connections")}
+            onClick={() => {
+              navigate("/connections");
+              // Wait one tick for ConnectionsPage to mount its bus listener,
+              // then trigger the create dialog from the same bus the menu uses.
+              setTimeout(() => emit(APP_EVENT.newConnection), 60);
+            }}
             accent
           />
           <QuickAction
