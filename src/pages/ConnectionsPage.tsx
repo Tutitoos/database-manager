@@ -682,22 +682,21 @@ function TestBadge({ result }: { result: TestResult }) {
 }
 
 function EmptyState({ onCreate, hasQuery }: { onCreate: () => void; hasQuery: boolean }) {
+  const { t } = useTranslation();
   return (
     <div className="col-span-full grid place-items-center rounded-xl border-2 border-dashed border-border-subtle/60 bg-surface-elevated/30 p-10 text-center">
       <div className="grid h-12 w-12 place-items-center rounded-xl border border-border-subtle bg-surface-hover text-text-muted">
         {hasQuery ? <Search className="h-5 w-5" /> : <Database className="h-5 w-5" />}
       </div>
       <h2 className="mt-4 text-h3 font-semibold text-text">
-        {hasQuery ? "Sin resultados" : "No hay conexiones"}
+        {hasQuery ? t("connectionsPage.emptyNoResults") : t("connectionsPage.emptyTitle")}
       </h2>
       <p className={cn("mt-1.5 max-w-sm text-body", mutedText)}>
-        {hasQuery
-          ? "Ajusta la búsqueda o limpia el filtro."
-          : "Crea una conexión a PostgreSQL, MongoDB, Redis u otro driver instalado."}
+        {hasQuery ? t("connectionsPage.emptySearchBody") : t("connectionsPage.emptyBody")}
       </p>
       {!hasQuery && (
         <Button variant="primary" size="sm" className="mt-4" onClick={onCreate}>
-          <Plus className="h-3.5 w-3.5" /> Nueva conexión
+          <Plus className="h-3.5 w-3.5" /> {t("connectionsPage.newConnection")}
         </Button>
       )}
     </div>
@@ -784,7 +783,7 @@ function ConnectionCardBody({
       {/* Primary CTA — full width footer */}
       <Button variant="primary" size="md" className="w-full" onClick={onConnect}>
         {isOpen ? <ExternalLink className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
-        {isOpen ? "Abrir conexión" : "Conectar"}
+        {isOpen ? t("connectionsPage.openConnection") : t("connectionsPage.connect")}
       </Button>
     </div>
   );

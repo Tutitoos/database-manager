@@ -100,6 +100,7 @@
     "summarySingular": "connection configured",
     "summaryPlural": "connections configured",
     "open": "Open",
+    "openConnection": "Open connection",
     "connect": "Connect",
     "opened": "open",
     "status": {
@@ -108,6 +109,10 @@
       "checking": "Checking",
       "failed": "Failed"
     },
+    "emptyTitle": "No connections",
+    "emptyNoResults": "No results",
+    "emptyBody": "Create a connection to PostgreSQL, MongoDB, Redis or any installed driver.",
+    "emptySearchBody": "Adjust the search or clear the filter.",
     "newConnection": "New connection",
     "editConnection": "Edit connection",
     "createConnection": "Create connection",
