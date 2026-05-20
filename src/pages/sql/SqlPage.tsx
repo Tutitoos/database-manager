@@ -616,7 +616,7 @@ function SqlPage() {
             <QueryTimings
               queryMs={result.query_ms}
               renderMs={renderMs}
-              history={timingHistory}
+              history={timingHistory.filter((h) => h.label?.startsWith(`${table} · `))}
             />
           </>
         )}
