@@ -156,6 +156,13 @@ async fn sign_in(
         .callback_url
         .clone()
         .unwrap_or_else(|| state.cfg.deep_link_redirect.clone());
+    // Open-redirect guard: never trust a callback URL coming straight from the
+    // query string — after OAuth completes we'd attach the exchange code to
+    // it and bounce the browser there, handing the code to whoever the URL
+    // pointed at. Restrict to the configured desktop deep link (or its
+    // scheme), or operator-managed prefixes via env.
+    validate_callback(&callback, &state.cfg.deep_link_redirect)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     state
         .store
         .create_oauth_code(&state_code, &format!("pending:{callback}"))
@@ -179,15 +186,50 @@ async fn sign_in(
 }
 
 fn inferred_origin(headers: &HeaderMap) -> String {
+    // x-forwarded-proto is client-spoofable when no proxy strips it. Clamp to
+    // http/https so a forged value can't smuggle e.g. `javascript:` into a
+    // URL we later parse.
     let scheme = headers
         .get("x-forwarded-proto")
         .and_then(|v| v.to_str().ok())
+        .filter(|s| *s == "http" || *s == "https")
         .unwrap_or("http");
     let host = headers
         .get("host")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("localhost");
     format!("{scheme}://{host}")
+}
+
+fn validate_callback(callback: &str, configured: &str) -> Result<(), String> {
+    let url = url::Url::parse(callback).map_err(|_| "invalid callback URL".to_string())?;
+    // Exact match against the configured deep link is always allowed.
+    if callback == configured {
+        return Ok(());
+    }
+    // Match the configured deep link's scheme — desktop builds may pass a
+    // distinct path (e.g. `database-manager://auth/success`) but the scheme
+    // is fixed at build time so it's safe to allow the whole scheme.
+    if let Ok(configured_url) = url::Url::parse(configured) {
+        if url.scheme() == configured_url.scheme()
+            && configured_url.scheme() != "http"
+            && configured_url.scheme() != "https"
+        {
+            return Ok(());
+        }
+    }
+    // Operator-managed allow-list of URL prefixes (comma-separated). Use this
+    // when the server is fronted by a web dashboard that needs to receive the
+    // exchange code. Example:
+    //   OAUTH_CALLBACK_ALLOWED_PREFIXES=https://dash.example.com/
+    if let Ok(list) = std::env::var("OAUTH_CALLBACK_ALLOWED_PREFIXES") {
+        for prefix in list.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+            if callback.starts_with(prefix) {
+                return Ok(());
+            }
+        }
+    }
+    Err(format!("callback URL not allowed: {callback}"))
 }
 
 #[derive(Deserialize)]
@@ -210,6 +252,10 @@ async fn callback(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or((StatusCode::BAD_REQUEST, "unknown state".to_string()))?;
     let callback = pending.strip_prefix("pending:").unwrap_or(&pending).to_string();
+    // Defense in depth: re-validate the callback URL even though sign_in()
+    // already gated it on insert. A stored URL is still attacker-supplied.
+    validate_callback(&callback, &state.cfg.deep_link_redirect)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
 
     let cfg = provider_cfg(&state, provider);
     let base = state
