@@ -1,4 +1,5 @@
-import { Database, FileJson, Lock } from "lucide-react";
+import { Database, Flame, Lock, Table2 } from "lucide-react";
+import { siDatagrip, siDbeaver } from "simple-icons";
 import { Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { IMPORT_PROVIDERS, type ImportProviderInfo, type ImportSource } from "@/lib/import";
@@ -58,9 +59,42 @@ export function ImportProviderModal({ onClose, onSelect }: Props) {
 }
 
 function ProviderIcon({ source }: { source: ImportSource }) {
-  const Icon = source === "datagrip" ? Database : FileJson;
+  switch (source) {
+    case "dbeaver":
+      return <BrandTile path={siDbeaver.path} hex={`#${siDbeaver.hex}`} title={siDbeaver.title} />;
+    case "datagrip":
+      // DataGrip's official brand mark is dark on light — fall back to the
+      // JetBrains accent so the chip stays legible on the dark settings panel.
+      return <BrandTile path={siDatagrip.path} hex="#22D88F" title={siDatagrip.title} />;
+    case "dataflare":
+      return <LucideTile icon={Flame} bg="#F97316" />;
+    case "tableplus":
+      return <LucideTile icon={Table2} bg="#3B82F6" />;
+    case "native":
+    default:
+      return <LucideTile icon={Database} bg="#6366F1" />;
+  }
+}
+
+function BrandTile({ path, hex, title }: { path: string; hex: string; title: string }) {
   return (
-    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-border-subtle bg-surface text-text">
+    <span
+      className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-border-subtle"
+      style={{ background: hex }}
+    >
+      <svg viewBox="0 0 24 24" className="h-5 w-5" aria-label={title} role="img">
+        <path d={path} fill="#ffffff" />
+      </svg>
+    </span>
+  );
+}
+
+function LucideTile({ icon: Icon, bg }: { icon: typeof Database; bg: string }) {
+  return (
+    <span
+      className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-border-subtle text-white"
+      style={{ background: bg }}
+    >
       <Icon strokeWidth={1.5} className="h-4 w-4" />
     </span>
   );
