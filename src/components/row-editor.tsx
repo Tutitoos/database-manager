@@ -564,7 +564,7 @@ function TriBtn({
       type="button"
       onClick={onClick}
       className={cn(
-        "text-caption inline-flex h-8 items-center rounded-md border px-3 font-semibold transition-colors",
+        "inline-flex h-6 items-center rounded border px-2 text-[10px] font-semibold uppercase tracking-wide transition-colors",
         active ? activeCls : "border-border-subtle bg-surface text-text-faint hover:bg-surface-hover hover:text-text-muted",
       )}
     >
@@ -575,7 +575,8 @@ function TriBtn({
 
 function inputCls(invalid: boolean) {
   return cn(
-    "text-body-mono w-full rounded-md border bg-surface px-3 py-2 text-text outline-none transition-colors",
+    "w-full rounded border bg-surface px-2 py-1.5 font-mono text-[12px] leading-snug text-text outline-none transition-colors",
+    "placeholder:text-[11px] placeholder:font-mono placeholder:normal-case placeholder:text-text-faint/70",
     invalid ? "border-danger focus:border-danger" : "border-border-subtle focus:border-accent",
   );
 }
