@@ -549,38 +549,69 @@ function BoolSegmented({
   value: "true" | "false" | "null";
   onChange: (next: "true" | "false" | "null") => void;
 }) {
-  const segCls = (active: boolean, tone: "true" | "false" | "null") =>
-    cn(
-      "relative inline-flex h-7 flex-1 items-center justify-center gap-1.5 px-3 text-[11px] font-medium transition-colors",
-      active
-        ? tone === "true"
-          ? "bg-emerald-500/20 text-emerald-200"
-          : tone === "false"
-          ? "bg-rose-500/20 text-rose-200"
-          : "bg-surface-hover text-text-muted"
-        : "text-text-faint hover:text-text-muted",
-    );
-  const dotCls = (active: boolean, tone: "true" | "false" | "null") =>
-    cn(
-      "h-1.5 w-1.5 rounded-full transition-colors",
-      tone === "true" ? (active ? "bg-emerald-400" : "bg-emerald-400/30") :
-      tone === "false" ? (active ? "bg-rose-400" : "bg-rose-400/30") :
-      active ? "bg-text-muted" : "bg-text-faint/40",
-    );
+  // Tri-state switch styled like a native toggle, but with three discrete
+  // stops (false / null / true). The thumb slides along the track and picks
+  // up the colour of the current state; clicking the thumb or anywhere on
+  // the track cycles forward. Click a side label to jump there directly.
+  const order: Array<"false" | "null" | "true"> = ["false", "null", "true"];
+  const idx = order.indexOf(value);
+  const next = () => onChange(order[(idx + 1) % order.length]);
+
+  const thumbColor =
+    value === "true" ? "bg-emerald-400" :
+    value === "false" ? "bg-rose-400" :
+    "bg-text-faint";
+  const trackColor =
+    value === "true" ? "bg-emerald-500/15 border-emerald-500/30" :
+    value === "false" ? "bg-rose-500/15 border-rose-500/30" :
+    "bg-surface border-border-subtle";
+
   return (
-    <div className="inline-flex w-fit overflow-hidden rounded-md border border-border-subtle bg-surface">
-      <button type="button" onClick={() => onChange("true")} className={segCls(value === "true", "true")}>
-        <span className={dotCls(value === "true", "true")} />
-        true
-      </button>
-      <div className="w-px bg-border-subtle" />
-      <button type="button" onClick={() => onChange("false")} className={segCls(value === "false", "false")}>
-        <span className={dotCls(value === "false", "false")} />
+    <div className="inline-flex items-center gap-3">
+      <button
+        type="button"
+        onClick={() => onChange("false")}
+        className={cn(
+          "text-[11px] font-mono transition-colors",
+          value === "false" ? "text-rose-300" : "text-text-faint hover:text-text-muted",
+        )}
+      >
         false
       </button>
-      <div className="w-px bg-border-subtle" />
-      <button type="button" onClick={() => onChange("null")} className={segCls(value === "null", "null")}>
-        <span className={dotCls(value === "null", "null")} />
+      <button
+        type="button"
+        onClick={next}
+        title="Click para alternar"
+        className={cn("relative h-5 w-12 rounded-full border transition-colors", trackColor)}
+      >
+        <span
+          className={cn(
+            "absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-all duration-150",
+            thumbColor,
+            value === "false" && "left-0.5",
+            value === "null" && "left-1/2 -translate-x-1/2",
+            value === "true" && "right-0.5",
+          )}
+        />
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("true")}
+        className={cn(
+          "text-[11px] font-mono transition-colors",
+          value === "true" ? "text-emerald-300" : "text-text-faint hover:text-text-muted",
+        )}
+      >
+        true
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("null")}
+        className={cn(
+          "text-[11px] font-mono italic transition-colors",
+          value === "null" ? "text-text-muted" : "text-text-faint hover:text-text-muted",
+        )}
+      >
         null
       </button>
     </div>
