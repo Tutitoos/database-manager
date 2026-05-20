@@ -89,7 +89,7 @@ export function DropdownItem({
         className,
       )}
     >
-      {icon && <span className="shrink-0 text-text-muted">{icon}</span>}
+      {icon && <span className="shrink-0">{icon}</span>}
       <span className="flex-1 truncate">{children}</span>
       {shortcut && <span className="ml-auto text-[10px] text-text-faint">{shortcut}</span>}
     </button>
