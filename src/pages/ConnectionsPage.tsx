@@ -1423,28 +1423,66 @@ function ConnectionDialog(props: {
   if (!props.open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-x-hidden overflow-y-auto bg-black/45 p-3 backdrop-blur-sm sm:p-6">
-      <div className="mx-auto flex min-h-full max-w-[940px] items-start justify-center">
-        <div className={cn("flex max-h-[calc(100vh-1.5rem)] w-full flex-col overflow-hidden rounded-lg shadow-[0_24px_80px_rgba(0,0,0,.72)]", surface)}>
-          <header className={cn("flex h-14 items-center gap-3 border-b px-5", panel, sectionBorder)}>
-            <span className="h-5 w-5 shrink-0 overflow-hidden rounded-md border border-border-strong shadow-inner">
-              <ProviderIcon providerId={props.form.plugin_id} className="block h-full w-full object-cover" />
-            </span>
+    <div className="fixed inset-0 z-50 overflow-x-hidden overflow-y-auto bg-black/55 p-3 backdrop-blur-sm sm:p-6">
+      <div className="mx-auto flex min-h-full max-w-[820px] items-start justify-center">
+        <div className={cn("flex max-h-[calc(100vh-1.5rem)] w-full flex-col overflow-hidden rounded-xl border border-border-subtle shadow-[0_24px_80px_rgba(0,0,0,.72)]", surface)}>
+          {/* Header */}
+          <header className={cn("flex h-12 items-center gap-3 border-b px-5", panel, sectionBorder)}>
             <h2 className="text-h2 font-semibold text-text">
               {props.editing ? "Editar conexión" : "Nueva conexión"}
             </h2>
-            <Badge className="border-border-strong bg-surface-elevated/80 text-text">{provider.name}</Badge>
+            {props.editing && (
+              <Badge className="border-border-subtle bg-surface-elevated text-text-muted">{provider.name}</Badge>
+            )}
             <button
               type="button"
               onClick={() => props.onOpenChange(false)}
-              className="ml-auto text-text-muted transition hover:text-text"
+              className="ml-auto text-text-faint transition hover:text-text"
               aria-label="Cerrar"
             >
-              <X className="h-5 w-5" />
+              <X className="h-4 w-4" />
             </button>
           </header>
-          <div className={cn("border-b px-5 py-3", panel, sectionBorder)}>
-            <label className="text-overline mb-1.5 block">Nombre</label>
+
+          {/* Provider picker (horizontal cards) + Name */}
+          <div className={cn("border-b px-5 py-4", panel, sectionBorder)}>
+            <label className="text-overline mb-2 block">Proveedor</label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {props.plugins.map((plugin) => {
+                const isActive = plugin.id === props.form.plugin_id;
+                const isLocked = !!props.editing;
+                return (
+                  <button
+                    key={plugin.id}
+                    type="button"
+                    disabled={isLocked && !isActive}
+                    onClick={() => !isLocked && selectPlugin(plugin)}
+                    className={cn(
+                      "group relative flex items-center gap-2.5 rounded-lg border bg-surface px-3 py-2 text-left transition-all",
+                      isActive
+                        ? "border-accent/50 bg-accent-soft shadow-[0_0_0_1px] shadow-accent/30"
+                        : "border-border-subtle hover:border-border-strong hover:bg-surface-hover",
+                      isLocked && !isActive && "cursor-not-allowed opacity-30 hover:border-border-subtle hover:bg-surface",
+                    )}
+                  >
+                    <span className="h-7 w-7 shrink-0 overflow-hidden rounded-md border border-border-subtle bg-surface-elevated">
+                      <ProviderIcon providerId={plugin.id} className="block h-full w-full object-cover" />
+                    </span>
+                    <span className="flex min-w-0 flex-col">
+                      <span className={cn("truncate text-[13px] font-medium", isActive ? "text-text" : "text-text-muted")}>
+                        {plugin.name}
+                      </span>
+                      <span className="text-[10px] text-text-faint">{plugin.id}</span>
+                    </span>
+                    {isActive && (
+                      <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <label className="text-overline mb-1.5 mt-4 block">Nombre</label>
             <Input
               autoFocus
               placeholder="Ej. Production · Postgres"
@@ -1454,41 +1492,9 @@ function ConnectionDialog(props: {
             />
           </div>
 
-          <div className="grid min-h-0 flex-1 grid-cols-[180px_1fr]">
-            <aside className={cn("border-r", panel, sectionBorder)}>
-              <div className={cn("border-b px-4 py-3 text-[10px] font-medium uppercase tracking-[.08em]", sectionBorder, mutedText)}>
-                Provider
-              </div>
-              <div className="p-2.5">
-                {props.plugins.map((plugin) => {
-                  const isActive = plugin.id === props.form.plugin_id;
-                  const isLocked = !!props.editing;
-                  return (
-                    <button
-                      key={plugin.id}
-                      type="button"
-                      disabled={isLocked}
-                      onClick={() => !isLocked && selectPlugin(plugin)}
-                      className={cn(
-                        "flex h-9 w-full items-center gap-3 rounded-md border border-transparent px-3 text-left text-h3 font-medium text-text-muted transition-colors",
-                        isActive && "border-border-strong bg-surface-elevated text-text",
-                        isLocked && !isActive && "cursor-not-allowed opacity-35",
-                        isLocked && isActive && "cursor-not-allowed",
-                        !isLocked && "hover:border-border-strong hover:bg-surface-elevated hover:text-text"
-                      )}
-                    >
-                      <span className="shrink-0 h-6 w-6 overflow-hidden rounded-md border border-border-strong shadow-inner">
-                        <ProviderIcon providerId={plugin.id} className="block h-full w-full object-cover" />
-                      </span>
-                      <span className="truncate">{plugin.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </aside>
-
+          <div className="flex min-h-0 flex-1 flex-col">
             <section className={cn("flex min-h-0 min-w-0 flex-col", panel)}>
-              <nav className={cn("flex h-11 items-end border-b px-5", panel, sectionBorder)}>
+              <nav className={cn("flex h-10 items-end border-b px-5", panel, sectionBorder)}>
                 <div className="flex min-w-0 items-end gap-5">
                   {provider.tabs.map((tab) => (
                     <ModalTab
