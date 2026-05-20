@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use axum::Router;
+use axum::http::{header, HeaderValue, Method};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
@@ -67,7 +68,32 @@ async fn main() -> Result<()> {
     let accent = cfg.accent_color.clone();
     let providers = cfg.enabled_providers();
     let port = cfg.port;
+    let cors_origins = cfg.cors_allowed_origins.clone();
     let state = Arc::new(AppState { cfg, store });
+
+    // Browser CORS layer. The Tauri desktop client uses native HTTP (no
+    // preflight applies), so by default we ship with CORS *closed* — only
+    // explicit origins in CORS_ALLOWED_ORIGINS can fetch the API. This blocks
+    // drive-by web pages from hitting a self-hosted instance on the user's
+    // network.
+    let cors_layer = if cors_origins.is_empty() {
+        None
+    } else {
+        let mut origins = Vec::with_capacity(cors_origins.len());
+        for o in &cors_origins {
+            match HeaderValue::from_str(o) {
+                Ok(v) => origins.push(v),
+                Err(_) => tracing::warn!("invalid CORS_ALLOWED_ORIGINS entry ignored: {o}"),
+            }
+        }
+        Some(
+            CorsLayer::new()
+                .allow_origin(origins)
+                .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
+                .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+                .allow_credentials(true),
+        )
+    };
 
     let health_state = state.clone();
     let app = Router::new()
@@ -101,8 +127,8 @@ async fn main() -> Result<()> {
             }),
         )
         .with_state(state)
-        .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http());
+    let app = if let Some(cors) = cors_layer { app.layer(cors) } else { app };
 
     tracing::info!("dbm-server listening on http://{bind}");
 

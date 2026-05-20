@@ -17,6 +17,7 @@ pub struct Config {
     pub server_name: String,
     pub accent_color: Option<String>,
     pub min_client_version: Option<String>,
+    pub cors_allowed_origins: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -42,6 +43,15 @@ impl Config {
             server_name: env::var("SERVER_NAME").unwrap_or_else(|_| "Database Manager".into()),
             accent_color: env::var("ACCENT_COLOR").ok().filter(|s| !s.is_empty()),
             min_client_version: env::var("MIN_CLIENT_VERSION").ok().filter(|s| !s.is_empty()),
+            cors_allowed_origins: env::var("CORS_ALLOWED_ORIGINS")
+                .ok()
+                .map(|s| {
+                    s.split(',')
+                        .map(|p| p.trim().to_string())
+                        .filter(|p| !p.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default(),
         })
     }
 
