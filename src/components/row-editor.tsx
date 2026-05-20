@@ -40,9 +40,6 @@ interface Props {
   onSave: (values: Record<string, RowValue>) => void;
 }
 
-/* ────────────────────────────  TYPE TAXONOMY  ────────────────────────────── *
- * Each DB type is mapped to a "kind" so the UI can recolor the field card and
- * pick the right input control without sprinkling type checks all over.       */
 type Kind = "number" | "boolean" | "text" | "json" | "date" | "uuid" | "bytea" | "unknown";
 
 const KIND_BY_TYPE: Record<string, Kind> = {
@@ -65,18 +62,28 @@ function kindOf(type?: string): Kind {
   return KIND_BY_TYPE[type.toLowerCase()] ?? "unknown";
 }
 
-const KIND_STYLE: Record<Kind, { border: string; chip: string; dot: string; label: string }> = {
-  number:  { border: "border-l-sky-500/70",     chip: "bg-sky-500/15 text-sky-300",     dot: "bg-sky-400",     label: "número" },
-  boolean: { border: "border-l-violet-500/70",  chip: "bg-violet-500/15 text-violet-300", dot: "bg-violet-400", label: "booleano" },
-  text:    { border: "border-l-emerald-500/70", chip: "bg-emerald-500/15 text-emerald-300", dot: "bg-emerald-400", label: "texto" },
-  json:    { border: "border-l-rose-500/70",    chip: "bg-rose-500/15 text-rose-300",   dot: "bg-rose-400",    label: "json" },
-  date:    { border: "border-l-amber-500/70",   chip: "bg-amber-500/15 text-amber-300", dot: "bg-amber-400",   label: "fecha" },
-  uuid:    { border: "border-l-cyan-500/70",    chip: "bg-cyan-500/15 text-cyan-300",   dot: "bg-cyan-400",    label: "uuid" },
-  bytea:   { border: "border-l-slate-500/70",   chip: "bg-slate-500/20 text-slate-300", dot: "bg-slate-400",   label: "binario" },
-  unknown: { border: "border-l-border-subtle",  chip: "bg-surface text-text-muted",     dot: "bg-text-faint",  label: "tipo" },
+const KIND_STYLE: Record<Kind, { border: string; chip: string }> = {
+  number:  { border: "border-l-sky-500/70",     chip: "bg-sky-500/15 text-sky-300" },
+  boolean: { border: "border-l-violet-500/70",  chip: "bg-violet-500/15 text-violet-300" },
+  text:    { border: "border-l-emerald-500/70", chip: "bg-emerald-500/15 text-emerald-300" },
+  json:    { border: "border-l-rose-500/70",    chip: "bg-rose-500/15 text-rose-300" },
+  date:    { border: "border-l-amber-500/70",   chip: "bg-amber-500/15 text-amber-300" },
+  uuid:    { border: "border-l-cyan-500/70",    chip: "bg-cyan-500/15 text-cyan-300" },
+  bytea:   { border: "border-l-slate-500/70",   chip: "bg-slate-500/20 text-slate-300" },
+  unknown: { border: "border-l-border-subtle",  chip: "bg-surface text-text-muted" },
 };
 
-const AUTO_TIMESTAMP_RE = /(^|_)at$|^(created|updated|inserted|deleted)_at$/i;
+/* ───────────────────── NULL semantics ─────────────────────
+ * Empty string and explicit null are both treated as "no value provided" — on
+ * save we coerce them to SQL NULL if the column is nullable. The "• null" pill
+ * is a visual indicator of that state; clicking it just clears the input. For
+ * boolean we use an explicit tri-state (TRUE / FALSE / null).
+ */
+function isNullish(v: RowValue): boolean {
+  if (v === null || v === undefined) return true;
+  if (typeof v === "string" && v === "") return true;
+  return false;
+}
 
 export function RowEditor({
   mode,
@@ -105,47 +112,42 @@ export function RowEditor({
   );
 
   const buildInitial = useMemo(() => {
-    return (): { values: Record<string, RowValue>; nulls: Record<string, boolean> } => {
+    return (): Record<string, RowValue> => {
       const values: Record<string, RowValue> = {};
-      const nulls: Record<string, boolean> = {};
       for (const c of editable) {
         const info = infoByName.get(c);
-        const provided = initialValues[c];
+        const k = kindOf(info?.type);
         if (!isInsert) {
+          const provided = initialValues[c];
           values[c] = provided === undefined ? null : provided;
-          nulls[c] = provided === null || provided === undefined;
           continue;
         }
-        const nullable = info?.nullable !== false;
-        const hasDefault = info?.default != null;
-        const autoTs = AUTO_TIMESTAMP_RE.test(c);
-        const preNull = nullable || hasDefault || autoTs;
-        nulls[c] = preNull;
-        values[c] = preNull ? null : defaultEmpty(kindOf(info?.type));
+        // INSERT defaults to an empty value across the board (string ""), which
+        // gets coerced to NULL on save when the column is nullable / has a
+        // default. Booleans need an explicit null since false is a real value.
+        values[c] = k === "boolean" ? null : "";
       }
-      return { values, nulls };
+      return values;
     };
   }, [editable, infoByName, initialValues, isInsert]);
 
   const initial = useMemo(buildInitial, [buildInitial]);
-  const [values, setValues] = useState<Record<string, RowValue>>(initial.values);
-  const [nulls, setNulls] = useState<Record<string, boolean>>(initial.nulls);
+  const [values, setValues] = useState<Record<string, RowValue>>(initial);
   const [view, setView] = useState<"form" | "json">("form");
-  const [jsonDraft, setJsonDraft] = useState<string>(() => JSON.stringify(initial.values, null, 2));
+  const [jsonDraft, setJsonDraft] = useState<string>(() => JSON.stringify(initial, null, 2));
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [validation, setValidation] = useState<Record<string, string>>({});
   const saveRef = useRef<() => void>(() => undefined);
 
   function setValue(col: string, value: RowValue) {
     setValues((p) => ({ ...p, [col]: value }));
-    if (nulls[col]) setNulls((n) => ({ ...n, [col]: false }));
     setValidation((v) => ({ ...v, [col]: "" }));
   }
-  function toggleNull(col: string) {
-    const next = !nulls[col];
-    setNulls((p) => ({ ...p, [col]: next }));
-    setValues((p) => ({ ...p, [col]: next ? null : defaultEmpty(kindOf(infoByName.get(col)?.type)) }));
-    setValidation((v) => ({ ...v, [col]: "" }));
+
+  function clearToNull(col: string) {
+    const info = infoByName.get(col);
+    const k = kindOf(info?.type);
+    setValue(col, k === "boolean" ? null : "");
   }
 
   function switchTo(next: "form" | "json") {
@@ -157,12 +159,7 @@ export function RowEditor({
     } else {
       try {
         const parsed = JSON.parse(jsonDraft);
-        if (parsed && typeof parsed === "object") {
-          setValues(parsed);
-          const nn: Record<string, boolean> = {};
-          for (const k of Object.keys(parsed)) nn[k] = parsed[k] === null;
-          setNulls(nn);
-        }
+        if (parsed && typeof parsed === "object") setValues(parsed);
         setJsonError(null);
         setView("form");
       } catch (e) {
@@ -176,20 +173,18 @@ export function RowEditor({
     for (const c of editable) {
       const info = infoByName.get(c);
       const k = kindOf(info?.type);
-      const isNull = nulls[c];
+      const v = values[c];
+      const empty = isNullish(v);
       const nullable = info?.nullable !== false;
       const hasDefault = info?.default != null;
-      if (isNull && !nullable && !hasDefault) {
-        errs[c] = "No puede ser NULL";
+      if (empty) {
+        if (!nullable && !hasDefault) errs[c] = "Requerido";
         continue;
       }
-      if (isNull) continue;
-      const v = values[c];
-      if (k === "number" && typeof v === "string") {
-        if (v.trim() === "") errs[c] = "Número requerido";
-        else if (Number.isNaN(Number(v))) errs[c] = "Número inválido";
+      if (k === "number" && typeof v === "string" && Number.isNaN(Number(v))) {
+        errs[c] = "Número inválido";
       }
-      if (k === "json" && typeof v === "string" && v.trim() !== "") {
+      if (k === "json" && typeof v === "string") {
         try { JSON.parse(v); } catch { errs[c] = "JSON inválido"; }
       }
     }
@@ -199,9 +194,19 @@ export function RowEditor({
   function buildPayload(): Record<string, RowValue> {
     const out: Record<string, RowValue> = {};
     for (const c of editable) {
-      if (nulls[c]) { out[c] = null; continue; }
       const v = values[c];
-      if (kindOf(infoByName.get(c)?.type) === "number" && typeof v === "string") {
+      const info = infoByName.get(c);
+      const k = kindOf(info?.type);
+      const hasDefault = info?.default != null;
+      // Empty fields → NULL on the wire, but skip them entirely when there's a
+      // server-side default so the DB can fill them in (omitting from the
+      // payload keeps INSERT (...) DEFAULT semantics working).
+      if (isNullish(v)) {
+        if (hasDefault && isInsert) continue;
+        out[c] = null;
+        continue;
+      }
+      if (k === "number" && typeof v === "string") {
         const n = Number(v);
         out[c] = Number.isFinite(n) ? n : v;
       } else {
@@ -228,10 +233,9 @@ export function RowEditor({
 
   function handleReset() {
     const fresh = buildInitial();
-    setValues(fresh.values);
-    setNulls(fresh.nulls);
+    setValues(fresh);
     setValidation({});
-    setJsonDraft(JSON.stringify(fresh.values, null, 2));
+    setJsonDraft(JSON.stringify(fresh, null, 2));
     setJsonError(null);
   }
 
@@ -313,15 +317,15 @@ export function RowEditor({
                 const info = infoByName.get(col);
                 const k = kindOf(info?.type);
                 const style = KIND_STYLE[k];
-                const isNull = nulls[col];
                 const required = info?.nullable === false && info?.default == null;
                 const value = values[col];
                 const err = validation[col];
+                const nullish = isNullish(value);
                 return (
                   <div
                     key={col}
                     className={cn(
-                      "group relative rounded-lg border border-border-subtle bg-surface-elevated transition-colors",
+                      "rounded-lg border border-border-subtle bg-surface-elevated transition-colors",
                       "border-l-4",
                       style.border,
                       err && "border-danger/60 border-l-danger",
@@ -329,13 +333,9 @@ export function RowEditor({
                   >
                     <div className="flex flex-wrap items-center gap-2 px-4 pb-2 pt-3">
                       <span className="font-mono text-body font-medium text-text">{col}</span>
-                      {info?.type ? (
+                      {info?.type && (
                         <span className={cn("text-tiny rounded-md px-1.5 py-0.5 font-mono font-semibold uppercase tracking-wide", style.chip)}>
                           {info.type}
-                        </span>
-                      ) : (
-                        <span className="text-tiny rounded-md bg-surface px-1.5 py-0.5 font-mono uppercase tracking-wide text-text-faint">
-                          {style.label}
                         </span>
                       )}
                       {meta?.primary && (
@@ -350,7 +350,7 @@ export function RowEditor({
                       )}
                       {required && (
                         <span className="text-tiny inline-flex items-center gap-1 rounded-md bg-danger-soft px-1.5 py-0.5 font-semibold uppercase tracking-wide text-danger">
-                          NOT NULL
+                          required
                         </span>
                       )}
                       {info?.default != null && (
@@ -358,33 +358,25 @@ export function RowEditor({
                           default {info.default.length > 24 ? info.default.slice(0, 24) + "…" : info.default}
                         </span>
                       )}
-                      <div className="ml-auto">
-                        <button
-                          type="button"
-                          onClick={() => toggleNull(col)}
-                          className={cn(
-                            "text-tiny inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 font-semibold uppercase tracking-wider transition-colors",
-                            isNull
-                              ? "bg-accent text-white"
-                              : "bg-surface text-text-faint hover:bg-surface-hover hover:text-text-muted",
-                          )}
-                          title={isNull ? "Quitar NULL" : "Marcar NULL"}
+                      {nullish && (
+                        <span
+                          className="text-tiny ml-auto inline-flex cursor-pointer items-center gap-1 rounded-md bg-surface px-1.5 py-0.5 font-semibold uppercase tracking-wide text-text-faint hover:text-text-muted"
+                          onClick={() => clearToNull(col)}
+                          title="Click para limpiar"
                         >
-                          <span className={cn("h-1.5 w-1.5 rounded-full", isNull ? "bg-white" : "bg-text-faint")} />
-                          NULL
-                        </button>
-                      </div>
+                          <span className="h-1.5 w-1.5 rounded-full bg-text-faint" />
+                          null
+                        </span>
+                      )}
                     </div>
                     <div className="px-4 pb-3">
                       <FieldInput
                         kind={k}
                         value={value}
                         onChange={(v) => setValue(col, v)}
-                        disabled={!!isNull}
+                        onSetNull={() => clearToNull(col)}
                         invalid={!!err}
-                        placeholder={
-                          isNull ? "NULL" : info?.default != null ? `default: ${info.default}` : ""
-                        }
+                        placeholder={info?.default != null ? `default: ${info.default}` : ""}
                       />
                       {err && <p className="text-caption mt-1.5 text-danger">{err}</p>}
                     </div>
@@ -403,7 +395,10 @@ export function RowEditor({
                   </p>
                 )}
                 {!hasMetadata && editable.length > 0 && (
-                  <p>Sin metadatos del plugin — la validación NOT NULL no está disponible.</p>
+                  <p>Sin metadatos del plugin — validación parcial.</p>
+                )}
+                {hasMetadata && (
+                  <p>Vacío = NULL. Los campos requeridos no admiten vacío.</p>
                 )}
               </div>
             ) : null}
@@ -471,35 +466,26 @@ function FieldInput({
   kind,
   value,
   onChange,
-  disabled,
+  onSetNull,
   invalid,
   placeholder,
 }: {
   kind: Kind;
   value: RowValue;
   onChange: (v: RowValue) => void;
-  disabled: boolean;
+  onSetNull: () => void;
   invalid: boolean;
   placeholder?: string;
 }) {
-  if (kind === "boolean" || typeof value === "boolean") {
-    const v = typeof value === "boolean" ? value : value === "true";
+  // Booleans need an explicit tri-state (TRUE / FALSE / NULL) because false is
+  // a real value distinct from "no value chosen".
+  if (kind === "boolean") {
+    const v = value === true ? "true" : value === false ? "false" : "null";
     return (
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onChange(!v)}
-          disabled={disabled}
-          className={cn(
-            "text-caption inline-flex h-8 items-center gap-2 rounded-md border px-3 font-semibold transition-colors disabled:opacity-40",
-            v
-              ? "border-violet-500/40 bg-violet-500/15 text-violet-200"
-              : "border-border-subtle bg-surface text-text-muted hover:bg-surface-hover",
-          )}
-        >
-          <span className={cn("h-2 w-2 rounded-full", v ? "bg-violet-400" : "bg-text-faint")} />
-          {disabled ? "—" : v ? "TRUE" : "FALSE"}
-        </button>
+      <div className="flex items-center gap-1.5">
+        <TriBtn active={v === "true"}  color="violet" onClick={() => onChange(true)}>TRUE</TriBtn>
+        <TriBtn active={v === "false"} color="violet" onClick={() => onChange(false)}>FALSE</TriBtn>
+        <TriBtn active={v === "null"}  color="neutral" onClick={onSetNull}>null</TriBtn>
       </div>
     );
   }
@@ -508,10 +494,9 @@ function FieldInput({
       <input
         type="number"
         value={value == null ? "" : String(value)}
-        disabled={disabled}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className={cn(inputCls(invalid), "disabled:opacity-40")}
+        className={inputCls(invalid)}
       />
     );
   }
@@ -522,10 +507,9 @@ function FieldInput({
       <textarea
         value={str}
         rows={Math.min(8, Math.max(3, str.split("\n").length + 1))}
-        disabled={disabled}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className={cn(inputCls(invalid), "resize-y disabled:opacity-40")}
+        className={cn(inputCls(invalid), "resize-y")}
       />
     );
   }
@@ -533,11 +517,39 @@ function FieldInput({
     <input
       type="text"
       value={str}
-      disabled={disabled}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
-      className={cn(inputCls(invalid), "disabled:opacity-40")}
+      className={inputCls(invalid)}
     />
+  );
+}
+
+function TriBtn({
+  active,
+  color,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  color: "violet" | "neutral";
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  const activeCls =
+    color === "violet"
+      ? "border-violet-500/40 bg-violet-500/15 text-violet-200"
+      : "border-border-subtle bg-surface-hover text-text-muted";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "text-caption inline-flex h-8 items-center rounded-md border px-3 font-semibold transition-colors",
+        active ? activeCls : "border-border-subtle bg-surface text-text-faint hover:bg-surface-hover hover:text-text-muted",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -546,11 +558,6 @@ function inputCls(invalid: boolean) {
     "text-body-mono w-full rounded-md border bg-surface px-3 py-2 text-text outline-none transition-colors",
     invalid ? "border-danger focus:border-danger" : "border-border-subtle focus:border-accent",
   );
-}
-
-function defaultEmpty(k: Kind): RowValue {
-  if (k === "boolean") return false;
-  return "";
 }
 
 function safeParse(s: string): Record<string, RowValue> | null {
