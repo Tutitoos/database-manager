@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { AutocompleteInput, getWordAtPos, type GetSuggestions, type SuggestionItem, type SuggestionResult } from "@/components/autocomplete-input";
 import { Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
-import { CodeEditor } from "@/components/code-editor";
+import { RowEditor, type RowValue } from "@/components/row-editor";
 import { QueryTimings, type TimingEntry } from "@/components/query-timings";
 import {
   flexRender,
@@ -154,7 +154,7 @@ function SqlPage() {
 
   const [rowEditor, setRowEditor] = useState<{
     pkValue: string | number;
-    json: string;
+    initial: Record<string, RowValue>;
     saving: boolean;
     error: string | null;
   } | null>(null);
@@ -173,14 +173,14 @@ function SqlPage() {
 
   function openRowInsert() {
     if (!result) return;
-    // Seed the editor with an empty record: column names as keys, null values.
-    // Use a sentinel pkValue so the save path knows it's an insert (delete_row
-    // would never match). Save handler treats `pkValue === ""` as INSERT.
-    const obj: Record<string, unknown> = {};
+    // Seed with column names so the form view can render them in order; values
+    // start as null so the user only fills what they want. The pkValue===""
+    // sentinel tells the save path this is an INSERT.
+    const obj: Record<string, RowValue> = {};
     for (const c of result.columns) obj[c] = null;
     setRowEditor({
       pkValue: "",
-      json: JSON.stringify(obj, null, 2),
+      initial: obj,
       saving: false,
       error: null,
     });
@@ -208,12 +208,12 @@ function SqlPage() {
 
   function openRowEdit(row: (string | number | boolean | null)[]) {
     if (!result?.pk_column) return;
-    const obj = rowToRecord(row);
+    const obj = rowToRecord(row) as Record<string, RowValue>;
     const pkColIdx = result.columns.indexOf(result.pk_column);
     const pkValue = row[pkColIdx] as string | number;
     setRowEditor({
       pkValue,
-      json: JSON.stringify(obj, null, 2),
+      initial: obj,
       saving: false,
       error: null,
     });
@@ -245,15 +245,8 @@ function SqlPage() {
     }
   }
 
-  async function performRowSave() {
+  async function performRowSave(values: Record<string, RowValue>) {
     if (!connection || !rowEditor || !result?.pk_column) return;
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(rowEditor.json);
-    } catch {
-      setRowEditor({ ...rowEditor, error: "JSON inválido" });
-      return;
-    }
     setRowEditor({ ...rowEditor, saving: true, error: null });
     try {
       await invoke("update_row", {
@@ -262,7 +255,7 @@ function SqlPage() {
         table,
         pkColumn: result.pk_column,
         pkValue: rowEditor.pkValue,
-        values: parsed,
+        values,
       });
       const wasInsert = rowEditor.pkValue === "";
       setRowEditor(null);
@@ -270,7 +263,7 @@ function SqlPage() {
       setTimeout(() => setActionStatus(null), 1500);
       retry();
     } catch (e) {
-      setRowEditor({ ...rowEditor, saving: false, error: String(e) });
+      setRowEditor((r) => (r ? { ...r, saving: false, error: String(e) } : r));
     }
   }
 
@@ -982,38 +975,19 @@ function SqlPage() {
         </div>
       )}
 
-      {rowEditor && (
-        <Modal onClose={() => !rowEditor.saving && setRowEditor(null)}>
-          <div className="flex max-h-[80vh] w-full max-w-3xl flex-col rounded-lg border border-border-subtle bg-surface-overlay shadow-xl">
-            <div className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
-              <h2 className="text-h3 font-medium text-text">
-                {rowEditor.pkValue === "" ? "Insertar fila" : `Editar fila — PK ${String(rowEditor.pkValue)}`}
-              </h2>
-              <button className="rounded p-1 text-text-faint hover:bg-surface-hover hover:text-text" onClick={() => setRowEditor(null)}>
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            <div className="min-h-[50vh] flex-1 overflow-auto bg-surface">
-              <CodeEditor
-                lang="json"
-                value={rowEditor.json}
-                onChange={(v) => setRowEditor({ ...rowEditor, json: v, error: null })}
-                minHeight="50vh"
-              />
-            </div>
-            {rowEditor.error && (
-              <div className="border-t border-danger/40 bg-danger-soft px-4 py-2 text-body text-danger">{rowEditor.error}</div>
-            )}
-            <div className="flex justify-end gap-2 border-t border-border-subtle px-4 py-3">
-              <Button variant="secondary" size="sm" onClick={() => setRowEditor(null)} disabled={rowEditor.saving}>
-                Cancelar
-              </Button>
-              <Button variant="primary" size="sm" onClick={performRowSave} disabled={rowEditor.saving}>
-                {rowEditor.saving ? "Guardando…" : "Guardar"}
-              </Button>
-            </div>
-          </div>
-        </Modal>
+      {rowEditor && result && (
+        <RowEditor
+          mode={rowEditor.pkValue === "" ? "insert" : "edit"}
+          pkColumn={result.pk_column}
+          pkValue={rowEditor.pkValue}
+          columns={result.columns}
+          colMeta={colMeta}
+          initialValues={rowEditor.initial}
+          saving={rowEditor.saving}
+          error={rowEditor.error}
+          onCancel={() => setRowEditor(null)}
+          onSave={performRowSave}
+        />
       )}
 
       {rowDelete && (
