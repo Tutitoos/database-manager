@@ -171,8 +171,14 @@ export function RowEditor({
   function switchTo(next: "form" | "json") {
     if (next === view) return;
     if (next === "json") {
-      setJsonDraft(JSON.stringify(values, null, 2));
+      const draft = JSON.stringify(values, null, 2);
+      setJsonDraft(draft);
       setJsonError(null);
+      try {
+        setJsonValidation(validateJsonPayload(JSON.parse(draft)));
+      } catch {
+        setJsonValidation({ errors: [], unknown: [] });
+      }
       setView("json");
     } else {
       try {
@@ -186,28 +192,74 @@ export function RowEditor({
     }
   }
 
+  /** Per-column type / nullability check, reused by Form and JSON paths. */
+  function validateValue(col: string, v: RowValue): string | null {
+    const info = infoByName.get(col);
+    const k = kindOf(info?.type);
+    const nullable = info?.nullable !== false;
+    const hasDefault = info?.default != null;
+    const empty = isNullish(v);
+    if (empty) {
+      if (!nullable && !hasDefault) return "Requerido";
+      return null;
+    }
+    switch (k) {
+      case "number":
+        if (typeof v === "boolean") return "Se esperaba un número";
+        if (typeof v === "string" && Number.isNaN(Number(v))) return "Número inválido";
+        return null;
+      case "boolean":
+        if (typeof v !== "boolean") return "Se esperaba true / false / null";
+        return null;
+      case "json":
+        if (typeof v === "string") {
+          try { JSON.parse(v); } catch { return "JSON inválido"; }
+        }
+        return null;
+      case "uuid":
+        if (typeof v === "string" && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) {
+          return "UUID inválido";
+        }
+        return null;
+      case "date":
+        if (typeof v === "string" && Number.isNaN(Date.parse(v))) return "Fecha inválida";
+        return null;
+      default:
+        return null;
+    }
+  }
+
   function validateForm(): Record<string, string> {
     const errs: Record<string, string> = {};
     for (const c of editable) {
-      const info = infoByName.get(c);
-      const k = kindOf(info?.type);
-      const v = values[c];
-      const empty = isNullish(v);
-      const nullable = info?.nullable !== false;
-      const hasDefault = info?.default != null;
-      if (empty) {
-        if (!nullable && !hasDefault) errs[c] = "Requerido";
-        continue;
-      }
-      if (k === "number" && typeof v === "string" && Number.isNaN(Number(v))) {
-        errs[c] = "Número inválido";
-      }
-      if (k === "json" && typeof v === "string") {
-        try { JSON.parse(v); } catch { errs[c] = "JSON inválido"; }
-      }
+      const e = validateValue(c, values[c]);
+      if (e) errs[c] = e;
     }
     return errs;
   }
+
+  function validateJsonPayload(parsed: unknown): { errors: { col: string; message: string }[]; unknown: string[] } {
+    const errors: { col: string; message: string }[] = [];
+    const unknownKeys: string[] = [];
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      errors.push({ col: "_root", message: "El payload debe ser un objeto JSON" });
+      return { errors, unknown: unknownKeys };
+    }
+    const obj = parsed as Record<string, RowValue>;
+    for (const c of editable) {
+      const e = validateValue(c, obj[c]);
+      if (e) errors.push({ col: c, message: e });
+    }
+    const known = new Set(editable);
+    for (const key of Object.keys(obj)) {
+      if (!known.has(key)) unknownKeys.push(key);
+    }
+    return { errors, unknown: unknownKeys };
+  }
+
+  const [jsonValidation, setJsonValidation] = useState<{ errors: { col: string; message: string }[]; unknown: string[] }>(
+    { errors: [], unknown: [] },
+  );
 
   function buildPayload(): Record<string, RowValue> {
     const out: Record<string, RowValue> = {};
@@ -236,10 +288,13 @@ export function RowEditor({
 
   function handleSave() {
     if (view === "json") {
-      let parsed: Record<string, RowValue>;
+      let parsed: unknown;
       try { parsed = JSON.parse(jsonDraft); }
       catch (e) { setJsonError(String(e)); return; }
-      onSave(parsed);
+      const result = validateJsonPayload(parsed);
+      setJsonValidation(result);
+      if (result.errors.length > 0) return;
+      onSave(parsed as Record<string, RowValue>);
       return;
     }
     const errs = validateForm();
@@ -255,6 +310,7 @@ export function RowEditor({
     setValidation({});
     setJsonDraft(JSON.stringify(fresh, null, 2));
     setJsonError(null);
+    setJsonValidation({ errors: [], unknown: [] });
   }
 
   function copyAsSql() {
@@ -425,13 +481,53 @@ export function RowEditor({
             ) : null}
           </div>
         ) : (
-          <div className="min-h-[360px] flex-1 overflow-auto bg-surface">
-            <CodeEditor
-              lang="json"
-              value={jsonDraft}
-              onChange={(v) => { setJsonDraft(v); setJsonError(null); }}
-              minHeight="360px"
-            />
+          <div className="flex min-h-[360px] flex-1 flex-col overflow-hidden bg-surface">
+            <div className="flex-1 overflow-auto">
+              <CodeEditor
+                lang="json"
+                value={jsonDraft}
+                onChange={(v) => {
+                  setJsonDraft(v);
+                  setJsonError(null);
+                  // Live validation: parse + run schema checks on every keystroke so
+                  // the issues panel below the editor stays in sync with the cursor.
+                  try {
+                    const parsed = JSON.parse(v);
+                    setJsonValidation(validateJsonPayload(parsed));
+                  } catch {
+                    setJsonValidation({ errors: [], unknown: [] });
+                  }
+                }}
+                minHeight="360px"
+              />
+            </div>
+            {(jsonValidation.errors.length > 0 || jsonValidation.unknown.length > 0) && (
+              <div className="max-h-32 shrink-0 overflow-auto border-t border-border-subtle bg-surface-elevated px-4 py-2 text-[11px]">
+                {jsonValidation.errors.length > 0 && (
+                  <ul className="space-y-0.5">
+                    {jsonValidation.errors.map((e, i) => (
+                      <li key={i} className="flex items-start gap-2 text-danger">
+                        <span className="text-[10px] uppercase tracking-wide opacity-70">error</span>
+                        <span className="font-mono text-text">{e.col === "_root" ? "(raíz)" : e.col}</span>
+                        <span className="text-text-muted">·</span>
+                        <span>{e.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {jsonValidation.unknown.length > 0 && (
+                  <ul className="mt-1 space-y-0.5">
+                    {jsonValidation.unknown.map((k) => (
+                      <li key={k} className="flex items-start gap-2 text-warn">
+                        <span className="text-[10px] uppercase tracking-wide opacity-70">warn</span>
+                        <span className="font-mono text-text">{k}</span>
+                        <span>columna desconocida (se ignorará en el envío)</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
         )}
 
