@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Redirect};
+use axum::response::Redirect;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
@@ -90,6 +90,44 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/sign-in/:provider", get(sign_in))
         .route("/callback/:provider", get(callback))
         .route("/exchange", post(exchange))
+        // First-time local-server setup: accept an Argon2id hash and store it
+        // as the bearer verifier. Locked once any hash is already present so
+        // a rogue client can't hijack an established server. Rotation after
+        // setup requires `/admin/rotate-token` (TODO) auth'd with the old
+        // bearer; not implemented yet.
+        .route("/admin/setup", post(admin_setup))
+}
+
+#[derive(Deserialize)]
+struct AdminSetupBody {
+    hash: String,
+}
+
+async fn admin_setup(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<AdminSetupBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let existing = state
+        .store
+        .get_local_admin_hash()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if existing.is_some() {
+        return Err((StatusCode::CONFLICT, "admin token already configured".into()));
+    }
+    if body.hash.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "empty hash".into()));
+    }
+    state
+        .store
+        .upsert_local_admin_hash(&body.hash)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // Materialize the synthetic local user + org so the very first
+    // bearer-auth'd request finds a join target.
+    state
+        .store
+        .ensure_local_user_and_org()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 #[derive(Deserialize)]
@@ -312,6 +350,25 @@ async fn exchange(
         .get_user(&user_id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or((StatusCode::NOT_FOUND, "user not found".to_string()))?;
+    // Self-host UX: first-time login on a fresh server means the user has no
+    // org memberships yet. Auto-create a personal "owner" org so /api/orgs/me
+    // is non-empty and the client can address CRUD endpoints with a valid
+    // org_id. The org name defaults to the user's display name (or email
+    // local-part) and can be renamed later.
+    let memberships = state
+        .store
+        .list_user_orgs(&user.id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if memberships.is_empty() {
+        let display = user
+            .name
+            .clone()
+            .unwrap_or_else(|| user.email.split('@').next().unwrap_or("Personal").to_string());
+        let _ = state
+            .store
+            .create_org(&display, None, None, &user.id)
+            .map_err(|e| tracing::warn!("auto-create org failed: {e}"));
+    }
     Ok(Json(ExchangeResponse {
         user_id: user.id,
         email: user.email,
@@ -334,19 +391,29 @@ pub fn bearer(headers: &HeaderMap) -> Option<String> {
 
 pub fn require_auth(state: &AppState, headers: &HeaderMap) -> Result<String, (StatusCode, String)> {
     let token = bearer(headers).ok_or((StatusCode::UNAUTHORIZED, "missing token".to_string()))?;
-    state
+    // Path 1: regular OAuth session token (remote orgs, multi-user).
+    if let Some(uid) = state
         .store
         .session_user(&token)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or((StatusCode::UNAUTHORIZED, "invalid token".to_string()))
+    {
+        return Ok(uid);
+    }
+    // Path 2: local-server admin token (passphrase-derived). Argon2id-hashed
+    // hash lives in `local_admin_token`; on match we map the request to the
+    // synthetic local user `__local__` who owns the default "Local" org.
+    if let Some(hash) = state
+        .store
+        .get_local_admin_hash()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    {
+        if crate::crypto::verify_admin_token(&token, &hash) {
+            return state
+                .store
+                .ensure_local_user_and_org()
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+        }
+    }
+    Err((StatusCode::UNAUTHORIZED, "invalid token".to_string()))
 }
 
-pub async fn sign_out(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> impl IntoResponse {
-    if let Some(token) = bearer(&headers) {
-        let _ = state.store.delete_session(&token);
-    }
-    Json(serde_json::json!({ "ok": true }))
-}

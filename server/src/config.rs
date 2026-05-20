@@ -14,6 +14,9 @@ pub struct Config {
     pub google: OAuthApp,
     pub microsoft: OAuthApp,
     pub microsoft_tenant: String,
+    pub server_name: String,
+    pub accent_color: Option<String>,
+    pub min_client_version: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -36,7 +39,19 @@ impl Config {
             google: oauth_from_env("GOOGLE"),
             microsoft: oauth_from_env("MICROSOFT"),
             microsoft_tenant: env::var("MICROSOFT_TENANT_ID").unwrap_or_else(|_| "common".into()),
+            server_name: env::var("SERVER_NAME").unwrap_or_else(|_| "Database Manager".into()),
+            accent_color: env::var("ACCENT_COLOR").ok().filter(|s| !s.is_empty()),
+            min_client_version: env::var("MIN_CLIENT_VERSION").ok().filter(|s| !s.is_empty()),
         })
+    }
+
+    pub fn enabled_providers(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if !self.discord.client_id.is_empty() { out.push("discord".into()); }
+        if !self.github.client_id.is_empty() { out.push("github".into()); }
+        if !self.google.client_id.is_empty() { out.push("google".into()); }
+        if !self.microsoft.client_id.is_empty() { out.push("microsoft".into()); }
+        out
     }
 }
 

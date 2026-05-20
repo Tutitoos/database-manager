@@ -10,7 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 axum = { version = "0.7", features = ["json", "macros"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "process", "io-util", "time"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "cors"] }
 serde = { version = "1", features = ["derive"] }
@@ -24,3 +24,15 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
 dotenvy = "0.15"
 url = "2"
+mdns-sd = "0.19.1"
+sha2 = "0.10"
+ed25519-dalek = { version = "2", features = ["rand_core", "pkcs8"] }
+rand = "0.8"
+base64 = "0.22"
+aes-gcm = "0.10"
+argon2 = "0.5"
+rcgen = "0.13"
+hostname = "0.4"
+which = "6"
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+rustls = { version = "0.23", features = ["ring"] }
