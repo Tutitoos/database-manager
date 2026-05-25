@@ -61,7 +61,7 @@ export function SafariTabsStrip({
         <div
           data-tauri-drag-region
           className={cn(
-            "flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto",
+            "flex h-full min-w-0 flex-1 items-end gap-0.5 overflow-x-auto pt-1",
             "[&::-webkit-scrollbar]:h-0",
             className,
           )}
@@ -83,9 +83,9 @@ export function SafariTabsStrip({
               onClick={onNewTab}
               title={t("shell.newTab")}
               data-tauri-drag-region="false"
-              className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-text-faint transition-colors hover:bg-surface-hover hover:text-text"
+              className="ml-1 mb-1 grid h-7 w-7 shrink-0 place-items-center rounded-md text-text-faint transition-colors hover:bg-surface-hover hover:text-text"
             >
-              <Plus strokeWidth={1.5} className="h-3.5 w-3.5" />
+              <Plus strokeWidth={1.5} className="h-4 w-4" />
             </button>
           )}
         </div>
@@ -117,6 +117,14 @@ function SafariTab({
     opacity: isDragging ? 0.5 : 1,
   };
 
+  function handleMouseDown(e: React.MouseEvent) {
+    // Middle-click closes (browser pattern). Only for non-fixed/non-pinned tabs.
+    if (e.button === 1 && !tab.fixed && !tab.pinned && onClose) {
+      e.preventDefault();
+      onClose(tab.id);
+    }
+  }
+
   return (
     <div
       ref={setNodeRef}
@@ -127,34 +135,40 @@ function SafariTab({
       role="tab"
       aria-selected={active}
       onClick={() => onSelect(tab.id)}
+      onAuxClick={handleMouseDown}
       onContextMenu={(e) => {
         if (!onContext) return;
         e.preventDefault();
         onContext(tab.id, e.clientX, e.clientY);
       }}
       className={cn(
-        "group/tab relative flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-body transition-colors",
-        tab.pinned ? "max-w-[44px] justify-center" : "max-w-[200px]",
+        "group/tab relative flex h-8 shrink-0 cursor-pointer items-center gap-2 rounded-t-lg px-3 text-body transition-all duration-100",
+        tab.pinned ? "w-9 justify-center px-0" : "min-w-[120px] max-w-[220px]",
         active
-          ? "bg-surface-elevated text-text shadow-[0_0_0_0.5px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.12)] dark:shadow-[0_0_0_0.5px_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.4)]"
-          : "text-text-muted hover:bg-surface-hover hover:text-text",
+          ? "bg-surface text-text"
+          : "text-text-muted hover:bg-surface-hover/60 hover:text-text",
       )}
     >
-      {tab.color && (
+      {/* Top accent stripe for color/provider, only when active or color set */}
+      {tab.color && active && (
         <span
-          className="absolute left-0.5 top-1.5 h-4 w-0.5 rounded-r"
+          className="pointer-events-none absolute inset-x-2 top-0 h-[2px] rounded-full"
           style={{ background: tab.color }}
           aria-hidden
         />
       )}
       {tab.icon && (
         <span
-          className="grid h-3.5 w-3.5 shrink-0 place-items-center overflow-hidden rounded-sm [&>*]:h-full [&>*]:w-full [&_img]:object-cover"
+          className="grid h-4 w-4 shrink-0 place-items-center overflow-hidden rounded-sm [&>*]:h-full [&>*]:w-full [&_img]:object-cover"
         >
           {tab.icon}
         </span>
       )}
-      {!tab.pinned && <span className="truncate">{tab.label}</span>}
+      {!tab.pinned && (
+        <span className={cn("min-w-0 flex-1 truncate", active ? "text-text" : "text-text-muted")}>
+          {tab.label}
+        </span>
+      )}
       {!tab.fixed && !tab.pinned && onClose && (
         <button
           type="button"
@@ -162,10 +176,16 @@ function SafariTab({
             e.stopPropagation();
             onClose(tab.id);
           }}
-          className="ml-0.5 hidden rounded-sm p-0.5 text-text-faint transition-colors hover:bg-surface-hover hover:text-text group-hover/tab:block"
+          className={cn(
+            "grid h-5 w-5 shrink-0 place-items-center rounded-md transition-all",
+            active
+              ? "text-text-muted opacity-80 hover:bg-surface-hover hover:text-text hover:opacity-100"
+              : "text-text-faint opacity-0 hover:bg-surface-hover hover:text-text group-hover/tab:opacity-100",
+          )}
           aria-label="close"
+          title="Cerrar (medio-click también)"
         >
-          <X strokeWidth={1.5} className="h-3 w-3" />
+          <X strokeWidth={1.5} className="h-3.5 w-3.5" />
         </button>
       )}
     </div>
@@ -211,7 +231,7 @@ export function TabContextMenu({
     <div
       id="__tab_ctxmenu"
       style={{ position: "fixed", left: x, top: y, zIndex: 200 }}
-      className="min-w-[10rem] overflow-hidden rounded-md border border-border-subtle bg-surface-overlay shadow-md"
+      className="min-w-[10rem] overflow-hidden rounded-md border border-border-subtle bg-surface-overlay py-1 shadow-lg"
     >
       {children}
     </div>
