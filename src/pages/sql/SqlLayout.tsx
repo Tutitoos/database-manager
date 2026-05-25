@@ -1,37 +1,47 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Outlet } from "@tanstack/react-router";
-import { useTranslation } from "react-i18next";
+import { Activity, ChevronDown, ChevronRight, Database, Hash, Loader2, Plus, Table as TableIcon } from "lucide-react";
 import { useNavigate, useSearchParams } from "@/lib/router-compat";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { MetricsPanel } from "@/components/metrics-panel";
+import SqlPage from "@/pages/sql/SqlPage";
 import SqlQueriesPage from "@/pages/sql/SqlQueriesPage";
-import { parseSettings } from "@/lib/providers";
+import { WorkspaceTabsStrip, WorkspaceTabContextMenu } from "@/components/workspace/WorkspaceTabsStrip";
+import { WelcomeScreen, type WelcomeAction } from "@/components/workspace/WelcomeScreen";
+import { getProviderUi, ProviderIcon, parseSettings } from "@/lib/providers";
 import { panel } from "@/lib/styles";
 import type { Connection } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { useSessionsStore, type SqlSession } from "@/store/sessions";
-import { PageHeader, SegmentedTabs } from "@/components/ui/page-header";
+import {
+  useSessionsStore,
+  type EntityTab,
+  type QueryTab,
+  type ViewTab,
+  type SqlSession,
+  type WorkspaceTab,
+} from "@/store/sessions";
+import { PageHeader } from "@/components/ui/page-header";
 import { useInspectorContextFor } from "@/components/shell/InspectorContext";
 
 export default function SqlLayout() {
-  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const connectionId = Number(searchParams.get("id"));
-  const activeDb = searchParams.get("db") ?? "";
-  const activeTable = searchParams.get("table") ?? "";
-  const view = searchParams.get("view");
 
-  const { sessions, updateSession } = useSessionsStore();
+  const { sessions, updateSession, openTab, closeTab, pinTab, setActiveTab, reorderTabs } = useSessionsStore();
+  const stored = sessions[connectionId] as SqlSession | undefined;
 
   const [connection, setConnection] = useState<Connection | null>(null);
   const [databases, setDatabases] = useState<string[]>([]);
+  const [tablesPerDb, setTablesPerDb] = useState<Record<string, string[]>>({});
+  const [loadingTables, setLoadingTables] = useState<Record<string, boolean>>({});
+  const [expandedDbs, setExpandedDbs] = useState<Set<string>>(() => new Set(stored?.expandedDbs ?? []));
+  const [ctxMenu, setCtxMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [newTabMenu, setNewTabMenu] = useState<{ x: number; y: number } | null>(null);
+  const [navCollapsed, setNavCollapsed] = useState(false);
 
-  useEffect(() => {
-    if (!connectionId) return;
-    updateSession(connectionId, { activeDb, activeTable, activeView: view ?? "" });
-  }, [activeDb, activeTable, view, connectionId]);
+  const provider = connection ? getProviderUi(connection.plugin_id) : null;
 
+  // ── Load connection + databases
   useEffect(() => {
     invoke<Connection[]>("list_connections").then((all) => {
       setConnection(all.find((c) => c.id === connectionId) ?? null);
@@ -46,30 +56,149 @@ export default function SqlLayout() {
         const selected = Array.isArray(settings.selectedDatabases) ? (settings.selectedDatabases as string[]) : [];
         const dbs = selected.length > 0 ? all.filter((db) => selected.includes(db)) : all;
         setDatabases(dbs);
-        if (!activeDb && dbs.length > 0) {
-          navigate(`/connections/sql?id=${connectionId}&db=${encodeURIComponent(dbs[0])}`, { replace: true });
+        if (dbs.length > 0 && expandedDbs.size === 0) {
+          setExpandedDbs(new Set([dbs[0]]));
         }
       })
       .catch(() => setDatabases([]));
   }, [connection]);
 
-  function navView(target: "data" | "metrics" | "queries") {
-    const db = activeDb || databases[0] || "";
-    if (target === "metrics") {
-      navigate(`/connections/sql?id=${connectionId}&db=${encodeURIComponent(db)}&view=metrics`);
-    } else if (target === "queries") {
-      navigate(`/connections/sql?id=${connectionId}&db=${encodeURIComponent(db)}&view=queries`);
-    } else {
-      navigate(`/connections/sql?id=${connectionId}&db=${encodeURIComponent(activeDb)}&table=${encodeURIComponent(activeTable)}`);
+  const loadTables = useCallback((db: string) => {
+    if (!connection || tablesPerDb[db] || loadingTables[db]) return;
+    setLoadingTables((prev) => ({ ...prev, [db]: true }));
+    invoke<string[]>("list_collections", { input: connection, database: db })
+      .then((rows) => setTablesPerDb((prev) => ({ ...prev, [db]: rows })))
+      .catch(() => undefined)
+      .finally(() => setLoadingTables((prev) => ({ ...prev, [db]: false })));
+  }, [connection, tablesPerDb, loadingTables]);
+
+  // Auto-load tables for expanded DBs.
+  useEffect(() => {
+    for (const db of expandedDbs) loadTables(db);
+  }, [expandedDbs, loadTables]);
+
+  function toggleDb(db: string) {
+    setExpandedDbs((prev) => {
+      const next = new Set(prev);
+      if (next.has(db)) next.delete(db);
+      else next.add(db);
+      updateSession(connectionId, { expandedDbs: [...next] });
+      return next;
+    });
+  }
+
+  // ── Active tab
+  const activeTab: WorkspaceTab | undefined = useMemo(() => {
+    if (!stored || !stored.activeTabId) return undefined;
+    return stored.openTabs.find((t) => t.id === stored.activeTabId);
+  }, [stored]);
+
+  // ── URL sync: keep ?db=&table=&view= aligned with active tab so child pages can read them.
+  useEffect(() => {
+    if (!connectionId) return;
+    if (!activeTab) return;
+    let url = `/connections/sql?id=${connectionId}`;
+    if (activeTab.kind === "entity") {
+      url += `&db=${encodeURIComponent(activeTab.db)}&table=${encodeURIComponent(activeTab.name)}`;
+    } else if (activeTab.kind === "view" && activeTab.view === "metrics") {
+      const db = activeTab.db || stored?.activeDb || databases[0] || "";
+      url += `&db=${encodeURIComponent(db)}&view=metrics`;
+    } else if (activeTab.kind === "query") {
+      url += `&view=queries`;
+    }
+    navigate(url, { replace: true });
+    // Also keep legacy nav fields in sync.
+    const patch: Partial<SqlSession> = {};
+    if (activeTab.kind === "entity") {
+      patch.activeDb = activeTab.db;
+      patch.activeTable = activeTab.name;
+      patch.activeView = "";
+    } else if (activeTab.kind === "view") {
+      patch.activeView = activeTab.view;
+    } else if (activeTab.kind === "query") {
+      patch.activeView = "queries";
+      patch.activeScriptId = activeTab.scriptId;
+    }
+    updateSession(connectionId, patch);
+  }, [activeTab?.id]);
+
+  // ── Tab actions
+  const openTableTab = useCallback(
+    (db: string, table: string, opts: { ephemeral: boolean } = { ephemeral: true }) => {
+      openTab(
+        connectionId,
+        {
+          kind: "entity",
+          entityKind: "table",
+          db,
+          name: table,
+          title: table,
+        } as Omit<EntityTab, "id" | "ephemeral" | "pinned" | "createdAt">,
+        opts,
+      );
+    },
+    [connectionId, openTab],
+  );
+
+  const openQueryTab = useCallback(() => {
+    if (!stored) return;
+    // Create a fresh script then open a tab for it.
+    const scriptId = `s-${Date.now().toString(36)}`;
+    const name = `Script ${stored.queryScripts.length + 1}`;
+    updateSession(connectionId, {
+      queryScripts: [...stored.queryScripts, { id: scriptId, name, sql: "" }],
+    });
+    openTab(
+      connectionId,
+      {
+        kind: "query",
+        scriptId,
+        title: name,
+      } as Omit<QueryTab, "id" | "ephemeral" | "pinned" | "createdAt">,
+      { ephemeral: false },
+    );
+  }, [connectionId, stored, updateSession, openTab]);
+
+  const openMetricsTab = useCallback(() => {
+    openTab(
+      connectionId,
+      {
+        kind: "view",
+        view: "metrics",
+        title: "Metrics",
+      } as Omit<ViewTab, "id" | "ephemeral" | "pinned" | "createdAt">,
+      { ephemeral: false },
+    );
+  }, [connectionId, openTab]);
+
+  function onWelcomeAction(action: WelcomeAction) {
+    if (action.kind === "open-metrics") return openMetricsTab();
+    if (action.kind === "new-query") return openQueryTab();
+  }
+
+  function onWelcomeRecent(tab: WorkspaceTab) {
+    if (tab.kind === "entity") openTableTab(tab.db, tab.name, { ephemeral: false });
+    else if (tab.kind === "view") openMetricsTab();
+    else if (tab.kind === "query") {
+      openTab(
+        connectionId,
+        {
+          kind: "query",
+          scriptId: tab.scriptId,
+          title: tab.title,
+        } as Omit<QueryTab, "id" | "ephemeral" | "pinned" | "createdAt">,
+        { ephemeral: false },
+      );
     }
   }
 
-  const metricsDb = activeDb || databases[0] || connection?.database || "";
+  const activeEntityKey = activeTab?.kind === "entity" ? `${activeTab.db}/${activeTab.name}` : null;
+  const activeDb = activeTab?.kind === "entity" ? activeTab.db : (stored?.activeDb || databases[0] || "");
 
   useInspectorContextFor({
     connection,
     database: activeDb || null,
-    table: activeTable || null,
+    table: activeTab?.kind === "entity" ? activeTab.name : null,
     tableLabel: "Table",
     extras: databases.length > 0
       ? [{ label: "Databases", value: <span className="text-text-muted">{databases.length}</span> }]
@@ -82,61 +211,287 @@ export default function SqlLayout() {
   }, [missingSession, navigate]);
   if (missingSession) return null;
 
-  const tabValue = view === "metrics" ? "metrics" : view === "queries" ? "queries" : "data";
-
   return (
     <div className={cn("flex min-w-0 flex-1 flex-col", panel)}>
       <PageHeader
-        subtitle={
-          connection ? (
-            <span className="inline-flex items-center gap-1 font-mono">
-              <span className="text-text-muted">{connection.name}</span>
-              {activeDb && (
-                <>
-                  <span className="text-text-faint">›</span>
-                  <span className="text-text-muted">{activeDb}</span>
-                </>
-              )}
-              {activeTable && (
-                <>
-                  <span className="text-text-faint">›</span>
-                  <span className="text-text">{activeTable}</span>
-                </>
-              )}
-            </span>
-          ) : undefined
+        left={
+          connection && provider ? (
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 h-5 w-5 overflow-hidden rounded-sm border border-border-subtle">
+                <ProviderIcon providerId={connection.plugin_id} className="block h-full w-full object-cover" />
+              </span>
+              <span className="text-h3 font-medium text-text">{connection.name}</span>
+              <span className="text-body text-text-muted">{connection.host}:{connection.port ?? "-"}</span>
+            </div>
+          ) : null
         }
         right={
-          <SegmentedTabs
-            value={tabValue}
-            onChange={(v) => navView(v as "data" | "metrics" | "queries")}
-            options={[
-              { value: "data", label: t("common.data") },
-              { value: "queries", label: t("common.queries") },
-              { value: "metrics", label: t("common.metrics") },
-            ]}
-          />
+          <button
+            type="button"
+            onClick={(e) => setNewTabMenu({ x: e.clientX, y: e.clientY })}
+            className="flex items-center gap-1.5 rounded border border-border-subtle bg-surface-elevated px-2 py-1 text-body text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
+            title="Nueva pestaña"
+          >
+            <Plus className="h-3 w-3" />
+            <span>Nueva</span>
+          </button>
         }
       />
 
-      <main
-        className={
-          view === "metrics" || view === "queries"
-            ? "min-h-0 flex-1 overflow-hidden"
-            : "min-h-0 flex-1 overflow-auto"
-        }
-      >
-        {view === "metrics" && connection && metricsDb ? (
-          <MetricsPanel connection={connection} database={metricsDb} />
-        ) : view === "queries" && connection ? (
-          <SqlQueriesPage connection={connection} database={metricsDb} />
-        ) : (
-          <Outlet />
-        )}
-      </main>
+      <WorkspaceTabsStrip
+        items={stored?.openTabs ?? []}
+        activeId={stored?.activeTabId ?? null}
+        onSelect={(id) => setActiveTab(connectionId, id)}
+        onClose={(id) => closeTab(connectionId, id)}
+        onPin={(id) => pinTab(connectionId, id)}
+        onReorder={(ids) => reorderTabs(connectionId, ids)}
+        onContext={(id, x, y) => setCtxMenu({ id, x, y })}
+      />
+
+      <div className="flex min-h-0 flex-1">
+        <SqlNavigator
+          databases={databases}
+          expanded={expandedDbs}
+          onToggleDb={toggleDb}
+          tablesPerDb={tablesPerDb}
+          loadingTables={loadingTables}
+          onSelectTable={(db, tbl) => openTableTab(db, tbl, { ephemeral: true })}
+          onPinTable={(db, tbl) => openTableTab(db, tbl, { ephemeral: false })}
+          onOpenQuery={openQueryTab}
+          activeEntityKey={activeEntityKey}
+          collapsed={navCollapsed}
+          onCollapsedChange={setNavCollapsed}
+        />
+
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {!stored || !activeTab ? (
+            stored ? (
+              <WelcomeScreen
+                session={stored}
+                onAction={onWelcomeAction}
+                onOpenRecent={onWelcomeRecent}
+              />
+            ) : null
+          ) : (
+            <SqlTabContent tab={activeTab} connection={connection} fallbackDb={activeDb} />
+          )}
+        </main>
+      </div>
+
+      {ctxMenu && (
+        <WorkspaceTabContextMenu x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)}>
+          <button
+            type="button"
+            onClick={() => { pinTab(connectionId, ctxMenu.id); setCtxMenu(null); }}
+            className="block w-full px-3 py-1.5 text-left text-body text-text-muted hover:bg-surface-hover hover:text-text"
+          >
+            Anclar pestaña
+          </button>
+          <button
+            type="button"
+            onClick={() => { closeTab(connectionId, ctxMenu.id); setCtxMenu(null); }}
+            className="block w-full px-3 py-1.5 text-left text-body text-text-muted hover:bg-surface-hover hover:text-text"
+          >
+            Cerrar
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const ids = (stored?.openTabs ?? []).map((t) => t.id).filter((id) => id !== ctxMenu.id);
+              for (const id of ids) closeTab(connectionId, id);
+              setCtxMenu(null);
+            }}
+            className="block w-full px-3 py-1.5 text-left text-body text-text-muted hover:bg-surface-hover hover:text-text"
+          >
+            Cerrar las demás
+          </button>
+        </WorkspaceTabContextMenu>
+      )}
+
+      {newTabMenu && (
+        <WorkspaceTabContextMenu x={newTabMenu.x} y={newTabMenu.y} onClose={() => setNewTabMenu(null)}>
+          <button
+            type="button"
+            onClick={() => { setNewTabMenu(null); openQueryTab(); }}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-body text-text-muted hover:bg-surface-hover hover:text-text"
+          >
+            <Hash className="h-3 w-3 text-amber-400" />
+            <span>Nueva query</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => { setNewTabMenu(null); openMetricsTab(); }}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-body text-text-muted hover:bg-surface-hover hover:text-text"
+          >
+            <Activity className="h-3 w-3 text-sky-400" />
+            <span>Abrir métricas</span>
+          </button>
+        </WorkspaceTabContextMenu>
+      )}
     </div>
   );
 }
 
-// Note: SqlSession + DnD imports intentionally pruned — sidebar is now global.
+// ─────────────────────────────────────────────────────────────────────────────
+// Tab content dispatcher (kept inline — small enough not to extract)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SqlTabContent({
+  tab,
+  connection,
+  fallbackDb,
+}: {
+  tab: WorkspaceTab;
+  connection: Connection | null;
+  fallbackDb: string;
+}) {
+  if (!connection) return null;
+  if (tab.kind === "entity") {
+    // SqlPage still reads URL params; the layout's URL sync keeps them aligned.
+    return (
+      <div className="flex min-h-0 flex-1 overflow-auto">
+        <SqlPage key={tab.id} />
+      </div>
+    );
+  }
+  if (tab.kind === "query") {
+    return (
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <SqlQueriesPage connection={connection} database={fallbackDb} />
+      </div>
+    );
+  }
+  if (tab.kind === "view" && tab.view === "metrics") {
+    return (
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <MetricsPanel connection={connection} database={tab.db || fallbackDb} />
+      </div>
+    );
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SQL navigator: collapsible DB → tables tree
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SqlNavigator({
+  databases,
+  expanded,
+  onToggleDb,
+  tablesPerDb,
+  loadingTables,
+  onSelectTable,
+  onPinTable,
+  onOpenQuery,
+  activeEntityKey,
+  collapsed,
+  onCollapsedChange,
+}: {
+  databases: string[];
+  expanded: Set<string>;
+  onToggleDb: (db: string) => void;
+  tablesPerDb: Record<string, string[]>;
+  loadingTables: Record<string, boolean>;
+  onSelectTable: (db: string, table: string) => void;
+  onPinTable: (db: string, table: string) => void;
+  onOpenQuery: () => void;
+  activeEntityKey: string | null;
+  collapsed: boolean;
+  onCollapsedChange: (v: boolean) => void;
+}) {
+  if (collapsed) {
+    return (
+      <div className="flex w-9 shrink-0 flex-col items-center gap-1 border-r border-border-subtle bg-surface/40 py-2">
+        <button
+          type="button"
+          onClick={() => onCollapsedChange(false)}
+          title="Expandir"
+          className="grid h-7 w-7 place-items-center rounded text-text-faint hover:bg-surface-hover hover:text-text"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex w-60 shrink-0 flex-col border-r border-border-subtle bg-surface/40">
+      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border-subtle px-3">
+        <span className="text-overline flex-1 text-text-faint">Tablas</span>
+        <button
+          type="button"
+          onClick={onOpenQuery}
+          title="Nueva query"
+          className="grid h-6 w-6 place-items-center rounded text-text-faint hover:bg-surface-hover hover:text-text"
+        >
+          <Hash className="h-3 w-3" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onCollapsedChange(true)}
+          title="Colapsar"
+          className="grid h-6 w-6 place-items-center rounded text-text-faint hover:bg-surface-hover hover:text-text"
+        >
+          <ChevronDown className="h-3 w-3 rotate-90" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+        {databases.length === 0 ? (
+          <div className="px-3 py-4 text-center text-body text-text-faint">Sin bases.</div>
+        ) : (
+          databases.map((db) => {
+            const isOpen = expanded.has(db);
+            const tables = tablesPerDb[db] ?? [];
+            return (
+              <div key={db} className="pb-0.5">
+                <button
+                  type="button"
+                  onClick={() => onToggleDb(db)}
+                  className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-body text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
+                >
+                  {isOpen ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
+                  <Database className="h-3 w-3 shrink-0 text-text-faint" />
+                  <span className="min-w-0 flex-1 truncate font-mono">{db}</span>
+                  {loadingTables[db] && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-text-faint" />}
+                  {!loadingTables[db] && tables.length > 0 && (
+                    <span className="shrink-0 text-tiny text-text-faint">{tables.length}</span>
+                  )}
+                </button>
+                {isOpen && (
+                  <div className="pl-3">
+                    {tables.length === 0 && !loadingTables[db] && (
+                      <p className="px-3 py-1 text-body text-text-faint">Sin tablas.</p>
+                    )}
+                    {tables.map((tbl) => {
+                      const k = `${db}/${tbl}`;
+                      const isActive = activeEntityKey === k;
+                      return (
+                        <button
+                          key={k}
+                          type="button"
+                          onClick={() => onSelectTable(db, tbl)}
+                          onDoubleClick={() => onPinTable(db, tbl)}
+                          className={cn(
+                            "flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-body transition-colors",
+                            isActive
+                              ? "bg-accent-soft text-accent"
+                              : "text-text-muted hover:bg-surface-hover hover:text-text",
+                          )}
+                        >
+                          <TableIcon className={cn("h-3 w-3 shrink-0", isActive ? "text-accent" : "text-text-faint")} />
+                          <span className="truncate font-mono">{tbl}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
 export type { SqlSession };

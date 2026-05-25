@@ -142,14 +142,18 @@ const TYPE_COLORS: Record<string, string> = {
 
 // ── Page ────────────────────────────────────────────────────────────────────
 
-function RedisPage() {
+/** Prop-driven Redis key viewer — used by RedisLayout via WorkspaceTab dispatch. */
+export function RedisKeyView({
+  connection,
+  database: db,
+  redisKey: key,
+}: {
+  connection: Connection;
+  database: string;
+  redisKey: string;
+}) {
   const { t } = useTranslation();
-  const [searchParams] = useSearchParams();
-  const connectionId = Number(searchParams.get("id"));
-  const db = searchParams.get("db") ?? "0";
-  const key = searchParams.get("key") ?? "";
 
-  const [connection, setConnection] = useState<Connection | null>(null);
   const [data, setData] = useState<KeyValue | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -214,12 +218,6 @@ function RedisPage() {
       setTtlEditor({ ...ttlEditor, saving: false, error: String(e) });
     }
   }
-
-  useEffect(() => {
-    invoke<Connection[]>("list_connections").then((all) => {
-      setConnection(all.find((c) => c.id === connectionId) ?? null);
-    });
-  }, [connectionId]);
 
   useEffect(() => {
     setData(null);
@@ -598,10 +596,23 @@ function KeyValueDisplay({ data, q }: { data: KeyValue; q: string }) {
   }
 }
 
+/** Legacy default export — kept so the router's redisIndexRoute still resolves.
+ *  RedisLayout no longer renders an <Outlet/>, so in practice this is unused. */
 export default function RedisDataPage() {
+  const [searchParams] = useSearchParams();
+  const connectionId = Number(searchParams.get("id"));
+  const db = searchParams.get("db") ?? "0";
+  const key = searchParams.get("key") ?? "";
+  const [connection, setConnection] = useState<Connection | null>(null);
+  useEffect(() => {
+    invoke<Connection[]>("list_connections").then((all) => {
+      setConnection(all.find((c) => c.id === connectionId) ?? null);
+    });
+  }, [connectionId]);
+  if (!connection) return null;
   return (
     <Suspense>
-      <RedisPage />
+      <RedisKeyView connection={connection} database={db} redisKey={key} />
     </Suspense>
   );
 }

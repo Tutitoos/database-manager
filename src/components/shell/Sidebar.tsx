@@ -1,33 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
-import {
-  ChevronDown,
-  ChevronRight,
-  Database,
-  Folder,
-  Star,
-  Table as TableIcon,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, Folder, Star } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useSearchParams } from "@/lib/router-compat";
-import { ProviderIcon, PROVIDER_UI, parseSettings } from "@/lib/providers";
+import { useSearchParams } from "@/lib/router-compat";
+import { ProviderIcon, PROVIDER_UI } from "@/lib/providers";
 import type { Connection, ConnectionGroup } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { useSessionsStore } from "@/store/sessions";
 import { useSettings } from "@/store/settings";
 import { UserMenu } from "@/components/shell/UserMenu";
 import { OrgSwitcher } from "@/components/shell/OrgSwitcher";
 import { useOpenConnection } from "@/components/connect-gate";
-import { pushToast } from "@/components/ui/toast";
 
 export function Sidebar() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const currentId = Number(searchParams.get("id"));
-  const sidebarDb = searchParams.get("db") ?? "";
-  const sidebarTable = searchParams.get("table") ?? "";
-  const { sessions } = useSessionsStore();
   const { showSidebarBadges } = useSettings();
   const openConnection = useOpenConnection();
 
@@ -35,8 +22,6 @@ export function Sidebar() {
   const [groups, setGroups] = useState<ConnectionGroup[]>([]);
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<number | null>>(new Set([null]));
-  const [activeDbs, setActiveDbs] = useState<string[]>([]);
-  const [activeTables, setActiveTables] = useState<Record<string, string[]>>({});
 
   // Load connections + groups whenever active org changes.
   useEffect(() => {
@@ -83,51 +68,6 @@ export function Sidebar() {
     });
   }
 
-  const activeConnection = useMemo(() => sessions[currentId]?.connection ?? null, [sessions, currentId]);
-
-  // Load DBs of active connection.
-  useEffect(() => {
-    if (!activeConnection) {
-      setActiveDbs([]);
-      return;
-    }
-    invoke<string[]>("list_databases", { input: activeConnection })
-      .then((all) => {
-        // Honour the per-connection selectedDatabases filter set in the
-        // connection dialog. Without this the sidebar lists every db the
-        // server exposes — confusing when the user explicitly scoped down.
-        const settings = parseSettings(activeConnection.settings_json);
-        const selected = Array.isArray(settings.selectedDatabases)
-          ? (settings.selectedDatabases as string[])
-          : [];
-        const filtered = selected.length > 0 ? all.filter((db) => selected.includes(db)) : all;
-        setActiveDbs(filtered);
-      })
-      .catch(() => setActiveDbs([]));
-  }, [activeConnection]);
-
-  function navigateToTable(db: string, table: string) {
-    if (!activeConnection) return;
-    const id = activeConnection.id;
-    const kind =
-      activeConnection.plugin_id === "mongodb"
-        ? "document"
-        : activeConnection.plugin_id === "redis"
-        ? "redis"
-        : "sql";
-    const param = kind === "document" ? "collection" : kind === "redis" ? "key" : "table";
-    navigate(`/connections/${kind}?id=${id}&db=${encodeURIComponent(db)}&${param}=${encodeURIComponent(table)}`);
-    // Background test: warn (no block) if connection has dropped.
-    invoke("test_connection", { input: activeConnection }).catch((e) => {
-      pushToast({
-        level: "warn",
-        title: t("shell.unstableConnection"),
-        body: String(e),
-      });
-    });
-  }
-
-
   const favoriteList = useMemo(
     () => connections.filter((c) => favorites.has(c.id)),
     [connections, favorites],
@@ -171,7 +111,6 @@ export function Sidebar() {
           </Section>
         )}
 
-        {!activeConnection && (
         <Section title={t("sidebar.workspaces")} icon={<Folder strokeWidth={1.5} className="h-3 w-3" />}>
           {[{ id: null, name: t("shell.sidebarNoFolder") } as { id: number | null; name: string }, ...groups]
             .map((g) => {
@@ -228,28 +167,6 @@ export function Sidebar() {
               );
             })}
         </Section>
-        )}
-
-        {activeConnection && (
-          <ActiveConnectionPanel
-            connection={activeConnection}
-            databases={activeDbs}
-            sidebarDb={sidebarDb}
-            sidebarTable={sidebarTable}
-            activeTables={activeTables}
-            setActiveTables={setActiveTables}
-            onSelectDb={(db) => {
-              const kind =
-                activeConnection.plugin_id === "mongodb"
-                  ? "document"
-                  : activeConnection.plugin_id === "redis"
-                    ? "redis"
-                    : "sql";
-              navigate(`/connections/${kind}?id=${activeConnection.id}&db=${encodeURIComponent(db)}`);
-            }}
-            onSelectTable={navigateToTable}
-          />
-        )}
       </div>
 
       <div className="shrink-0 border-t border-border-subtle p-1">
@@ -275,115 +192,6 @@ function Section({
       {children}
     </div>
   );
-}
-
-/** Active-connection sidebar panel: DB selector at top + flat list of tables
- *  for the currently-selected DB. Replaces the previous tree-style expandable
- *  category which felt heavy and made it hard to switch DBs. */
-function ActiveConnectionPanel({
-  connection,
-  databases,
-  sidebarDb,
-  sidebarTable,
-  activeTables,
-  setActiveTables,
-  onSelectDb,
-  onSelectTable,
-}: {
-  connection: Connection;
-  databases: string[];
-  sidebarDb: string;
-  sidebarTable: string;
-  activeTables: Record<string, string[]>;
-  setActiveTables: React.Dispatch<React.SetStateAction<Record<string, string[]>>>;
-  onSelectDb: (db: string) => void;
-  onSelectTable: (db: string, table: string) => void;
-}) {
-  const { t } = useTranslation();
-  const selectedDb = sidebarDb && databases.includes(sidebarDb) ? sidebarDb : databases[0] ?? "";
-  const tables = activeTables[selectedDb] ?? [];
-
-  // Lazy-load tables of whichever db is currently selected.
-  useEffect(() => {
-    if (!selectedDb || activeTables[selectedDb]) return;
-    invoke<string[]>("list_collections", { input: connection, database: selectedDb })
-      .then((rows) => setActiveTables((prev) => ({ ...prev, [selectedDb]: rows })))
-      .catch(() => undefined);
-  }, [selectedDb, connection, activeTables, setActiveTables]);
-
-  if (databases.length === 0) {
-    return (
-      <div className="px-3 pt-3 pb-1.5">
-        <Empty>{t("shell.sidebar.loadingDbs", { defaultValue: "Cargando bases…" })}</Empty>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-1 pt-3 pb-1">
-      <div className="px-2">
-        <label className="text-overline mb-1 block px-1">Base</label>
-        <div className="relative">
-          <Database
-            strokeWidth={1.5}
-            className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-faint"
-          />
-          <select
-            value={selectedDb}
-            onChange={(e) => onSelectDb(e.target.value)}
-            className="text-body h-8 w-full appearance-none truncate rounded-md border border-border-subtle bg-surface-elevated pl-7 pr-6 font-mono text-text hover:border-border-strong focus:border-accent focus:outline-none"
-          >
-            {databases.map((db) => (
-              <option key={db} value={db}>
-                {db}
-              </option>
-            ))}
-          </select>
-          <ChevronDown
-            strokeWidth={1.5}
-            className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-text-faint"
-          />
-        </div>
-      </div>
-
-      <div className="mt-1 flex items-center justify-between px-3">
-        <span className="text-overline">Tablas</span>
-        <span className="text-tiny text-text-faint">{tables.length}</span>
-      </div>
-
-      {tables.length === 0 ? (
-        <Empty>{t("shell.sidebar.noTables", { defaultValue: "Sin tablas." })}</Empty>
-      ) : (
-        tables.map((tbl) => {
-          const isActive = tbl === sidebarTable && selectedDb === sidebarDb;
-          return (
-            <div key={tbl} className="px-1.5">
-              <button
-                type="button"
-                onClick={() => onSelectTable(selectedDb, tbl)}
-                className={cn(
-                  "text-body-mono flex h-6 w-full items-center gap-1.5 rounded-md px-2 text-left transition-colors",
-                  isActive
-                    ? "bg-accent-soft text-accent"
-                    : "text-text-muted hover:bg-surface-hover hover:text-text",
-                )}
-              >
-                <TableIcon
-                  strokeWidth={1.5}
-                  className={cn("h-3 w-3 shrink-0", isActive ? "text-accent" : "text-text-faint")}
-                />
-                <span className="truncate">{tbl}</span>
-              </button>
-            </div>
-          );
-        })
-      )}
-    </div>
-  );
-}
-
-function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="px-3 py-1 text-body text-text-faint">{children}</p>;
 }
 
 function ConnRow({
