@@ -1,13 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Activity, ChevronDown, ChevronRight, Database, Hash, Loader2, Plus, Table as TableIcon } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight, Database, Hash, Loader2, Pin, Table as TableIcon, Trash2, X } from "lucide-react";
 import { useNavigate, useSearchParams } from "@/lib/router-compat";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { MetricsPanel } from "@/components/metrics-panel";
+import { MetricsPanel } from "@/components/metrics-panel-lazy";
 import SqlPage from "@/pages/sql/SqlPage";
 import SqlQueriesPage from "@/pages/sql/SqlQueriesPage";
-import { WorkspaceTabsStrip, WorkspaceTabContextMenu } from "@/components/workspace/WorkspaceTabsStrip";
+import { WorkspaceTabsStrip, WorkspaceTabContextMenu, WorkspaceMenuItem } from "@/components/workspace/WorkspaceTabsStrip";
 import { WelcomeScreen, type WelcomeAction } from "@/components/workspace/WelcomeScreen";
-import { getProviderUi, ProviderIcon, parseSettings } from "@/lib/providers";
+import { ConnHeaderLeft, NewTabButton } from "@/components/workspace/LayoutChrome";
+import { parseSettings } from "@/lib/providers";
 import { panel } from "@/lib/styles";
 import type { Connection } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -38,8 +39,6 @@ export default function SqlLayout() {
   const [ctxMenu, setCtxMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [newTabMenu, setNewTabMenu] = useState<{ x: number; y: number } | null>(null);
   const [navCollapsed, setNavCollapsed] = useState(false);
-
-  const provider = connection ? getProviderUi(connection.plugin_id) : null;
 
   // ── Load connection + databases
   useEffect(() => {
@@ -213,30 +212,7 @@ export default function SqlLayout() {
 
   return (
     <div className={cn("flex min-w-0 flex-1 flex-col", panel)}>
-      <PageHeader
-        left={
-          connection && provider ? (
-            <div className="flex items-center gap-2">
-              <span className="shrink-0 h-5 w-5 overflow-hidden rounded-sm border border-border-subtle">
-                <ProviderIcon providerId={connection.plugin_id} className="block h-full w-full object-cover" />
-              </span>
-              <span className="text-h3 font-medium text-text">{connection.name}</span>
-              <span className="text-body text-text-muted">{connection.host}:{connection.port ?? "-"}</span>
-            </div>
-          ) : null
-        }
-        right={
-          <button
-            type="button"
-            onClick={(e) => setNewTabMenu({ x: e.clientX, y: e.clientY })}
-            className="flex items-center gap-1.5 rounded border border-border-subtle bg-surface-elevated px-2 py-1 text-body text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
-            title="Nueva pestaña"
-          >
-            <Plus className="h-3 w-3" />
-            <span>Nueva</span>
-          </button>
-        }
-      />
+      <PageHeader left={<ConnHeaderLeft connection={connection} />} />
 
       <WorkspaceTabsStrip
         items={stored?.openTabs ?? []}
@@ -246,6 +222,7 @@ export default function SqlLayout() {
         onPin={(id) => pinTab(connectionId, id)}
         onReorder={(ids) => reorderTabs(connectionId, ids)}
         onContext={(id, x, y) => setCtxMenu({ id, x, y })}
+        trailing={<NewTabButton onClick={(e) => setNewTabMenu({ x: e.clientX, y: e.clientY })} />}
       />
 
       <div className="flex min-h-0 flex-1">
@@ -280,52 +257,42 @@ export default function SqlLayout() {
 
       {ctxMenu && (
         <WorkspaceTabContextMenu x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)}>
-          <button
-            type="button"
+          <WorkspaceMenuItem
+            icon={<Pin className="h-3 w-3 -rotate-45 text-accent/80" />}
+            label="Anclar pestaña"
             onClick={() => { pinTab(connectionId, ctxMenu.id); setCtxMenu(null); }}
-            className="block w-full px-3 py-1.5 text-left text-body text-text-muted hover:bg-surface-hover hover:text-text"
-          >
-            Anclar pestaña
-          </button>
-          <button
-            type="button"
+          />
+          <WorkspaceMenuItem
+            icon={<X className="h-3 w-3" />}
+            label="Cerrar"
+            shortcut="⌘W"
             onClick={() => { closeTab(connectionId, ctxMenu.id); setCtxMenu(null); }}
-            className="block w-full px-3 py-1.5 text-left text-body text-text-muted hover:bg-surface-hover hover:text-text"
-          >
-            Cerrar
-          </button>
-          <button
-            type="button"
+          />
+          <WorkspaceMenuItem
+            icon={<Trash2 className="h-3 w-3" />}
+            label="Cerrar las demás"
             onClick={() => {
               const ids = (stored?.openTabs ?? []).map((t) => t.id).filter((id) => id !== ctxMenu.id);
               for (const id of ids) closeTab(connectionId, id);
               setCtxMenu(null);
             }}
-            className="block w-full px-3 py-1.5 text-left text-body text-text-muted hover:bg-surface-hover hover:text-text"
-          >
-            Cerrar las demás
-          </button>
+            danger
+          />
         </WorkspaceTabContextMenu>
       )}
 
       {newTabMenu && (
         <WorkspaceTabContextMenu x={newTabMenu.x} y={newTabMenu.y} onClose={() => setNewTabMenu(null)}>
-          <button
-            type="button"
+          <WorkspaceMenuItem
+            icon={<Hash className="h-3 w-3 text-amber-400" />}
+            label="Nueva query"
             onClick={() => { setNewTabMenu(null); openQueryTab(); }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-body text-text-muted hover:bg-surface-hover hover:text-text"
-          >
-            <Hash className="h-3 w-3 text-amber-400" />
-            <span>Nueva query</span>
-          </button>
-          <button
-            type="button"
+          />
+          <WorkspaceMenuItem
+            icon={<Activity className="h-3 w-3 text-sky-400" />}
+            label="Abrir métricas"
             onClick={() => { setNewTabMenu(null); openMetricsTab(); }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-body text-text-muted hover:bg-surface-hover hover:text-text"
-          >
-            <Activity className="h-3 w-3 text-sky-400" />
-            <span>Abrir métricas</span>
-          </button>
+          />
         </WorkspaceTabContextMenu>
       )}
     </div>
