@@ -7,7 +7,7 @@ import SqlPage from "@/pages/sql/SqlPage";
 import SqlQueriesPage from "@/pages/sql/SqlQueriesPage";
 import { WorkspaceTabsStrip, WorkspaceTabContextMenu, WorkspaceMenuItem } from "@/components/workspace/WorkspaceTabsStrip";
 import { WelcomeScreen, type WelcomeAction } from "@/components/workspace/WelcomeScreen";
-import { ConnHeaderLeft, NewTabButton } from "@/components/workspace/LayoutChrome";
+import { ConnHeaderLeft, NewTabButton, NavigatorHeader, NavigatorCollapsedRail } from "@/components/workspace/LayoutChrome";
 import { parseSettings } from "@/lib/providers";
 import { panel } from "@/lib/styles";
 import type { Connection } from "@/lib/types";
@@ -234,7 +234,6 @@ export default function SqlLayout() {
           loadingTables={loadingTables}
           onSelectTable={(db, tbl) => openTableTab(db, tbl, { ephemeral: true })}
           onPinTable={(db, tbl) => openTableTab(db, tbl, { ephemeral: false })}
-          onOpenQuery={openQueryTab}
           activeEntityKey={activeEntityKey}
           collapsed={navCollapsed}
           onCollapsedChange={setNavCollapsed}
@@ -350,7 +349,6 @@ function SqlNavigator({
   loadingTables,
   onSelectTable,
   onPinTable,
-  onOpenQuery,
   activeEntityKey,
   collapsed,
   onCollapsedChange,
@@ -362,46 +360,21 @@ function SqlNavigator({
   loadingTables: Record<string, boolean>;
   onSelectTable: (db: string, table: string) => void;
   onPinTable: (db: string, table: string) => void;
-  onOpenQuery: () => void;
   activeEntityKey: string | null;
   collapsed: boolean;
   onCollapsedChange: (v: boolean) => void;
 }) {
   if (collapsed) {
-    return (
-      <div className="flex w-9 shrink-0 flex-col items-center gap-1 border-r border-border-subtle bg-surface/40 py-2">
-        <button
-          type="button"
-          onClick={() => onCollapsedChange(false)}
-          title="Expandir"
-          className="grid h-7 w-7 place-items-center rounded text-text-faint hover:bg-surface-hover hover:text-text"
-        >
-          <ChevronRight className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    );
+    return <NavigatorCollapsedRail onExpand={() => onCollapsedChange(false)} />;
   }
+  const totalTables = Object.values(tablesPerDb).reduce((n, ts) => n + ts.length, 0);
   return (
     <div className="flex w-60 shrink-0 flex-col border-r border-border-subtle bg-surface/40">
-      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border-subtle px-3">
-        <span className="text-overline flex-1 text-text-faint">Tablas</span>
-        <button
-          type="button"
-          onClick={onOpenQuery}
-          title="Nueva query"
-          className="grid h-6 w-6 place-items-center rounded text-text-faint hover:bg-surface-hover hover:text-text"
-        >
-          <Hash className="h-3 w-3" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onCollapsedChange(true)}
-          title="Colapsar"
-          className="grid h-6 w-6 place-items-center rounded text-text-faint hover:bg-surface-hover hover:text-text"
-        >
-          <ChevronDown className="h-3 w-3 rotate-90" />
-        </button>
-      </div>
+      <NavigatorHeader
+        title="Tablas"
+        count={totalTables > 0 ? totalTables : undefined}
+        onCollapse={() => onCollapsedChange(true)}
+      />
       <div className="min-h-0 flex-1 overflow-y-auto py-1">
         {databases.length === 0 ? (
           <div className="px-3 py-4 text-center text-body text-text-faint">Sin bases.</div>

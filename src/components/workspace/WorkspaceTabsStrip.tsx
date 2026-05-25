@@ -53,25 +53,25 @@ export function WorkspaceTabsStrip({
       <SortableContext items={items.map((t) => t.id)} strategy={horizontalListSortingStrategy}>
         <div
           className={cn(
-            "flex h-8 min-w-0 items-stretch overflow-x-auto border-b border-border-subtle bg-surface-sunken/40",
-            "[&::-webkit-scrollbar]:h-0",
+            "flex h-9 min-w-0 shrink-0 items-stretch border-b border-border-subtle bg-surface-sunken",
             className,
           )}
         >
-          {items.map((t, i) => (
-            <WorkspaceTabItem
-              key={t.id}
-              tab={t}
-              active={activeId === t.id}
-              prevActive={i > 0 && activeId === items[i - 1]?.id}
-              onSelect={onSelect}
-              onClose={onClose}
-              onPin={onPin}
-              onContext={onContext}
-            />
-          ))}
+          <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto [&::-webkit-scrollbar]:h-0">
+            {items.map((t) => (
+              <WorkspaceTabItem
+                key={t.id}
+                tab={t}
+                active={activeId === t.id}
+                onSelect={onSelect}
+                onClose={onClose}
+                onPin={onPin}
+                onContext={onContext}
+              />
+            ))}
+          </div>
           {trailing && (
-            <div className="ml-auto flex shrink-0 items-center pr-1.5 pl-2">
+            <div className="flex shrink-0 items-center border-l border-border-subtle pl-1 pr-1.5">
               {trailing}
             </div>
           )}
@@ -100,7 +100,6 @@ function TabIcon({ tab }: { tab: WorkspaceTab }) {
 function WorkspaceTabItem({
   tab,
   active,
-  prevActive,
   onSelect,
   onClose,
   onPin,
@@ -108,7 +107,6 @@ function WorkspaceTabItem({
 }: {
   tab: WorkspaceTab;
   active: boolean;
-  prevActive: boolean;
   onSelect: (id: string) => void;
   onClose?: (id: string) => void;
   onPin?: (id: string) => void;
@@ -141,36 +139,36 @@ function WorkspaceTabItem({
         onContext(tab.id, e.clientX, e.clientY);
       }}
       className={cn(
-        "group/wtab relative flex h-full max-w-[220px] shrink-0 cursor-pointer items-center gap-1.5 px-3 text-body transition-colors",
-        // 1-px divider between non-active tabs (skipped right after the active one)
-        !active && !prevActive && "border-l border-border-subtle/50",
+        "group/wtab relative flex h-full max-w-[220px] min-w-[100px] shrink-0 cursor-pointer items-center gap-1.5 border-r border-border-subtle px-3 text-body transition-colors",
         active
           ? "bg-surface text-text"
           : "text-text-muted hover:bg-surface-hover hover:text-text",
       )}
       title={tab.title}
     >
-      {/* Bottom accent stripe for active tab */}
+      {/* Active stripe at top */}
       {active && (
         <span
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 bg-accent"
+          className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-accent"
           aria-hidden
         />
       )}
-      {tab.pinned ? (
-        <Pin strokeWidth={1.5} className="h-3 w-3 shrink-0 -rotate-45 text-accent/80" aria-label="pinned" />
-      ) : (
-        <TabIcon tab={tab} />
-      )}
+      <TabIcon tab={tab} />
       <span
         className={cn(
-          "truncate",
-          tab.ephemeral && "italic text-text-muted",
+          "min-w-0 flex-1 truncate",
+          tab.ephemeral && "italic text-text-faint",
         )}
       >
         {tab.title}
       </span>
-      {onClose && !tab.pinned && (
+      {tab.pinned ? (
+        <Pin
+          strokeWidth={1.5}
+          className="h-3 w-3 shrink-0 -rotate-45 text-accent/70"
+          aria-label="pinned"
+        />
+      ) : onClose ? (
         <button
           type="button"
           onClick={(e) => {
@@ -178,18 +176,16 @@ function WorkspaceTabItem({
             onClose(tab.id);
           }}
           className={cn(
-            "ml-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-sm text-text-faint transition-all hover:bg-surface-hover hover:text-text",
-            active ? "opacity-70 hover:opacity-100" : "opacity-0 group-hover/wtab:opacity-100",
+            "grid h-4 w-4 shrink-0 place-items-center rounded-sm transition-all",
+            active
+              ? "text-text-muted opacity-80 hover:bg-surface-hover hover:text-text hover:opacity-100"
+              : "text-text-faint opacity-0 hover:bg-surface-hover hover:text-text group-hover/wtab:opacity-100",
           )}
           aria-label="close"
         >
           <X strokeWidth={1.5} className="h-3 w-3" />
         </button>
-      )}
-      {onClose && tab.pinned && (
-        // Pinned: clicking the pin again unpins (caller handles), close button hidden.
-        <span className="ml-0.5 h-4 w-4" aria-hidden />
-      )}
+      ) : null}
     </div>
   );
 }
@@ -219,7 +215,7 @@ export function WorkspaceTabContextMenu({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{ position: "fixed", left: x, top: y }}
-        className="min-w-[11rem] overflow-hidden rounded-md border border-border-subtle bg-surface-overlay py-1 shadow-lg"
+        className="min-w-[12rem] overflow-hidden rounded-md border border-border-subtle bg-surface-overlay py-1 shadow-lg"
       >
         {children}
       </div>
@@ -252,7 +248,7 @@ export function WorkspaceMenuItem({
           : "text-text-muted hover:bg-surface-hover hover:text-text",
       )}
     >
-      {icon && <span className="shrink-0">{icon}</span>}
+      {icon && <span className="grid h-4 w-4 shrink-0 place-items-center">{icon}</span>}
       <span className="flex-1 truncate">{label}</span>
       {shortcut && (
         <span className="shrink-0 text-tiny text-text-faint">{shortcut}</span>
