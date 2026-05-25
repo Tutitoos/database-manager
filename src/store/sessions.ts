@@ -718,5 +718,5 @@ sessionsStore.subscribe(() => {
   if (_saveTimer) clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => {
     invoke("save_sessions", { data: JSON.stringify(state.sessions) }).catch(() => undefined);
-  }, 1000);
+  }, 2500);
 });

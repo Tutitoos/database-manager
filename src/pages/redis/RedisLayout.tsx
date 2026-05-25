@@ -320,9 +320,10 @@ function renderTabContent(
   stored: RedisSession,
 ): React.ReactNode {
   if (tab.kind === "entity" && tab.entityKind === "key") {
+    // No `key={tab.id}` — RedisKeyView re-runs its fetch effect when redisKey
+    // changes, avoiding a full unmount + DOM throw-away per click.
     return (
       <RedisKeyView
-        key={tab.id}
         connection={connection}
         database={tab.db || activeDb}
         redisKey={tab.name}

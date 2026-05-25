@@ -1,5 +1,6 @@
 import { Folder, Loader2, RefreshCw, Search, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { AutocompleteInput, type GetSuggestions, type SuggestionItem } from "@/components/autocomplete-input";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
@@ -80,20 +81,24 @@ function countActive(nodes: TreeNode[], activeKey: string): boolean {
 
 export function buildKeyPatterns(keys: RedisKey[]): string[] {
   const patterns = new Set<string>();
+  const CAP = 1500;
   for (const { key } of keys) {
     const parts = key.split(":");
     const tpl = parts.map((p) => /^\d{6,}$/.test(p) ? "*" : p);
 
     for (let i = 1; i <= parts.length; i++) {
       patterns.add(parts.slice(0, i).join(":"));
+      if (patterns.size > CAP) break;
     }
     for (let i = 1; i <= tpl.length; i++) {
       patterns.add(tpl.slice(0, i).join(":"));
+      if (patterns.size > CAP) break;
     }
     for (let i = 1; i < tpl.length; i++) {
       patterns.add(tpl.slice(0, i).join(":") + ":*");
+      if (patterns.size > CAP) break;
     }
-    if (patterns.size > 4000) break;
+    if (patterns.size > CAP) break;
   }
   return Array.from(patterns).sort();
 }
@@ -427,43 +432,88 @@ export function RedisKeyNavigator({
       </div>
 
       {/* Keys list / tree */}
-      <div className="min-h-0 flex-1 overflow-y-auto py-0.5">
-        {loading ? (
-          <div className="flex h-full items-center justify-center">
-            <Loader2 className="h-5 w-5 animate-spin text-text-faint" />
-          </div>
-        ) : (
-          <>
-            {viewMode === "list" && filteredKeys.map((rkey) => (
+      {loading ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-text-faint" />
+        </div>
+      ) : filteredKeys.length === 0 ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center px-3 text-center text-body text-text-muted">
+          {search || typeFilter !== "all" ? "Sin resultados." : "Sin claves en esta base de datos."}
+        </div>
+      ) : viewMode === "list" ? (
+        <VirtualKeyList
+          keys={filteredKeys}
+          activeKey={activeKey}
+          onSelectKey={onSelectKey}
+          onPinKey={onPinKey}
+          providerColor={providerColor}
+        />
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto py-0.5">
+          <TreeNodeList
+            nodes={treeItems}
+            activeKey={activeKey}
+            onSelect={onSelectKey}
+            onPin={onPinKey}
+            providerColor={providerColor}
+            depth={0}
+            totalKeys={keys.length}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Virtualized list of Redis keys. Only renders rows in the viewport — keeps
+ *  scroll smooth for connections with thousands of keys. */
+function VirtualKeyList({
+  keys,
+  activeKey,
+  onSelectKey,
+  onPinKey,
+  providerColor,
+}: {
+  keys: RedisKey[];
+  activeKey: string;
+  onSelectKey: (k: string) => void;
+  onPinKey?: (k: string) => void;
+  providerColor?: string;
+}) {
+  const parentRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: keys.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 30,
+    overscan: 12,
+  });
+
+  return (
+    <div ref={parentRef} className="min-h-0 flex-1 overflow-y-auto py-0.5">
+      <div style={{ height: virtualizer.getTotalSize(), position: "relative", width: "100%" }}>
+        {virtualizer.getVirtualItems().map((vi) => {
+          const rkey = keys[vi.index];
+          return (
+            <div
+              key={rkey.key}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                transform: `translateY(${vi.start}px)`,
+              }}
+            >
               <KeyRow
-                key={rkey.key}
                 rkey={rkey}
                 activeKey={activeKey}
                 onSelect={onSelectKey}
                 onPin={onPinKey}
                 providerColor={providerColor}
               />
-            ))}
-
-            {viewMode === "tree" && (
-              <TreeNodeList
-                nodes={treeItems}
-                activeKey={activeKey}
-                onSelect={onSelectKey}
-                onPin={onPinKey}
-                providerColor={providerColor}
-                depth={0}
-                totalKeys={keys.length}
-              />
-            )}
-
-            {filteredKeys.length === 0 && (
-              <div className="px-3 py-4 text-center text-body text-text-muted">
-                {search || typeFilter !== "all" ? "Sin resultados." : "Sin claves en esta base de datos."}
-              </div>
-            )}
-          </>
-        )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

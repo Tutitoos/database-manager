@@ -262,7 +262,7 @@ function DocTabContent({
   if (tab.kind === "entity") {
     return (
       <div className="flex min-h-0 flex-1 overflow-auto">
-        <DocumentPage key={tab.id} />
+        <DocumentPage />
       </div>
     );
   }

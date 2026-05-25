@@ -313,10 +313,11 @@ function SqlTabContent({
 }) {
   if (!connection) return null;
   if (tab.kind === "entity") {
-    // SqlPage still reads URL params; the layout's URL sync keeps them aligned.
+    // SqlPage stays mounted across tab switches and re-renders on URL change.
+    // Avoid `key={tab.id}` here — remounting forces a full refetch per click.
     return (
       <div className="flex min-h-0 flex-1 overflow-auto">
-        <SqlPage key={tab.id} />
+        <SqlPage />
       </div>
     );
   }
