@@ -152,7 +152,7 @@ function SafariTab({
         "group/tab relative flex h-full shrink-0 cursor-pointer items-center gap-2 px-4 text-body transition-colors",
         tab.pinned ? "w-10 justify-center px-0" : "min-w-[140px] max-w-[220px] justify-center",
         active
-          ? "bg-surface text-text"
+          ? "bg-surface-elevated text-text"
           : "text-text-muted hover:bg-surface-hover/50 hover:text-text",
       )}
     >
@@ -160,6 +160,13 @@ function SafariTab({
       {!hideLeftDivider && (
         <span
           className="pointer-events-none absolute left-0 top-1/2 h-4 w-px -translate-y-1/2 bg-border-subtle"
+          aria-hidden
+        />
+      )}
+      {/* Top accent bar on active tab */}
+      {active && (
+        <span
+          className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-accent"
           aria-hidden
         />
       )}
