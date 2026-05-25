@@ -55,23 +55,27 @@ export function SafariTabsStrip({
     onReorder?.(next.map((t) => t.id));
   }
 
+  const activeIdx = items.findIndex((t) => t.id === activeId);
+
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <SortableContext items={items.map((t) => t.id)} strategy={horizontalListSortingStrategy}>
         <div
           data-tauri-drag-region
           className={cn(
-            "flex h-full min-w-0 flex-1 items-end gap-0.5 overflow-x-auto pt-1",
+            "flex h-full min-w-0 flex-1 items-stretch overflow-x-auto",
             "[&::-webkit-scrollbar]:h-0",
             className,
           )}
-          style={{ paddingLeft: reserveTrafficLights ? 80 : 8 }}
+          style={{ paddingLeft: reserveTrafficLights ? 80 : 4 }}
         >
-          {items.map((t) => (
+          {items.map((tab, i) => (
             <SafariTab
-              key={t.id}
-              tab={t}
-              active={activeId === t.id}
+              key={tab.id}
+              tab={tab}
+              active={activeId === tab.id}
+              /** Hide left divider when this tab OR the previous one is active */
+              hideLeftDivider={i === 0 || i === activeIdx || i - 1 === activeIdx}
               onSelect={onSelect}
               onClose={onClose}
               onContext={onContext}
@@ -83,11 +87,13 @@ export function SafariTabsStrip({
               onClick={onNewTab}
               title={t("shell.newTab")}
               data-tauri-drag-region="false"
-              className="ml-1 mb-1 grid h-7 w-7 shrink-0 place-items-center rounded-md text-text-faint transition-colors hover:bg-surface-hover hover:text-text"
+              className="grid h-full w-9 shrink-0 place-items-center text-text-faint transition-colors hover:bg-surface-hover hover:text-text"
             >
               <Plus strokeWidth={1.5} className="h-4 w-4" />
             </button>
           )}
+          {/* Drag region filler to the right of the last tab + new-tab button */}
+          <div data-tauri-drag-region className="flex-1" />
         </div>
       </SortableContext>
     </DndContext>
@@ -97,12 +103,14 @@ export function SafariTabsStrip({
 function SafariTab({
   tab,
   active,
+  hideLeftDivider,
   onSelect,
   onClose,
   onContext,
 }: {
   tab: SafariTab;
   active: boolean;
+  hideLeftDivider: boolean;
   onSelect: (id: string) => void;
   onClose?: (id: string) => void;
   onContext?: (id: string, x: number, y: number) => void;
@@ -117,8 +125,7 @@ function SafariTab({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  function handleMouseDown(e: React.MouseEvent) {
-    // Middle-click closes (browser pattern). Only for non-fixed/non-pinned tabs.
+  function onAuxClick(e: React.MouseEvent) {
     if (e.button === 1 && !tab.fixed && !tab.pinned && onClose) {
       e.preventDefault();
       onClose(tab.id);
@@ -135,25 +142,24 @@ function SafariTab({
       role="tab"
       aria-selected={active}
       onClick={() => onSelect(tab.id)}
-      onAuxClick={handleMouseDown}
+      onAuxClick={onAuxClick}
       onContextMenu={(e) => {
         if (!onContext) return;
         e.preventDefault();
         onContext(tab.id, e.clientX, e.clientY);
       }}
       className={cn(
-        "group/tab relative flex h-8 shrink-0 cursor-pointer items-center gap-2 rounded-t-lg px-3 text-body transition-all duration-100",
-        tab.pinned ? "w-9 justify-center px-0" : "min-w-[120px] max-w-[220px]",
+        "group/tab relative flex h-full shrink-0 cursor-pointer items-center gap-2 px-4 text-body transition-colors",
+        tab.pinned ? "w-10 justify-center px-0" : "min-w-[140px] max-w-[220px] justify-center",
         active
           ? "bg-surface text-text"
-          : "text-text-muted hover:bg-surface-hover/60 hover:text-text",
+          : "text-text-muted hover:bg-surface-hover/50 hover:text-text",
       )}
     >
-      {/* Top accent stripe for color/provider, only when active or color set */}
-      {tab.color && active && (
+      {/* Vertical divider on the left edge (hidden when previous tab or self is active) */}
+      {!hideLeftDivider && (
         <span
-          className="pointer-events-none absolute inset-x-2 top-0 h-[2px] rounded-full"
-          style={{ background: tab.color }}
+          className="pointer-events-none absolute left-0 top-1/2 h-4 w-px -translate-y-1/2 bg-border-subtle"
           aria-hidden
         />
       )}
@@ -165,7 +171,7 @@ function SafariTab({
         </span>
       )}
       {!tab.pinned && (
-        <span className={cn("min-w-0 flex-1 truncate", active ? "text-text" : "text-text-muted")}>
+        <span className="min-w-0 truncate text-center">
           {tab.label}
         </span>
       )}
@@ -177,15 +183,15 @@ function SafariTab({
             onClose(tab.id);
           }}
           className={cn(
-            "grid h-5 w-5 shrink-0 place-items-center rounded-md transition-all",
+            "absolute right-2 grid h-4 w-4 place-items-center rounded-sm transition-all",
             active
-              ? "text-text-muted opacity-80 hover:bg-surface-hover hover:text-text hover:opacity-100"
+              ? "text-text-muted opacity-0 hover:bg-surface-hover hover:text-text group-hover/tab:opacity-100"
               : "text-text-faint opacity-0 hover:bg-surface-hover hover:text-text group-hover/tab:opacity-100",
           )}
           aria-label="close"
-          title="Cerrar (medio-click también)"
+          title="Cerrar (middle-click)"
         >
-          <X strokeWidth={1.5} className="h-3.5 w-3.5" />
+          <X strokeWidth={1.5} className="h-3 w-3" />
         </button>
       )}
     </div>
