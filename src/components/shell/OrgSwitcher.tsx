@@ -26,6 +26,7 @@ export function OrgSwitcher() {
       <div className="relative z-30 border-b border-border-subtle px-2 py-2">
         <Dropdown
           align="start"
+          triggerClassName="w-full"
           trigger={
             <span
               className={cn(
